@@ -777,8 +777,85 @@
     }, 3000);
   }
 
+  // --- RULLY Cobalt Engine Start Loading Controller ---
+  function initLoadingScreen() {
+    const screenEl = document.getElementById('rully-loading-screen');
+    const statusTextEl = document.getElementById('loading-status-text');
+    const progressBarEl = document.getElementById('loading-progress-bar');
+    const arcProgressEl = document.getElementById('steering-arc-progress');
+    const wheelWrapEl = document.querySelector('.wheel-disc-wrap');
+
+    if (!screenEl) return () => {};
+
+    const startTime = Date.now();
+    const MIN_DISPLAY_MS = 1350; // smooth engine start animation minimum window
+
+    // Step 1: Initial state & smooth arc progression
+    if (arcProgressEl) {
+      setTimeout(() => {
+        arcProgressEl.style.strokeDashoffset = '0';
+      }, 50);
+    }
+    if (progressBarEl) {
+      setTimeout(() => {
+        progressBarEl.style.width = '100%';
+      }, 50);
+    }
+
+    // Step 2: Ignition Haptic at 250ms
+    setTimeout(() => {
+      try {
+        window.Telegram?.WebApp?.HapticFeedback?.impactOccurred('medium');
+      } catch (e) {}
+    }, 250);
+
+    // Step 3: Status phase updates
+    setTimeout(() => {
+      if (statusTextEl) statusTextEl.textContent = "Gidrousilitel va tizimlar tekshirilmoqda...";
+    }, 450);
+
+    setTimeout(() => {
+      if (statusTextEl) statusTextEl.textContent = "Qoidalar va savollar yuklanmoqda...";
+    }, 950);
+
+    // Interactive Klaxon Easter Egg on steering wheel tap
+    if (wheelWrapEl) {
+      wheelWrapEl.addEventListener('click', () => {
+        try {
+          window.Telegram?.WebApp?.HapticFeedback?.impactOccurred('heavy');
+        } catch (e) {}
+        if (statusTextEl) {
+          const prev = statusTextEl.textContent;
+          statusTextEl.textContent = "🚗 Bib-bip!";
+          setTimeout(() => { statusTextEl.textContent = prev; }, 600);
+        }
+      });
+    }
+
+    // Return completion function
+    return function dismissLoadingScreen() {
+      const elapsed = Date.now() - startTime;
+      const remaining = Math.max(0, MIN_DISPLAY_MS - elapsed);
+
+      setTimeout(() => {
+        if (statusTextEl) statusTextEl.textContent = "Tizim tayyor. Oq yo‘l!";
+        try {
+          window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
+        } catch (e) {}
+
+        setTimeout(() => {
+          screenEl.classList.add('loaded');
+          setTimeout(() => {
+            screenEl.style.display = 'none';
+          }, 550);
+        }, 220);
+      }, remaining);
+    };
+  }
+
   // 8. Application Bootstrap
   async function initApp() {
+    const dismissLoading = initLoadingScreen();
     injectSvgIcons();
     setupEventListeners();
 
@@ -818,6 +895,9 @@
     await loadTelemetryData();
     await loadCategories();
     await updateSavedQuestionsCount();
+
+    // Dismiss loading screen seamlessly
+    dismissLoading();
   }
 
   function updateDriverProfileUI() {

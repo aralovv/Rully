@@ -4,10 +4,52 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>RULLY — O‘zbekiston Haydovchilik Imtihoni</title>
-  <link rel="stylesheet" href="/static/css/rully.css?v=3.4.4">
+  <link rel="stylesheet" href="/static/css/rully.css?v=3.5.0">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
+
+  <!-- RULLY Cobalt Engine Start Loading Screen -->
+  <div id="rully-loading-screen" class="rully-loading-screen" aria-hidden="false">
+    <div class="loading-bg-glow"></div>
+    
+    <div class="loading-cockpit-stage">
+      <!-- Steering wheel container with calibration animation -->
+      <div class="steering-wheel-rig" id="steering-wheel-rig">
+        <!-- Circular speedometer arc around the steering wheel -->
+        <svg class="steering-arc-svg" viewBox="0 0 280 280">
+          <circle class="arc-bg" cx="140" cy="140" r="126" />
+          <circle class="arc-progress" id="steering-arc-progress" cx="140" cy="140" r="126" />
+          <defs>
+            <linearGradient id="steering-arc-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#00d2ff"/>
+              <stop offset="50%" stop-color="#0ea5e9"/>
+              <stop offset="100%" stop-color="#10b981"/>
+            </linearGradient>
+          </defs>
+        </svg>
+
+        <!-- The Cobalt steering wheel -->
+        <div class="wheel-disc-wrap">
+          <img src="/static/img/cobalt_wheel.webp" alt="RULLY Steering Wheel" class="cobalt-wheel-img" id="cobalt-wheel-img" />
+          <div class="bowtie-glow"></div>
+        </div>
+      </div>
+
+      <!-- Telemetry Status & Progress Info -->
+      <div class="loading-telemetry">
+        <div class="loading-brand-pill">
+          <span class="brand-spark"></span>
+          <span class="brand-text">RULLY</span>
+          <span class="brand-tag">COCKPIT</span>
+        </div>
+        <div class="loading-status-text" id="loading-status-text">Dvigatel ishga tushmoqda...</div>
+        <div class="loading-progress-track">
+          <div class="loading-progress-bar" id="loading-progress-bar"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Sticky Digital Cockpit Header -->
   <header class="app-header">
@@ -818,9 +860,9 @@
   </nav>
 
   <!-- Application Scripts -->
-  <script src="/static/js/icons.js?v=3.4.5"></script>
-  <script src="/static/js/translations.js?v=3.4.5"></script>
-  <script src="/static/js/cheatsheet_data.js?v=3.4.5"></script>
-  <script src="/static/js/app.js?v=3.4.5"></script>
+  <script src="/static/js/icons.js?v=3.5.0"></script>
+  <script src="/static/js/translations.js?v=3.5.0"></script>
+  <script src="/static/js/cheatsheet_data.js?v=3.5.0"></script>
+  <script src="/static/js/app.js?v=3.5.0"></script>
 </body>
 </html>
