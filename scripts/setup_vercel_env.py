@@ -14,18 +14,20 @@ headers = {
 }
 
 env_vars = {
-    "TURSO_DATABASE_URL": "https://rully-aralovv.aws-ap-south-1.turso.io",
-    "TURSO_AUTH_TOKEN": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3OTUwMDczOTYsImlkIjoiMDFhMWVlYzMtNmUwMS03MWJlLTlkMjEtNzAzMjQ0NDY1MDIzIiwia2lkIjoiMlYxQjFiOWpfUDFLWEFjemlRVDdyc0JRODZDQnB0OTUxYWJMRV9Kajd4QSIsInJpZCI6IjRlNjc5N2RlLWJjYWUtNGRkOS04YmNkLWQ3MDIwOWQyNmExOSJ9.Nyrki10bjIRZAd-J6wSZ0mQX84mGl_xzo1B3oJ-Apjy09ScmNKptlteNcPbhAKJMedVELY46I-iLbTpGGGFBBw",
-    "BOT_TOKEN": "8657532177:AAGsyMFpzuwPus9jOdFRNP8f65qa8E-4q8g",
-    "SECRET_KEY": "rully_secure_secret_key_32_bytes_minimum_for_crypto_production_2026",
-    "ADMIN_USERNAME": "Anvarjon",
-    "ADMIN_PASSWORD": "Anvarjon2007!@",
-    "ADMIN_TELEGRAM_ID": "1956239701",
-    "ORDERS_GROUP_CHAT_ID": "-5464313435",
-    "EXAM_TOTAL_QUESTIONS": "20",
-    "EXAM_TIME_LIMIT_SECONDS": "1500",
-    "EXAM_PASSING_SCORE": "18",
-    "QUICK_TEST_QUESTIONS": "10",
+    "TURSO_DATABASE_URL": os.getenv("TURSO_DATABASE_URL", ""),
+    "TURSO_AUTH_TOKEN": os.getenv("TURSO_AUTH_TOKEN", ""),
+    "BOT_TOKEN": os.getenv("BOT_TOKEN", ""),
+    "SECRET_KEY": os.getenv("SECRET_KEY", ""),
+    "ADMIN_USERNAME": os.getenv("ADMIN_USERNAME", "Anvarjon"),
+    "ADMIN_PASSWORD": os.getenv("ADMIN_PASSWORD", ""),
+    "ADMIN_TELEGRAM_ID": os.getenv("ADMIN_TELEGRAM_ID", ""),
+    "ORDERS_GROUP_CHAT_ID": os.getenv("ORDERS_GROUP_CHAT_ID", "-5464313435"),
+    "EXAM_TOTAL_QUESTIONS": os.getenv("EXAM_TOTAL_QUESTIONS", "20"),
+    "EXAM_TIME_LIMIT_SECONDS": os.getenv("EXAM_TIME_LIMIT_SECONDS", "1500"),
+    "EXAM_PASSING_SCORE": os.getenv("EXAM_PASSING_SCORE", "18"),
+    "QUICK_TEST_QUESTIONS": os.getenv("QUICK_TEST_QUESTIONS", "10"),
+    "IMAGE_CDN_BASE_URL": os.getenv("IMAGE_CDN_BASE_URL", "https://cdn.jsdelivr.net/gh/aralovv/Rully@main/data/images/original"),
+    "WEB_APP_URL": os.getenv("WEB_APP_URL", "https://rully-rully4.vercel.app"),
     "VERCEL": "1"
 }
 

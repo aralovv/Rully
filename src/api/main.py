@@ -16,6 +16,7 @@ from src.api.routes_auth import router as auth_router
 from src.api.routes_theory import router as theory_router
 from src.api.routes_practical import router as practical_router
 from src.api.routes_payment import router as payment_router
+from src.api.routes_telegram import router as telegram_router
 
 # Admin Control Panel Routers
 from src.admin.routes_admin_auth import router as admin_auth_router
@@ -142,6 +143,7 @@ app.include_router(auth_router)
 app.include_router(theory_router)
 app.include_router(practical_router)
 app.include_router(payment_router)
+app.include_router(telegram_router)
 
 # Include Admin Control Panel Routers
 app.include_router(admin_auth_router)

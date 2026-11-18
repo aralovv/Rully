@@ -72,16 +72,37 @@ async def render_session_question(bot: Bot, chat_id: int, session: Dict[str, Any
 
     reply_markup = get_quiz_options_keyboard(options_list, session_id=session_id, language=lang)
 
-    # If question has an image on disk, send as photo
-    if q_item.has_image and q_item.image_path and os.path.exists(q_item.image_path):
-        photo_file = FSInputFile(q_item.image_path)
-        await bot.send_photo(
-            chat_id=chat_id,
-            photo=photo_file,
-            caption=text,
-            parse_mode="HTML",
-            reply_markup=reply_markup
-        )
+    # If question has an image, send as photo (from disk if available, or jsDelivr CDN if serverless)
+    if q_item.has_image and q_item.image_path:
+        if os.path.exists(q_item.image_path):
+            photo_file = FSInputFile(q_item.image_path)
+            await bot.send_photo(
+                chat_id=chat_id,
+                photo=photo_file,
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=reply_markup
+            )
+        else:
+            filename = os.path.basename(q_item.image_path.replace("\\", "/"))
+            cdn_base = os.getenv("IMAGE_CDN_BASE_URL", "https://cdn.jsdelivr.net/gh/aralovv/Rully@main/data/images/original").rstrip("/")
+            cdn_url = f"{cdn_base}/{filename}"
+            try:
+                await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=cdn_url,
+                    caption=text,
+                    parse_mode="HTML",
+                    reply_markup=reply_markup
+                )
+            except Exception as e:
+                logger.warning(f"Could not send photo via CDN {cdn_url}: {e}, falling back to text")
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    parse_mode="HTML",
+                    reply_markup=reply_markup
+                )
     else:
         await bot.send_message(
             chat_id=chat_id,

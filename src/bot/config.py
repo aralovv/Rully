@@ -29,4 +29,4 @@ BOT_NAME: str = "RULLY"
 BOT_VERSION: str = "2.0.0-production"
 
 # Telegram Mini App URL (HTTPS required by Telegram Bot API)
-WEB_APP_URL: str = os.getenv("WEB_APP_URL", "https://mass-gives-complement-july.trycloudflare.com")
+WEB_APP_URL: str = os.getenv("WEB_APP_URL", "https://rully-rully4.vercel.app")
