@@ -6,7 +6,7 @@
 const I18N = {
   uz_latn: {
     // Navigation
-    nav_home: "Boshqaruv",
+    nav_home: "Asosiy",
     nav_tests: "Nazariya",
     nav_amaliy: "Avtodrom",
     nav_results: "Telemetriya",
@@ -17,7 +17,7 @@ const I18N = {
     welcome_prefix: "Salom,",
     app_subtitle: "O‘zbekiston haydovchilik imtihoniga tayyorgarlik platformasi",
     streak_badge: "{days} kunlik seriya",
-    cockpit_tag: "Telemetriya tizimi",
+    cockpit_tag: "Asosiy",
 
     // Home / Cluster
     cluster_heading: "Imtihonga tayyorgarlik darajasi",
@@ -98,7 +98,7 @@ const I18N = {
     res_category_breakdown: "Mavzular bo‘yicha tahlil",
     btn_retake: "Qayta topshirish",
     btn_review_mistakes: "Xatolarni tahlil qilish",
-    btn_back_home: "Boshqaruvga qaytish",
+    btn_back_home: "Asosiyga qaytish",
     btn_share: "Natijani ulashish",
 
     // Practical
@@ -235,7 +235,7 @@ const I18N = {
 
   uz_cyrl: {
     // Navigation
-    nav_home: "Бошқарув",
+    nav_home: "Асосий",
     nav_tests: "Назария",
     nav_amaliy: "Автодром",
     nav_results: "Телеметрия",
@@ -246,7 +246,7 @@ const I18N = {
     welcome_prefix: "Салом,",
     app_subtitle: "Ўзбекистон ҳайдовчилик имтиҳонига тайёргарлик платформаси",
     streak_badge: "{days} кунлик серия",
-    cockpit_tag: "Телеметрия тизими",
+    cockpit_tag: "Асосий",
 
     // Home / Cluster
     cluster_heading: "Имтиҳонга тайёргарлик даражаси",
@@ -327,7 +327,7 @@ const I18N = {
     res_category_breakdown: "Мавзулар бўйича таҳлил",
     btn_retake: "Қайта топшириш",
     btn_review_mistakes: "Хатоларни таҳлил қилиш",
-    btn_back_home: "Бошқарувга қайтиш",
+    btn_back_home: "Асосийга қайтиш",
     btn_share: "Натижани улашиш",
 
     // Practical
@@ -464,7 +464,7 @@ const I18N = {
 
   ru: {
     // Navigation
-    nav_home: "Кокпит",
+    nav_home: "Главная",
     nav_tests: "Теория",
     nav_amaliy: "Автодром",
     nav_results: "Телеметрия",
@@ -475,7 +475,7 @@ const I18N = {
     welcome_prefix: "Здравствуйте,",
     app_subtitle: "Платформа подготовки к экзамену на права в Узбекистане",
     streak_badge: "{days} дн. серия",
-    cockpit_tag: "Система телеметрии",
+    cockpit_tag: "Главная",
 
     // Home / Cluster
     cluster_heading: "Уровень готовности к экзамену",
@@ -556,7 +556,7 @@ const I18N = {
     res_category_breakdown: "Анализ по категориям ПДД",
     btn_retake: "Сдать снова",
     btn_review_mistakes: "Разбор ошибок",
-    btn_back_home: "Вернуться в кокпит",
+    btn_back_home: "Вернуться на главную",
     btn_share: "Поделиться результатом",
 
     // Practical
