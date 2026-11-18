@@ -2316,7 +2316,7 @@
     if (savedFilterInput) {
       savedFilterInput.addEventListener('input', (e) => {
         const val = e.target.value;
-        if (savedClearBtn) savedClearBtn.style.display = val ? 'block' : 'none';
+        if (savedClearBtn) savedClearBtn.style.display = val ? 'flex' : 'none';
         filterSavedQuestions(val);
       });
     }
