@@ -1383,6 +1383,22 @@
 
       renderCurrentQuestion();
 
+      // Check auto-termination on 3rd mistake in EXAM mode (Uzbekistan DYHXX VMQ 408: max 2 mistakes)
+      if (state.quiz.sessionType === 'EXAM') {
+        const mistakeAnswers = Object.values(state.quiz.answers).filter(a => !a.is_correct);
+        if (mistakeAnswers.length > 2 || res.is_exam_terminated) {
+          triggerHaptic('notification', 'error');
+          if (typeof showToast === 'function') {
+            showToast(t('res_exam_terminated_toast') || 'Imtihon to‘xtatildi: 2 tadan ortiq xato qilindi!');
+          }
+          setTimeout(() => {
+            if (!state.quiz.active) return;
+            finishQuiz(true);
+          }, 650);
+          return;
+        }
+      }
+
       // In EXAM and CUSTOM terminal mode:
       if (state.quiz.sessionType === 'EXAM' || state.quiz.sessionType === 'CUSTOM') {
         // If explanation is off, automatically advance to next unanswered question after 380ms
@@ -1482,7 +1498,7 @@
     if (tg?.BackButton) tg.BackButton.hide();
   }
 
-  async function finishQuiz() {
+  async function finishQuiz(isAutoTerminated = false) {
     clearInterval(state.quiz.timerInterval);
     triggerHaptic('impact', 'heavy');
 
@@ -1496,6 +1512,9 @@
         })
       });
 
+      if (isAutoTerminated) {
+        res.is_terminated_mistakes = true;
+      }
       showResultsCockpitModal(res);
     } catch (e) {
       console.error("Finish quiz error", e);
@@ -1575,7 +1594,11 @@
         } else if (state.quiz.sessionType === 'CATEGORY') {
           subtitleEl.textContent = t('res_practice_failed_subtitle');
         } else {
-          subtitleEl.textContent = t('res_failed_subtitle');
+          if (state.quiz.sessionType === 'EXAM' && (result.incorrect_count > 2 || result.is_terminated_mistakes || result.terminated_reason === 'MAX_MISTAKES_EXCEEDED')) {
+            subtitleEl.textContent = t('res_failed_mistakes_limit') || "2 tadan ortiq (3 ta) xatoga yo‘l qo‘yilgani sababli imtihon avtomatik to‘xtatildi (DYHXX VMQ 408 qoidasi).";
+          } else {
+            subtitleEl.textContent = t('res_failed_subtitle');
+          }
         }
         scoreCircleEl.className = 'score-dial-badge failed';
         triggerHaptic('notification', 'error');

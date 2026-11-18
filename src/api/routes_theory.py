@@ -233,6 +233,14 @@ async def submit_answer(
     # Increment learning streak
     streak = db.increment_streak_progress(user_id, 1)
 
+    # Check auto-termination on 3rd mistake in EXAM mode (Uzbekistan DYHXX VMQ 408: max 2 mistakes)
+    is_exam_terminated = False
+    if session.get("session_type") == "EXAM":
+        answers = db.get_session_answers(req.session_id)
+        current_incorrect = sum(1 for a in answers.values() if not a.get("is_correct"))
+        if current_incorrect > 2:
+            is_exam_terminated = True
+
     return {
         "canonical_id": req.canonical_id,
         "selected_key": req.selected_key.upper(),
@@ -240,7 +248,8 @@ async def submit_answer(
         "is_correct": feedback.is_correct,
         "explanation": feedback.explanation,
         "legal_reference": feedback.legal_reference,
-        "streak": streak
+        "streak": streak,
+        "is_exam_terminated": is_exam_terminated
     }
 
 # 5. Finish Session & Calculate Score
@@ -267,7 +276,9 @@ async def finish_session(
     unanswered_count = max(0, total_q - (correct_count + incorrect_count))
 
     percentage = round((correct_count / total_q * 100), 1) if total_q > 0 else 0.0
-    passed = (correct_count >= 18) if session["session_type"] == "EXAM" else (percentage >= 80.0)
+    is_exam = (session["session_type"] == "EXAM")
+    # DYHXX VMQ 408 rule: 18+ correct AND at most 2 mistakes (3 mistakes = immediate fail)
+    passed = (correct_count >= 18 and incorrect_count <= 2) if is_exam else (percentage >= 80.0)
 
     # Category breakdown
     lang = session["language"]
@@ -297,7 +308,8 @@ async def finish_session(
         unanswered=unanswered_count
     )
 
-    db.finish_session(req.session_id, status="COMPLETED")
+    finish_status = "FAILED_MISTAKES" if (is_exam and incorrect_count > 2) else "COMPLETED"
+    db.finish_session(req.session_id, status=finish_status)
 
     return {
         "session_id": req.session_id,
@@ -310,7 +322,8 @@ async def finish_session(
         "percentage": percentage,
         "passed": passed,
         "time_elapsed_seconds": req.time_elapsed_seconds,
-        "category_breakdown": category_breakdown
+        "category_breakdown": category_breakdown,
+        "terminated_reason": "MAX_MISTAKES_EXCEEDED" if (is_exam and incorrect_count > 2) else None
     }
 
 # 6. Get Existing Session State

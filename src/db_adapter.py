@@ -19,6 +19,39 @@ TURSO_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "").strip()
 
 try:
     import libsql_client
+    import libsql_client.http
+    from libsql_client.http import HttpClient
+    from libsql_client.hrana.convert import _stmt_to_proto, _result_set_from_proto, _batch_to_proto, _batch_results_from_proto
+    
+    _orig_execute = HttpClient.execute
+    _orig_batch = HttpClient.batch
+
+    async def _patched_execute(self, stmt, args=None):
+        request = {"stmt": _stmt_to_proto(stmt, args)}
+        response = await self._send("POST", "v1/execute", request)
+        if isinstance(response, dict) and "message" in response and "result" not in response:
+            msg = response["message"]
+            code = response.get("code", "UNKNOWN")
+            if "constraint" in msg.lower() or "unique" in msg.lower():
+                raise sqlite3.IntegrityError(msg)
+            raise sqlite3.OperationalError(f"{code}: {msg}")
+        return _result_set_from_proto(response["result"])
+
+    async def _patched_batch(self, stmts):
+        request = {"batch": _batch_to_proto(stmts)}
+        response = await self._send("POST", "v1/batch", request)
+        if isinstance(response, dict) and "message" in response and "result" not in response:
+            msg = response["message"]
+            code = response.get("code", "UNKNOWN")
+            if "constraint" in msg.lower() or "unique" in msg.lower():
+                raise sqlite3.IntegrityError(msg)
+            raise sqlite3.OperationalError(f"{code}: {msg}")
+        proto_res = response["result"]
+        return _batch_results_from_proto(proto_res, len(stmts))
+
+    HttpClient.execute = _patched_execute
+    HttpClient.batch = _patched_batch
+
     HAS_LIBSQL = True
 except ImportError:
     HAS_LIBSQL = False
@@ -92,6 +125,8 @@ class TursoCursor:
         
         try:
             res = self._client.execute(clean_sql, args)
+        except (sqlite3.IntegrityError, sqlite3.OperationalError):
+            raise
         except Exception as e:
             err_msg = str(e).lower()
             if any(term in err_msg for term in ["connection", "closed", "socket", "timeout", "reset", "broken"]):

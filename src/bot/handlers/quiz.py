@@ -163,6 +163,21 @@ async def cb_submit_answer(callback: CallbackQuery, bot: Bot,
         if session["session_type"] == "MISTAKES":
             db.resolve_mistake(user_id, canonical_id)
 
+    # Check auto-termination on 3rd mistake in EXAM mode (Uzbekistan DYHXX VMQ 408: max 2 mistakes)
+    if session["session_type"] == "EXAM":
+        answers = db.get_session_answers(session_id)
+        mistakes_count = sum(1 for a in answers.values() if not a.get("is_correct"))
+        if mistakes_count > 2:
+            db.finish_session(session_id, status="FAILED_MISTAKES")
+            alert_msg = {
+                "uz_latn": "❌ Imtihon to‘xtatildi!\n2 tadan ortiq (3 ta) xatoga yo‘l qo‘yildi (DYHXX VMQ 408 qoidasi).",
+                "uz_cyrl": "❌ Имтиҳон тўхтатилди!\n2 тадан ортиқ (3 та) хатога йўл қўйилди (ДЙҲХХ ВМҚ 408 қоидаси).",
+                "ru": "❌ Экзамен остановлен!\nДопущено более 2 ошибок (правило ГСБДД ПКМ №408)."
+            }.get(lang, "❌ Imtihon to‘xtatildi! 2 tadan ortiq xatoga yo‘l qo‘yildi.")
+            await callback.answer(alert_msg, show_alert=True)
+            await render_session_results(bot, callback.message.chat.id, session_id, product_engine, db)
+            return
+
     # 3. Check whether immediate feedback is enabled for this test mode
     if not session.get("show_answer", True):
         # For official exam or custom test without instant answers: advance immediately
@@ -276,8 +291,8 @@ async def render_session_results(bot: Bot, chat_id: int, session_id: str,
     incorrect = session["incorrect_count"]
     time_spent = time.time() - session["start_time"]
     
-    # Official standard: 18 correct answers to pass
-    passed = (correct >= 18) if session["session_type"] == "EXAM" else (correct >= int(total * 0.8))
+    # Official standard (DYHXX VMQ 408): 18 correct answers to pass and at most 2 mistakes
+    passed = (correct >= 18 and incorrect <= 2) if session["session_type"] == "EXAM" else (correct >= int(total * 0.8))
     pct = round((correct / total * 100), 1) if total > 0 else 0.0
 
     # Build category breakdown
