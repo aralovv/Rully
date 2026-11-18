@@ -201,6 +201,87 @@ class StagingManager:
 
             options = json.loads(staged["options_json"] or "[]")
 
+            # Check if this is an AMENDMENT to an existing canonical question
+            existing_cq_id = None
+            if staged["change_type"] == "AMENDMENT":
+                # 1. By direct existing_canonical_id
+                if staged["existing_canonical_id"]:
+                    cur.execute("SELECT canonical_id FROM canonical_questions WHERE canonical_id = ?", (staged["existing_canonical_id"],))
+                    r = cur.fetchone()
+                    if r:
+                        existing_cq_id = r[0]
+
+                # 2. By slot match in audit_merge_log
+                if not existing_cq_id and staged["source_ticket"] and staged["source_position"]:
+                    s_code = staged["source_code"].lower()
+                    slot_t_colon = f"T{staged['source_ticket']}:P{staged['source_position']}"
+                    slot_t_under = f"t{staged['source_ticket']}_p{staged['source_position']}"
+                    if s_code == "propdd":
+                        cur.execute("SELECT canonical_id FROM audit_merge_log WHERE propdd_slot IN (?, ?) LIMIT 1", (slot_t_colon, slot_t_under))
+                    elif s_code == "yesprava":
+                        cur.execute("SELECT canonical_id FROM audit_merge_log WHERE yesprava_slot IN (?, ?) LIMIT 1", (slot_t_colon, slot_t_under))
+                    r = cur.fetchone()
+                    if r:
+                        existing_cq_id = r[0]
+
+                # 3. By question text in canonical_translations
+                if not existing_cq_id and staged["text_uz_latn"]:
+                    cur.execute("SELECT canonical_id FROM canonical_translations WHERE language = 'uz_latn' AND question_text = ? LIMIT 1", (staged["text_uz_latn"],))
+                    r = cur.fetchone()
+                    if r:
+                        existing_cq_id = r[0]
+
+            if existing_cq_id:
+                # Apply amendment directly to the existing canonical question
+                new_key = staged["correct_option_key"]
+                cur.execute("""
+                    UPDATE canonical_questions
+                    SET correct_option_key = ?, updated_at = datetime('now')
+                    WHERE canonical_id = ?;
+                """, (new_key, existing_cq_id))
+
+                cur.execute("""
+                    UPDATE canonical_answers
+                    SET is_correct = CASE WHEN option_key = ? THEN 1 ELSE 0 END
+                    WHERE canonical_id = ?;
+                """, (new_key, existing_cq_id))
+
+                if staged["explanation"]:
+                    cur.execute("""
+                        UPDATE canonical_translations
+                        SET explanation = ?, translation_status = 'ADMIN_VERIFIED'
+                        WHERE canonical_id = ?;
+                    """, (staged["explanation"], existing_cq_id))
+
+                cur.execute("""
+                    INSERT INTO audit_merge_log (
+                        canonical_id, operation_type, propdd_slot, yesprava_slot, match_criteria, performed_at
+                    ) VALUES (?, 'ADMIN_AMENDMENT_APPROVAL', ?, ?, 'MANUAL_HUMAN_APPROVAL', datetime('now'));
+                """, (
+                    existing_cq_id,
+                    f"T{staged['source_ticket']}:P{staged['source_position']}" if staged['source_code'] == 'propdd' else None,
+                    f"T{staged['source_ticket']}:P{staged['source_position']}" if staged['source_code'] == 'yesprava' else None
+                ))
+
+                cur.execute("""
+                    UPDATE staged_questions
+                    SET review_status = 'APPROVED',
+                        reviewed_by = ?,
+                        reviewed_at = datetime('now'),
+                        published_canonical_id = ?,
+                        updated_at = datetime('now')
+                    WHERE id = ?;
+                """, (admin_username, existing_cq_id, staged_id))
+
+                conn.commit()
+                return {
+                    "success": True,
+                    "action": "AMENDMENT_APPLIED",
+                    "canonical_id": existing_cq_id,
+                    "backup_path": backup_path
+                }
+
+            # If NEW_QUESTION or unmatched amendment:
             # 1. Category
             cur.execute("SELECT id FROM categories WHERE slug = ?;", (staged["category_slug"],))
             cat_row = cur.fetchone()
