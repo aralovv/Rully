@@ -250,6 +250,74 @@
       <div id="modules-list"></div>
     </section>
 
+    <!-- VIEW 3: AI COPILOT / AI USTOZ -->
+    <section class="view-pane" id="view-ai">
+      <div class="ai-view-wrapper">
+        <!-- AI Top Header -->
+        <div class="ai-top-header">
+          <div class="ai-header-left">
+            <div class="ai-avatar-box">
+              <span class="ai-avatar-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><circle cx="19" cy="5" r="1.5"/><circle cx="5" cy="19" r="1"/></svg>
+              </span>
+              <span class="ai-status-dot"></span>
+            </div>
+            <div class="ai-header-meta">
+              <div class="ai-header-title-row">
+                <h3 class="ai-header-title">AI Ustoz</h3>
+                <span class="ai-version-pill">Gemini 3.1</span>
+              </div>
+              <div class="ai-header-subtitle" id="ai-usage-label">5/5 bepul so‘rov</div>
+            </div>
+          </div>
+          <button type="button" class="btn-ai-clear" id="btn-ai-clear" title="Suhbatni tozalash">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+          </button>
+        </div>
+
+        <!-- Chat Messages Area -->
+        <div class="ai-chat-body" id="ai-chat-messages">
+          <div class="ai-msg ai-msg-bot">
+            <div class="ai-msg-avatar">✨</div>
+            <div class="ai-msg-content">
+              <div class="ai-msg-bubble">
+                Assalomu alaykum! Men <strong>Rully AI Ustoz</strong>man. 🚗<br><br>
+                O‘zbekiston Yo‘l Harakati Qoidalari (YHQ), chorrahalar, belgilar va imtihon sirlari bo‘yicha har qanday savolingizga javob beraman.<br><br>
+                Shuningdek, <strong>saqlangan savollaringiz</strong> va testdagi <strong>xatolaringiz</strong> ustida birgalikda shug‘ullanamiz!
+              </div>
+              <span class="ai-msg-time">Hozir</span>
+            </div>
+          </div>
+
+          <!-- Quick Suggestion Chips -->
+          <div class="ai-chips-wrap" id="ai-quick-chips">
+            <button type="button" class="ai-chip-btn" data-prompt="Saqlangan savollarimdan 3 ta savol ber va meni sinovdan o‘tkaz">
+              📌 Saqlanganlarimdan test ber
+            </button>
+            <button type="button" class="ai-chip-btn" data-prompt="Chorrahada teng huquqli yo‘llarda kim birinchi o‘tadi?">
+              🚗 Chorrahalarda o‘tish tartibi
+            </button>
+            <button type="button" class="ai-chip-btn" data-prompt="Nega davlat imtihonida 3 ta xatoda test to‘xtatiladi?">
+              ⚠️ 3 ta xato qoidasi
+            </button>
+            <button type="button" class="ai-chip-btn" data-prompt="Mening imtihon statistikam va xatolarimni tahlil qilib ber">
+              📊 Xatolarim tahlili
+            </button>
+          </div>
+        </div>
+
+        <!-- Chat Input Bar -->
+        <div class="ai-input-bar">
+          <div class="ai-input-wrap">
+            <textarea class="ai-text-input" id="ai-input-field" placeholder="YHQ yoki savol haqida so‘rang..." rows="1"></textarea>
+            <button type="button" class="ai-send-btn" id="btn-ai-send" aria-label="Yuborish">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- VIEW 4: DRIVER PROFILE & SETTINGS (PROFIL) -->
     <section class="view-pane" id="view-profile">
       <h3 class="cockpit-section-heading">
@@ -556,6 +624,13 @@
         </button>
       </div>
 
+      <div style="padding: 12px 16px 0 16px; background: var(--bg-surface-1);">
+        <button type="button" class="btn-ai-saved-tutor" id="btn-ai-saved-tutor">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 15px; height: 15px;"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+          <span>AI Ustoz bilan tahlil qilish</span>
+        </button>
+      </div>
+
       <div class="saved-search-wrap" id="saved-search-wrap" style="display: none;">
         <span class="r-icon sm search-input-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span>
         <input type="text" class="saved-search-input" id="saved-filter-input" placeholder="Savol yoki qoidani qidirish..." data-i18n-placeholder="saved_search_placeholder">
@@ -844,6 +919,10 @@
     <button class="nav-bar-item" id="nav-tests" data-tab="tests">
       <span class="nav-item-icon" id="nav-icon-tests"></span>
       <span class="nav-item-title" data-i18n="nav_tests">Nazariya</span>
+    </button>
+    <button class="nav-bar-item" id="nav-ai" data-tab="ai">
+      <span class="nav-item-icon" id="nav-icon-ai"></span>
+      <span class="nav-item-title" data-i18n="nav_ai">AI Ustoz</span>
     </button>
     <button class="nav-bar-item" id="nav-amaliy" data-tab="amaliy">
       <span class="nav-item-icon" id="nav-icon-amaliy"></span>

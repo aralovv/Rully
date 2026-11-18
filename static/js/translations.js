@@ -8,6 +8,7 @@ const I18N = {
     // Navigation
     nav_home: "Asosiy",
     nav_tests: "Nazariya",
+    nav_ai: "AI Ustoz",
     nav_amaliy: "Avtodrom",
     nav_results: "Telemetriya",
     nav_profile: "Profil",
@@ -239,6 +240,7 @@ const I18N = {
     // Navigation
     nav_home: "Асосий",
     nav_tests: "Назария",
+    nav_ai: "AI Устоз",
     nav_amaliy: "Автодром",
     nav_results: "Телеметрия",
     nav_profile: "Профиль",
@@ -470,6 +472,7 @@ const I18N = {
     // Navigation
     nav_home: "Главная",
     nav_tests: "Теория",
+    nav_ai: "AI Инструктор",
     nav_amaliy: "Автодром",
     nav_results: "Телеметрия",
     nav_profile: "Профиль",

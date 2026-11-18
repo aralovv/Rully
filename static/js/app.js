@@ -304,6 +304,7 @@
       'search-bar-icon-slot': 'search',
       'nav-icon-home': 'home',
       'nav-icon-tests': 'tests',
+      'nav-icon-ai': 'sparkles',
       'nav-icon-amaliy': 'amaliy',
       'nav-icon-results': 'results',
       'nav-icon-profile': 'profile',
@@ -1009,6 +1010,8 @@
       updateSubscriptionUI();
     } else if (tabName === 'tests') {
       updateSavedQuestionsCount();
+    } else if (tabName === 'ai') {
+      initAiChat();
     }
   }
 
@@ -2071,7 +2074,235 @@
     });
   }
 
-  // 17. Master Event Listener Bindings
+  // 17. AI COPILOT / AI USTOZ INTERACTIVE ASSISTANT
+  let aiChatInitialized = false;
+  let aiIsGenerating = false;
+
+  async function initAiChat() {
+    loadAiChatStatus();
+    if (!aiChatInitialized) {
+      aiChatInitialized = true;
+      loadAiChatHistory();
+    }
+  }
+
+  async function loadAiChatStatus() {
+    try {
+      const data = await apiFetch('/api/ai/status');
+      if (data && data.ok) {
+        const usageLabel = document.getElementById('ai-usage-label');
+        if (usageLabel) {
+          if (data.is_pro) {
+            usageLabel.textContent = "⚡ PRO — Cheksiz so'rov";
+            usageLabel.style.color = "#fbbf24";
+          } else {
+            const rem = data.usage?.remaining ?? 5;
+            usageLabel.textContent = `${rem}/5 bepul so‘rov qoldi`;
+            usageLabel.style.color = rem > 0 ? "var(--text-muted)" : "var(--crimson)";
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to load AI status:", e);
+    }
+  }
+
+  async function loadAiChatHistory() {
+    try {
+      const data = await apiFetch('/api/ai/history');
+      if (data && data.ok && data.messages && data.messages.length > 0) {
+        const container = document.getElementById('ai-chat-messages');
+        if (!container) return;
+        
+        const chips = document.getElementById('ai-quick-chips');
+        container.innerHTML = '';
+        
+        data.messages.forEach(msg => {
+          appendAiMessageToUI(msg.role, msg.text, []);
+        });
+
+        if (chips) container.appendChild(chips);
+        container.scrollTop = container.scrollHeight;
+      }
+    } catch (e) {
+      console.warn("Failed to load AI history:", e);
+    }
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function appendAiMessageToUI(role, text, cards = []) {
+    const container = document.getElementById('ai-chat-messages');
+    if (!container) return;
+
+    const isBot = role === 'assistant' || role === 'model';
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `ai-msg ${isBot ? 'ai-msg-bot' : 'ai-msg-user'}`;
+
+    const now = new Date();
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    let cardsHtml = '';
+    if (cards && cards.length > 0) {
+      cardsHtml = cards.map(c => `
+        <div class="ai-card-slot" id="ai-card-${c.canonical_id}">
+          <div class="ai-card-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 13px; height: 13px;"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+            <span>${c.canonical_id} • ${c.category_name || 'Yo‘l qoidasi'}</span>
+          </div>
+          <div class="ai-card-q-text">${c.question}</div>
+          <div class="ai-card-options">
+            ${(c.options || []).map(opt => {
+              const isCorrect = opt.key === c.correct_option_key;
+              return `
+                <div class="ai-card-opt-row ${isCorrect ? 'correct' : ''}">
+                  <strong>${opt.key})</strong> ${opt.text}
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    const formattedText = escapeHtml(text)
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/\n/g, '<br>');
+
+    msgDiv.innerHTML = `
+      <div class="ai-msg-avatar">${isBot ? '✨' : '👤'}</div>
+      <div class="ai-msg-content">
+        <div class="ai-msg-bubble">${formattedText}${cardsHtml}</div>
+        <span class="ai-msg-time">${timeStr}</span>
+      </div>
+    `;
+
+    const chips = document.getElementById('ai-quick-chips');
+    if (chips && chips.parentNode === container) {
+      container.insertBefore(msgDiv, chips);
+    } else {
+      container.appendChild(msgDiv);
+    }
+
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function showAiTypingIndicator() {
+    const container = document.getElementById('ai-chat-messages');
+    if (!container) return;
+
+    let typing = document.getElementById('ai-typing-indicator');
+    if (!typing) {
+      typing = document.createElement('div');
+      typing.id = 'ai-typing-indicator';
+      typing.className = 'ai-msg ai-msg-bot';
+      typing.innerHTML = `
+        <div class="ai-msg-avatar">✨</div>
+        <div class="ai-msg-content">
+          <div class="ai-typing-bubble">
+            <span class="ai-typing-dot"></span>
+            <span class="ai-typing-dot"></span>
+            <span class="ai-typing-dot"></span>
+          </div>
+        </div>
+      `;
+      const chips = document.getElementById('ai-quick-chips');
+      if (chips && chips.parentNode === container) {
+        container.insertBefore(typing, chips);
+      } else {
+        container.appendChild(typing);
+      }
+      container.scrollTop = container.scrollHeight;
+    }
+  }
+
+  function hideAiTypingIndicator() {
+    const typing = document.getElementById('ai-typing-indicator');
+    if (typing) typing.remove();
+  }
+
+  async function sendAiMessage(promptText = null) {
+    if (aiIsGenerating) return;
+
+    const inputEl = document.getElementById('ai-input-field');
+    const text = promptText || (inputEl ? inputEl.value.trim() : '');
+    if (!text) return;
+
+    if (!promptText && inputEl) {
+      inputEl.value = '';
+      inputEl.style.height = 'auto';
+    }
+
+    aiIsGenerating = true;
+    const sendBtn = document.getElementById('btn-ai-send');
+    if (sendBtn) sendBtn.disabled = true;
+
+    triggerHaptic('impact', 'medium');
+    appendAiMessageToUI('user', text);
+    showAiTypingIndicator();
+
+    try {
+      const res = await apiFetch('/api/ai/chat', {
+        method: 'POST',
+        body: JSON.stringify({ message: text })
+      });
+
+      hideAiTypingIndicator();
+
+      if (res && res.ok) {
+        appendAiMessageToUI('assistant', res.reply || 'Javob qabul qilindi.', res.cards || []);
+        loadAiChatStatus();
+        triggerHaptic('notification', 'success');
+      } else {
+        appendAiMessageToUI('assistant', res.reply || 'Kechirasiz, xatolik yuz berdi.');
+      }
+    } catch (e) {
+      hideAiTypingIndicator();
+      console.error("AI chat error:", e);
+      appendAiMessageToUI('assistant', "Aloqa xatosi yuz berdi. Iltimos qaytadan urinib ko'ring.");
+    } finally {
+      aiIsGenerating = false;
+      if (sendBtn) sendBtn.disabled = false;
+    }
+  }
+
+  async function clearAiChat() {
+    if (!confirm("AI Ustoz bilan suhbat tarixini tozalashni xohlaysizmi?")) return;
+    try {
+      await apiFetch('/api/ai/clear', { method: 'POST' });
+      const container = document.getElementById('ai-chat-messages');
+      if (container) {
+        const chips = document.getElementById('ai-quick-chips');
+        container.innerHTML = `
+          <div class="ai-msg ai-msg-bot">
+            <div class="ai-msg-avatar">✨</div>
+            <div class="ai-msg-content">
+              <div class="ai-msg-bubble">
+                Suhbat tarixi tozalandi. Qanday savolingiz bor? Men yordam berishga tayyorman! 🚗
+              </div>
+              <span class="ai-msg-time">Hozir</span>
+            </div>
+          </div>
+        `;
+        if (chips) container.appendChild(chips);
+      }
+      loadAiChatStatus();
+      triggerHaptic('notification', 'success');
+    } catch (e) {
+      console.error("Failed to clear chat:", e);
+    }
+  }
+
+  // 18. Master Event Listener Bindings
   function setupEventListeners() {
     // Navigation bar tabs
     document.querySelectorAll('.nav-bar-item').forEach(item => {
@@ -2565,6 +2796,49 @@
         } else {
           markCopied(btnCopyAmount);
         }
+      };
+    }
+
+    // Wire AI Copilot / AI Ustoz listeners
+    const aiSendBtn = document.getElementById('btn-ai-send');
+    const aiInput = document.getElementById('ai-input-field');
+    const aiClearBtn = document.getElementById('btn-ai-clear');
+    const aiChipsWrap = document.getElementById('ai-quick-chips');
+    const btnAiSavedTutor = document.getElementById('btn-ai-saved-tutor');
+
+    if (aiSendBtn && aiInput) {
+      aiSendBtn.onclick = () => sendAiMessage();
+      aiInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          sendAiMessage();
+        }
+      });
+      aiInput.addEventListener('input', () => {
+        aiInput.style.height = 'auto';
+        aiInput.style.height = Math.min(aiInput.scrollHeight, 90) + 'px';
+      });
+    }
+
+    if (aiClearBtn) {
+      aiClearBtn.onclick = () => clearAiChat();
+    }
+
+    if (aiChipsWrap) {
+      aiChipsWrap.addEventListener('click', (e) => {
+        const chip = e.target.closest('.ai-chip-btn');
+        if (chip) {
+          const prompt = chip.getAttribute('data-prompt');
+          if (prompt) sendAiMessage(prompt);
+        }
+      });
+    }
+
+    if (btnAiSavedTutor) {
+      btnAiSavedTutor.onclick = () => {
+        closeSavedQuestionsModal();
+        switchTab('ai');
+        sendAiMessage("Mening saqlangan savollarimdan 3 tasini tushuntirib ber va meni sinovdan o‘tkaz");
       };
     }
   }
