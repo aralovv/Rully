@@ -7,6 +7,7 @@ import json
 import time
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Any, Tuple
+from src.db_adapter import get_db_connection, is_turso_enabled
 
 # --- Subscription Plans Specification ---
 SUBSCRIPTION_PLANS = {
@@ -124,13 +125,11 @@ def compute_driver_readiness(
 class BotDatabase:
     def __init__(self, db_path: str = "master_database.sqlite"):
         self.db_path = db_path
-        self._init_bot_schema()
+        if not is_turso_enabled():
+            self._init_bot_schema()
 
-    def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON;")
-        return conn
+    def _get_connection(self):
+        return get_db_connection(self.db_path)
 
     def _init_bot_schema(self):
         with self._get_connection() as conn:

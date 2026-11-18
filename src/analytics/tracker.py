@@ -18,11 +18,10 @@ logger = logging.getLogger(__name__)
 DB_PATH = os.getenv("DB_PATH", "master_database.sqlite")
 
 
+from src.db_adapter import get_db_connection
+
 def _get_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON;")
-    return conn
+    return get_db_connection(DB_PATH)
 
 
 def log_user_event(

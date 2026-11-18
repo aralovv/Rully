@@ -12,6 +12,7 @@ import time
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, asdict, field
 from src.bot.category_localization import localize_category, localize_legal_reference
+from src.db_adapter import get_db_connection, is_turso_enabled
 
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
@@ -75,13 +76,11 @@ class ExamSessionResult:
 class AvtotestProductEngine:
     def __init__(self, db_path: str = "master_database.sqlite"):
         self.db_path = db_path
-        if not os.path.exists(self.db_path):
+        if not is_turso_enabled() and not os.path.exists(self.db_path):
             raise FileNotFoundError(f"Database not found at {self.db_path}")
 
-    def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+    def _get_connection(self):
+        return get_db_connection(self.db_path)
 
     # 1. Language Support
     @staticmethod

@@ -67,6 +67,8 @@ async def periodic_question_sync_worker():
         await asyncio.sleep(43200)  # 12 hours
 
 
+IS_VERCEL = bool(os.getenv("VERCEL"))
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 1. Run migrations and database schema updates
@@ -76,28 +78,37 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Startup migration error: {e}")
 
-    # 2. Start background order expiration task
-    expiration_task = asyncio.create_task(order_expiration_worker())
+    expiration_task = None
+    question_sync_task = None
 
-    # 3. Start periodic question sync worker
-    question_sync_task = asyncio.create_task(periodic_question_sync_worker())
+    if not IS_VERCEL:
+        # 2. Start background order expiration task
+        expiration_task = asyncio.create_task(order_expiration_worker())
 
-    # 4. Attempt to initialize MTProto client if stored session exists
-    try:
-        mtproto = get_mtproto_manager()
-        asyncio.create_task(mtproto.initialize_and_start())
-    except Exception as e:
-        logger.error(f"MTProto startup initialization error: {e}")
+        # 3. Start periodic question sync worker
+        question_sync_task = asyncio.create_task(periodic_question_sync_worker())
+
+        # 4. Attempt to initialize MTProto client if stored session exists
+        try:
+            mtproto = get_mtproto_manager()
+            asyncio.create_task(mtproto.initialize_and_start())
+        except Exception as e:
+            logger.error(f"MTProto startup initialization error: {e}")
+    else:
+        logger.info("Running in Vercel Serverless environment. Long-running daemons disabled.")
 
     yield
 
     # Teardown
-    expiration_task.cancel()
-    question_sync_task.cancel()
-    try:
-        await get_mtproto_manager().disconnect()
-    except Exception:
-        pass
+    if expiration_task:
+        expiration_task.cancel()
+    if question_sync_task:
+        question_sync_task.cancel()
+    if not IS_VERCEL:
+        try:
+            await get_mtproto_manager().disconnect()
+        except Exception:
+            pass
 
 
 app = FastAPI(

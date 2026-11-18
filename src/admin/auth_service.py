@@ -35,11 +35,10 @@ MAX_OTP_ATTEMPTS = 5
 _login_failures: Dict[str, list] = {}
 
 
+from src.db_adapter import get_db_connection
+
 def _get_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON;")
-    return conn
+    return get_db_connection(DB_PATH)
 
 
 def ensure_admin_user_exists() -> Dict[str, Any]:

@@ -20,11 +20,9 @@ class StagingManager:
         self.backup_dir = backup_dir
         os.makedirs(self.backup_dir, exist_ok=True)
 
-    def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON;")
-        return conn
+    def _get_connection(self):
+        from src.db_adapter import get_db_connection
+        return get_db_connection(self.db_path)
 
     def create_database_backup(self) -> str:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

@@ -19,11 +19,10 @@ DB_PATH = os.getenv("DB_PATH", "master_database.sqlite")
 ORDER_LIFETIME_MINUTES = 15
 
 
+from src.db_adapter import get_db_connection
+
 def _get_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON;")
-    return conn
+    return get_db_connection(DB_PATH)
 
 
 def get_active_monitoring_card() -> Optional[Dict[str, Any]]:

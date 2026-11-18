@@ -6,6 +6,7 @@ Safely adds required entities, indexes, and seed records without modifying or de
 import sqlite3
 import logging
 from datetime import datetime
+from src.db_adapter import is_turso_enabled, get_db_connection
 
 logger = logging.getLogger(__name__)
 
@@ -273,6 +274,10 @@ CREATE INDEX IF NOT EXISTS idx_staged_slot ON staged_questions(source_code, sour
 
 def run_migrations(db_path: str = "master_database.sqlite"):
     """Applies all schema migrations and seeds initial required records."""
+    if is_turso_enabled():
+        logger.info("Turso cloud database is enabled; skipping local SQLite file migrations.")
+        return
+
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA foreign_keys = ON;")
     

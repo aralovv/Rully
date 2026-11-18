@@ -66,10 +66,8 @@ class MTProtoManager:
         return cls._instance
 
     def _get_connection(self):
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON;")
-        return conn
+        from src.db_adapter import get_db_connection
+        return get_db_connection(DB_PATH)
 
     def get_stored_session(self) -> Optional[str]:
         """Retrieves and decrypts the stored session string from mtproto_accounts table."""
