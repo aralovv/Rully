@@ -22,7 +22,7 @@ def serialize_question(q: QuestionItem, is_bookmarked: bool = False, include_cor
     if q.has_image and q.image_path:
         filename = os.path.basename(q.image_path.replace("\\", "/"))
         cdn_base = os.getenv("IMAGE_CDN_BASE_URL", "").rstrip("/")
-        image_url = f"{cdn_base}/images/{filename}" if cdn_base else f"/images/{filename}"
+        image_url = f"{cdn_base}/{filename}" if cdn_base else f"/images/{filename}"
 
     correct_answer_text = None
     if include_correct and q.correct_option_key:

@@ -18,7 +18,10 @@ class StagingManager:
     def __init__(self, db_path: str = "master_database.sqlite", backup_dir: str = "data/backups"):
         self.db_path = db_path
         self.backup_dir = backup_dir
-        os.makedirs(self.backup_dir, exist_ok=True)
+        try:
+            os.makedirs(self.backup_dir, exist_ok=True)
+        except OSError:
+            pass
 
     def _get_connection(self):
         from src.db_adapter import get_db_connection

@@ -1,0 +1,18 @@
+# Vercel Ignore
+*.sqlite*
+cloudflared.exe
+backups/
+audit_screenshots/
+.pytest_cache/
+scratch/
+tests/
+*.csv
+*.xlsx
+questions.json
+remediation_diagnostics_raw.json
+audit_diagnostics_raw.json
+*.session*
+.git/
+.env*
+images/
+data/

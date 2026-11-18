@@ -11,8 +11,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 ORIGINAL_IMG_DIR = "data/images/original"
 NORMALIZED_IMG_DIR = "data/images/normalized"
 
-os.makedirs(ORIGINAL_IMG_DIR, exist_ok=True)
-os.makedirs(NORMALIZED_IMG_DIR, exist_ok=True)
+try:
+    os.makedirs(ORIGINAL_IMG_DIR, exist_ok=True)
+    os.makedirs(NORMALIZED_IMG_DIR, exist_ok=True)
+except OSError:
+    pass
 
 class ImageManager:
     def __init__(self, conn: sqlite3.Connection):
