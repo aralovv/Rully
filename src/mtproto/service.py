@@ -142,6 +142,18 @@ class MTProtoManager:
             self.connection_status = "CONNECTED"
             self.last_error = None
 
+            try:
+                with self._get_connection() as conn:
+                    c = conn.cursor()
+                    c.execute("""
+                        UPDATE mtproto_accounts 
+                        SET connection_status = 'CONNECTED', tg_username = ?, tg_first_name = ?, last_error = NULL, updated_at = ?
+                        WHERE phone_number = ?
+                    """, (me.username, me.first_name, datetime.utcnow().isoformat(), self.phone_number or "default"))
+                    conn.commit()
+            except Exception as dbe:
+                logger.warning(f"Could not update mtproto status in db: {dbe}")
+
             self._register_message_handlers()
             logger.info(f"MTProto client connected as {me.first_name} (@{me.username})")
             return True
@@ -332,6 +344,33 @@ class MTProtoManager:
     def get_status(self) -> Dict[str, Any]:
         """Returns the current connection and health diagnostics."""
         active_orders = get_active_orders_count()
+
+        # If in-memory account_info is empty, populate from persistent database
+        if not self.account_info:
+            try:
+                with self._get_connection() as conn:
+                    c = conn.cursor()
+                    c.execute("SELECT phone_number, tg_user_id, tg_username, tg_first_name, connection_status, last_event_at, last_payment_at, last_error FROM mtproto_accounts ORDER BY id DESC LIMIT 1")
+                    row = c.fetchone()
+                    if row:
+                        self.phone_number = row["phone_number"]
+                        self.account_info = {
+                            "phone": row["phone_number"],
+                            "user_id": row["tg_user_id"],
+                            "username": row["tg_username"],
+                            "first_name": row["tg_first_name"]
+                        }
+                        if self.connection_status == "DISCONNECTED" and row["connection_status"]:
+                            self.connection_status = row["connection_status"]
+                        if not self.last_event_at and row["last_event_at"]:
+                            self.last_event_at = row["last_event_at"]
+                        if not self.last_payment_at and row["last_payment_at"]:
+                            self.last_payment_at = row["last_payment_at"]
+                        if not self.last_error and row["last_error"]:
+                            self.last_error = row["last_error"]
+            except Exception as e:
+                logger.error(f"Error fetching mtproto status from database: {e}")
+
         return {
             "connection_status": self.connection_status,
             "account_info": self.account_info,

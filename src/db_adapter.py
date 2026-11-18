@@ -24,6 +24,15 @@ except ImportError:
     HAS_LIBSQL = False
 
 
+_shared_turso_client = None
+
+def get_shared_turso_client(url: str, token: str):
+    global _shared_turso_client
+    if _shared_turso_client is None or getattr(_shared_turso_client, "closed", False):
+        _shared_turso_client = libsql_client.create_client_sync(url=url, auth_token=token)
+    return _shared_turso_client
+
+
 class TursoRow:
     """Drop-in replacement for sqlite3.Row wrapping Turso result rows."""
     __slots__ = ("_raw", "_columns", "_dict")
@@ -83,19 +92,33 @@ class TursoCursor:
         
         try:
             res = self._client.execute(clean_sql, args)
-            self._current_result = res
-            self._row_idx = 0
-            self.lastrowid = getattr(res, "last_insert_rowid", None)
-            self.rowcount = getattr(res, "rows_affected", -1)
-            
-            if hasattr(res, "columns") and res.columns:
-                self.description = tuple((col, None, None, None, None, None, None) for col in res.columns)
-            else:
-                self.description = None
-            return self
         except Exception as e:
-            logger.error(f"Turso execute error on [{clean_sql}]: {e}")
-            raise
+            err_msg = str(e).lower()
+            if any(term in err_msg for term in ["connection", "closed", "socket", "timeout", "reset", "broken"]):
+                logger.warning(f"Turso client error ({e}), refreshing persistent connection and retrying...")
+                global _shared_turso_client
+                try:
+                    if _shared_turso_client and not getattr(_shared_turso_client, "closed", False):
+                        _shared_turso_client.close()
+                except Exception:
+                    pass
+                _shared_turso_client = libsql_client.create_client_sync(url=TURSO_URL, auth_token=TURSO_TOKEN)
+                self._client = _shared_turso_client
+                res = self._client.execute(clean_sql, args)
+            else:
+                logger.error(f"Turso execute error on [{clean_sql}]: {e}")
+                raise
+
+        self._current_result = res
+        self._row_idx = 0
+        self.lastrowid = getattr(res, "last_insert_rowid", None)
+        self.rowcount = getattr(res, "rows_affected", -1)
+        
+        if hasattr(res, "columns") and res.columns:
+            self.description = tuple((col, None, None, None, None, None, None) for col in res.columns)
+        else:
+            self.description = None
+        return self
 
     def executemany(self, sql: str, seq_of_params: List[Union[List, Tuple]]):
         clean_sql = sql.strip().rstrip(";")
@@ -130,13 +153,17 @@ class TursoCursor:
 
 
 class TursoConnection:
-    """Connection wrapper for Turso libSQL client providing sqlite3-like interface."""
-    def __init__(self, url: str, token: str):
+    """Connection wrapper for Turso libSQL client providing sqlite3-like interface with persistent connection pooling."""
+    def __init__(self, url: str, token: str, shared: bool = True):
         if not HAS_LIBSQL:
             raise RuntimeError("libsql-client package is required to connect to Turso.")
         self.url = url
         self.token = token
-        self._client = libsql_client.create_client_sync(url=url, auth_token=token)
+        self._shared = shared
+        if shared:
+            self._client = get_shared_turso_client(url, token)
+        else:
+            self._client = libsql_client.create_client_sync(url=url, auth_token=token)
         self.row_factory = None
 
     def cursor(self) -> TursoCursor:
@@ -157,7 +184,8 @@ class TursoConnection:
         pass
 
     def close(self):
-        if hasattr(self, "_client") and self._client and not self._client.closed:
+        # Keep persistent pooled connection open across queries; only close if dedicated
+        if not self._shared and hasattr(self, "_client") and self._client and not self._client.closed:
             self._client.close()
 
     def __enter__(self):

@@ -54,6 +54,9 @@ def serialize_question(q: QuestionItem, is_bookmarked: bool = False, include_cor
     }
 
 # 1. Categories
+_categories_cache: Dict[str, Any] = {}
+_categories_cache_time: Dict[str, float] = {}
+
 @router.get("/categories")
 async def list_categories(
     lang: Optional[str] = Query(None),
@@ -63,7 +66,15 @@ async def list_categories(
     if selected_lang not in ["uz_latn", "uz_cyrl", "ru"]:
         selected_lang = "uz_latn"
     
-    categories = engine.get_categories(selected_lang)
+    now = time.time()
+    last_cached = _categories_cache_time.get(selected_lang, 0.0)
+    if selected_lang in _categories_cache and (now - last_cached) < 600:
+        categories = _categories_cache[selected_lang]
+    else:
+        categories = engine.get_categories(selected_lang)
+        _categories_cache[selected_lang] = categories
+        _categories_cache_time[selected_lang] = now
+
     return {
         "language": selected_lang,
         "count": len(categories),

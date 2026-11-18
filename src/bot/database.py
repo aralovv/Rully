@@ -387,25 +387,54 @@ class BotDatabase:
             c.execute("SELECT * FROM telegram_users WHERE user_id = ?", (user_id,))
             row = c.fetchone()
             if row:
-                c.execute("""
-                UPDATE telegram_users
-                SET username = ?, first_name = ?, last_name = ?, last_active_at = ?
-                WHERE user_id = ?
-                """, (username, first_name, last_name, now_ts, user_id))
-                conn.commit()
-                c.execute("SELECT * FROM telegram_users WHERE user_id = ?", (user_id,))
-                user_dict = dict(c.fetchone())
-                user_dict["subscription"] = self.get_user_subscription(user_id)
+                user_dict = dict(row)
+                # Compute active subscription directly from cached user columns
+                is_pro = bool(user_dict.get("is_pro", 0))
+                sub_exp = user_dict.get("subscription_expires_at")
+                if is_pro and sub_exp and sub_exp > now_ts:
+                    user_dict["subscription"] = {
+                        "is_pro": True,
+                        "tier": user_dict.get("subscription_tier", "pro"),
+                        "expires_at": sub_exp
+                    }
+                else:
+                    user_dict["subscription"] = {
+                        "is_pro": False,
+                        "tier": "free",
+                        "expires_at": None
+                    }
+
+                # Throttle last_active_at updates to once every 5 minutes to avoid redundant DB roundtrips
+                last_act = user_dict.get("last_active_at")
+                needs_update = False
+                if not last_act:
+                    needs_update = True
+                else:
+                    try:
+                        diff = (datetime.utcnow() - datetime.fromisoformat(last_act.replace("Z", ""))).total_seconds()
+                        if diff > 300:
+                            needs_update = True
+                    except Exception:
+                        needs_update = True
+
+                if needs_update:
+                    c.execute("""
+                    UPDATE telegram_users
+                    SET username = COALESCE(?, username), first_name = COALESCE(?, first_name),
+                        last_name = COALESCE(?, last_name), last_active_at = ?
+                    WHERE user_id = ?
+                    """, (username, first_name, last_name, now_ts, user_id))
+                    user_dict["last_active_at"] = now_ts
+
                 return user_dict
             else:
                 c.execute("""
                 INSERT INTO telegram_users (user_id, username, first_name, last_name, language, is_language_selected, is_pro, subscription_tier, created_at, last_active_at)
                 VALUES (?, ?, ?, ?, ?, 0, 0, 'free', ?, ?)
                 """, (user_id, username, first_name, last_name, default_lang, now_ts, now_ts))
-                conn.commit()
                 c.execute("SELECT * FROM telegram_users WHERE user_id = ?", (user_id,))
                 user_dict = dict(c.fetchone())
-                user_dict["subscription"] = self.get_user_subscription(user_id)
+                user_dict["subscription"] = {"is_pro": False, "tier": "free", "expires_at": None}
                 return user_dict
 
     def set_user_language(self, user_id: int, language: str) -> bool:

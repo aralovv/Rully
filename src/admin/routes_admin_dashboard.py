@@ -27,6 +27,7 @@ async def get_dashboard_kpis(current_admin: dict = Depends(get_current_admin)):
     """
     Returns 10 real database-backed KPI metrics for the executive overview.
     All monetary amounts are represented in Uzbek So'm (UZS).
+    Optimized to execute as a single atomic batch query for sub-second latency.
     """
     expire_stale_orders()
     now_dt = datetime.utcnow()
@@ -34,60 +35,48 @@ async def get_dashboard_kpis(current_admin: dict = Depends(get_current_admin)):
     today_str = now_dt.strftime("%Y-%m-%d")
     month_prefix = now_dt.strftime("%Y-%m")
 
+    sql = """
+    SELECT
+        (SELECT COUNT(*) FROM telegram_users) AS total_users,
+        (SELECT COUNT(*) FROM telegram_users WHERE is_pro = 1 AND subscription_expires_at IS NOT NULL AND subscription_expires_at > ?) AS active_subscribers,
+        (SELECT COUNT(*) FROM telegram_users WHERE created_at >= ?) AS new_users_today,
+        (SELECT COUNT(*) FROM user_subscriptions WHERE created_at >= ?) AS subscriptions_today,
+        (SELECT COUNT(*) FROM payment_transactions) AS total_successful_payments,
+        (SELECT COALESCE(SUM(amount_uzs), 0) FROM payment_transactions) AS total_revenue_uzs,
+        (SELECT COALESCE(SUM(amount_uzs), 0) FROM payment_transactions WHERE created_at >= ?) AS today_revenue_uzs,
+        (SELECT COALESCE(SUM(amount_uzs), 0) FROM payment_transactions WHERE created_at LIKE ?) AS month_revenue_uzs,
+        (SELECT COUNT(*) FROM telegram_users WHERE is_pro = 0 AND subscription_expires_at IS NOT NULL AND subscription_expires_at <= ?) AS expired_subscriptions,
+        (SELECT COUNT(*) FROM payment_orders WHERE status = 'PENDING' AND expires_at > ?) AS pending_orders,
+        (SELECT COUNT(*) FROM unmatched_payments WHERE status = 'UNRESOLVED') AS unmatched_payments,
+        (SELECT COUNT(*) FROM payment_review_cases WHERE status = 'PENDING') AS review_cases
+    """
+    params = [
+        now_str,            # active_subscribers
+        today_str,          # new_users_today
+        today_str,          # subscriptions_today
+        today_str,          # today_revenue_uzs
+        f"{month_prefix}%", # month_revenue_uzs
+        now_str,            # expired_subscriptions
+        now_str             # pending_orders
+    ]
+
     with _get_connection() as conn:
         c = conn.cursor()
+        c.execute(sql, params)
+        row = c.fetchone()
 
-        # 1. Total registered users
-        c.execute("SELECT COUNT(*) FROM telegram_users")
-        total_users = c.fetchone()[0]
-
-        # 2. Total active subscribers
-        c.execute("""
-            SELECT COUNT(*) FROM telegram_users 
-            WHERE is_pro = 1 AND subscription_expires_at IS NOT NULL AND subscription_expires_at > ?
-        """, (now_str,))
-        active_subscribers = c.fetchone()[0]
-
-        # 3. New users today
-        c.execute("SELECT COUNT(*) FROM telegram_users WHERE created_at >= ?", (today_str,))
-        new_users_today = c.fetchone()[0]
-
-        # 4. Active subscriptions today
-        c.execute("SELECT COUNT(*) FROM user_subscriptions WHERE created_at >= ?", (today_str,))
-        subscriptions_today = c.fetchone()[0]
-
-        # 5. Total successful payments
-        c.execute("SELECT COUNT(*), COALESCE(SUM(amount_uzs), 0) FROM payment_transactions")
-        tot_pay_row = c.fetchone()
-        total_successful_payments = tot_pay_row[0]
-        total_revenue_uzs = tot_pay_row[1]
-
-        # 6. Today's revenue
-        c.execute("SELECT COALESCE(SUM(amount_uzs), 0) FROM payment_transactions WHERE created_at >= ?", (today_str,))
-        today_revenue_uzs = c.fetchone()[0]
-
-        # 7. Revenue this month
-        c.execute("SELECT COALESCE(SUM(amount_uzs), 0) FROM payment_transactions WHERE created_at LIKE ?", (f"{month_prefix}%",))
-        month_revenue_uzs = c.fetchone()[0]
-
-        # 8. Expired subscriptions
-        c.execute("""
-            SELECT COUNT(*) FROM telegram_users 
-            WHERE is_pro = 0 AND subscription_expires_at IS NOT NULL AND subscription_expires_at <= ?
-        """, (now_str,))
-        expired_subscriptions = c.fetchone()[0]
-
-        # 9. Pending payment orders
-        c.execute("SELECT COUNT(*) FROM payment_orders WHERE status = 'PENDING' AND expires_at > ?", (now_str,))
-        pending_orders = c.fetchone()[0]
-
-        # 10. Failed or unmatched payments
-        c.execute("SELECT COUNT(*) FROM unmatched_payments WHERE status = 'UNRESOLVED'")
-        unmatched_payments = c.fetchone()[0]
-
-        # Payment review cases count
-        c.execute("SELECT COUNT(*) FROM payment_review_cases WHERE status = 'PENDING'")
-        review_cases = c.fetchone()[0]
+        total_users = row[0]
+        active_subscribers = row[1]
+        new_users_today = row[2]
+        subscriptions_today = row[3]
+        total_successful_payments = row[4]
+        total_revenue_uzs = row[5]
+        today_revenue_uzs = row[6]
+        month_revenue_uzs = row[7]
+        expired_subscriptions = row[8]
+        pending_orders = row[9]
+        unmatched_payments = row[10]
+        review_cases = row[11]
 
     return {
         "ok": True,

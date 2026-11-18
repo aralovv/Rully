@@ -72,12 +72,13 @@ IS_VERCEL = bool(os.getenv("VERCEL"))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 1. Run migrations and database schema updates
-    try:
-        run_migrations()
-        ensure_admin_user_exists()
-    except Exception as e:
-        logger.error(f"Startup migration error: {e}")
+    # 1. Run migrations and database schema updates only on local development
+    if not IS_VERCEL:
+        try:
+            run_migrations()
+            ensure_admin_user_exists()
+        except Exception as e:
+            logger.error(f"Startup migration error: {e}")
 
     expiration_task = None
     question_sync_task = None
