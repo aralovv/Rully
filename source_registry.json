@@ -1,0 +1,46 @@
+[
+  {
+    "id": 1,
+    "source_code": "yesprava",
+    "source_name": "YesPrava",
+    "source_url": "https://yesprava.uz",
+    "source_type": "ONLINE_PREPARATION_PORTAL",
+    "authority_level": "THIRD_PARTY_CURATED",
+    "access_method": "NEXTJS_PRE_RENDERED_DATA_API",
+    "terms_status": "PUBLIC_ACCESSIBLE_ROBOTS_PERMITTED",
+    "created_at": "2026-11-16T09:27:26.927344"
+  },
+  {
+    "id": 2,
+    "source_code": "propdd",
+    "source_name": "ProPDD",
+    "source_url": "https://propdd.uz",
+    "source_type": "ONLINE_PREPARATION_PORTAL",
+    "authority_level": "THIRD_PARTY_CURATED",
+    "access_method": "STATIC_JS_DATA_BUNDLE",
+    "terms_status": "PUBLIC_ACCESSIBLE_FRONTEND_DATA",
+    "created_at": "2026-11-16T09:27:26.927344"
+  },
+  {
+    "id": 3,
+    "source_code": "yhq_test",
+    "source_name": "YHQ-Test",
+    "source_url": "https://yhq-test.uz",
+    "source_type": "ONLINE_PREPARATION_PORTAL",
+    "authority_level": "THIRD_PARTY_CURATED",
+    "access_method": "SERVER_RENDERED_HTML",
+    "terms_status": "PUBLIC_ACCESSIBLE_SITEMAP",
+    "created_at": "2026-11-16T09:27:26.927344"
+  },
+  {
+    "id": 4,
+    "source_code": "lex_uz",
+    "source_name": "LexUZ National Legislation Database",
+    "source_url": "https://lex.uz",
+    "source_type": "OFFICIAL_STATE_LEGISLATION_PORTAL",
+    "authority_level": "STATUTORY_AUTHORITY",
+    "access_method": "LEGAL_DOCUMENTATION_RESOLUTION_172",
+    "terms_status": "PUBLIC_LEGAL_RESOURCE",
+    "created_at": "2026-11-16T09:27:26.927344"
+  }
+]

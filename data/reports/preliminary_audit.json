@@ -1,0 +1,164 @@
+{
+  "yhq_test": {
+    "base_url": "https://yhq-test.uz",
+    "robots_status": 200,
+    "robots_preview": "User-Agent: *\nAllow: /\nDisallow: /api/\n\nHost: https://yhq-test.uz\nSitemap: https://yhq-test.uz/sitemap.xml\nSitemap: https://yhq-test.uz/image-sitemap.xml\n",
+    "home_status": 200,
+    "final_url": "https://yhq-test.uz/",
+    "title": "YHQ Test 2026 — Yoʻl harakati qoidalari testlari onlayn",
+    "scripts_sample": [
+      "/_next/static/chunks/fd9d1056-773cd23ce4bef78f.js",
+      "/_next/static/chunks/117-00e4a9885ca3d789.js",
+      "/_next/static/chunks/main-app-f253d4cd529f9ec6.js",
+      "/_next/static/chunks/972-269f8f04009f86ae.js",
+      "/_next/static/chunks/376-f094772d1fccd6d5.js"
+    ],
+    "internal_links_sample": [
+      "/",
+      "/",
+      "/themes",
+      "/signs",
+      "/quiz",
+      "/browse",
+      "/mistakes",
+      "/",
+      "/themes",
+      "/signs"
+    ],
+    "detected_tech": [
+      "Next.js"
+    ]
+  },
+  "propdd": {
+    "base_url": "https://propdd.uz",
+    "robots_status": 200,
+    "robots_preview": "User-agent: *\nDisallow: /api/\nDisallow: /admin\nSitemap: https://propdd.uz/sitemap.xml\n",
+    "home_status": 200,
+    "final_url": "https://propdd.uz/",
+    "title": "PDD UZ â YHQ (PDD) imtihoniga onlayn tayyorgarlik | Ð¢ÐµÑÑÑ ÐÐÐ Ð£Ð·Ð±ÐµÐºÐ¸ÑÑÐ°Ð½Ð°",
+    "scripts_sample": [
+      "auth.js"
+    ],
+    "internal_links_sample": [
+      "/",
+      "/trainer",
+      "/theory/",
+      "/articles/",
+      "/search",
+      "/trainer",
+      "/theory/",
+      "/theory/",
+      "/articles/"
+    ],
+    "detected_tech": []
+  },
+  "pravaonline": {
+    "base_url": "https://pravaonline.uz",
+    "robots_status": 200,
+    "robots_preview": "# Prava Online â https://pravaonline.uz\n# Haydovchilik guvohnomasi imtihoniga tayyorlanish platformasi\n\nUser-agent: Googlebot\nAllow: /\nAllow: /try-exam\nAllow: /about\nAllow: /partners\nAllow: /pricing\nAllow: /downloads\nAllow: /contact\nAllow: /faq\nAllow: /terms\nAllow: /privacy\nDisallow: /auth/forgot-",
+    "home_status": 200,
+    "final_url": "https://pravaonline.uz/",
+    "title": "Prava Test â Haydovchilik Guvohnomasi Imtihoniga Online Tayyorgarlik | Prava Online",
+    "scripts_sample": [
+      "/assets/index-BgNRiWuQ.js",
+      "/registerSW.js"
+    ],
+    "internal_links_sample": [],
+    "detected_tech": []
+  },
+  "avtodars": {
+    "base_url": "https://avtodars.uz",
+    "robots_status": 200,
+    "robots_preview": "# As a condition of accessing this website, you agree to abide by the following\n# content signals:\n\n# (a)  If a content-signal = yes, you may collect content for the corresponding\n#      use.\n# (b)  If a content-signal = no, you may not collect content for the\n#      corresponding use.\n# (c)  If the",
+    "home_status": 200,
+    "final_url": "https://avtodars.uz/",
+    "title": "AvtoDars â Haydovchilik imtihoniga aqlli tayyorgarlik",
+    "scripts_sample": [
+      "https://cdn.tailwindcss.com"
+    ],
+    "internal_links_sample": [],
+    "detected_tech": []
+  },
+  "cartest": {
+    "base_url": "https://cartest.uz",
+    "robots_status": 200,
+    "robots_preview": "# As a condition of accessing this website, you agree to abide by the following\n# content signals:\n\n# (a)  If a Content-Signal = yes, you may collect content for the corresponding\n#      use.\n# (b)  If a Content-Signal = no, you may not collect content for the\n#      corresponding use.\n# (c)  If the",
+    "home_status": 200,
+    "final_url": "https://cartest.uz/",
+    "title": "cartest.uz — Haydovchilik nazariy imtihoni | O'zbekiston",
+    "scripts_sample": [
+      "/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"
+    ],
+    "internal_links_sample": [
+      "/",
+      "/maktablar",
+      "/faq",
+      "/login",
+      "/register",
+      "/register",
+      "/maktablar",
+      "/register",
+      "/maktab",
+      "/register"
+    ],
+    "detected_tech": []
+  },
+  "osonprava": {
+    "base_url": "https://osonprava.uz",
+    "robots_status": 200,
+    "robots_preview": "User-Agent: *\nAllow: /\n\nUser-Agent: GPTBot\nAllow: /\n\nUser-Agent: ChatGPT-User\nAllow: /\n\nUser-Agent: ClaudeBot\nAllow: /\n\nUser-Agent: Claude-Web\nAllow: /\n\nUser-Agent: Google-Extended\nAllow: /\n\nUser-Agent: Applebot-Extended\nAllow: /\n\nUser-Agent: PerplexityBot\nAllow: /\n\nUser-Agent: Amazonbot\nAllow: /\n\nU",
+    "home_status": 200,
+    "final_url": "https://osonprava.uz/uz",
+    "title": "Oson Prava — Haydovchilik guvohnomasi testlari",
+    "scripts_sample": [
+      "/_next/static/chunks/4a45ebbfd7b3f3a2.js?dpl=dpl_39CirHDAYXNMXaCHrDAAc32MFKze",
+      "/_next/static/chunks/0c7af9862d707fa5.js?dpl=dpl_39CirHDAYXNMXaCHrDAAc32MFKze",
+      "/_next/static/chunks/c617811a1525908c.js?dpl=dpl_39CirHDAYXNMXaCHrDAAc32MFKze",
+      "/_next/static/chunks/9df3b67b6061ea9e.js?dpl=dpl_39CirHDAYXNMXaCHrDAAc32MFKze",
+      "/_next/static/chunks/turbopack-7d8327bf42bd3f02.js?dpl=dpl_39CirHDAYXNMXaCHrDAAc32MFKze"
+    ],
+    "internal_links_sample": [
+      "/uz",
+      "/uz/savollar",
+      "/uz/blog",
+      "/uz",
+      "/uz/savollar",
+      "/privacy-policy",
+      "/terms-of-use"
+    ],
+    "detected_tech": [
+      "Next.js",
+      "React"
+    ]
+  },
+  "yesprava": {
+    "base_url": "https://yesprava.uz",
+    "robots_status": 200,
+    "robots_preview": "# YesPrava — search engines and AI assistants are welcome on public pages.\nUser-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /quiz\nDisallow: /result\nDisallow: /profil\nAllow: /api/image/\n\n# AI crawlers / answer engines (explicitly allowed)\nUser-agent: GPTBot\nAllow: /\nUser-agent: OAI-SearchBot\nAllow: /",
+    "home_status": 200,
+    "final_url": "https://yesprava.uz/",
+    "title": "YesPrava — YHQ imtihon savollari 2026, prava testi onlayn",
+    "scripts_sample": [
+      "https://telegram.org/js/telegram-web-app.js",
+      "/_next/static/chunks/polyfills-42372ed130431b0a.js",
+      "/_next/static/chunks/webpack-ee7e63bc15b31913.js",
+      "/_next/static/chunks/framework-64ad27b21261a9ce.js",
+      "/_next/static/chunks/main-0789e78497cf4faf.js"
+    ],
+    "internal_links_sample": [
+      "/privacy",
+      "/delete-account",
+      "/yhq-savollari",
+      "/yol-belgilari",
+      "/yhq-qoidalari",
+      "/jarimalar",
+      "/yodlash-kerak",
+      "/blog",
+      "/ru/bilety-pdd",
+      "/kr/yhq-savollari"
+    ],
+    "detected_tech": [
+      "Next.js"
+    ]
+  }
+}

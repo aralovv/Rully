@@ -1,0 +1,47 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# C extensions / Binaries
+*.obj
+*.exe
+cloudflared.exe
+
+# Environments and Secrets (NEVER COMMIT SECRETS)
+.env
+.env.*
+!.env.example
+*.session
+*.session-journal
+data/mtproto/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+audit_screenshots/
+
+# Temporary / Scratch scripts & logs
+scratch/
+*.log
+
+# Duplicate root images directory (active files reside in data/images)
+/images/
+
+# Temporary SQLite and Backups
+backups/
+data/backups/
+data/master_database.sqlite
+staging_master_database.sqlite
+working_master_database.sqlite
+bot_database.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini

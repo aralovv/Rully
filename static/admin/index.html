@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="uz" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>RULLY | Boshqaruv Paneli & MTProto To‘lov Tizimi</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/admin/admin.css?v=2.3.1">
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans antialiased min-h-screen">
+
+  <!-- ================= AUTH CONTAINER (LOGIN & OTP) ================= -->
+  <div id="auth-container" class="auth-wrapper" style="display: none;">
+    <div class="auth-card">
+      <div class="auth-header">
+        <div class="auth-logo-badge">R</div>
+        <h1 class="auth-title">RULLY ADMIN</h1>
+        <p class="auth-subtitle">Xavfsiz boshqaruv paneliga kirish</p>
+      </div>
+
+      <!-- Step 1: Login Form -->
+      <form id="form-login" class="space-y-4">
+        <div class="form-group">
+          <label class="form-label">Administrator login</label>
+          <input type="text" id="login-username" class="form-input" placeholder="Anvarjon" value="Anvarjon" required autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Parol</label>
+          <input type="password" id="login-password" class="form-input" placeholder="••••••••••••" required autocomplete="current-password">
+        </div>
+        <button type="submit" id="btn-login-submit" class="btn btn-primary btn-block">
+          <span>Kirish</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="sm-icon"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </button>
+      </form>
+
+      <!-- Step 2: OTP Verification Form -->
+      <form id="form-otp" class="space-y-4" style="display: none;">
+        <div class="otp-banner">
+          <div class="otp-icon">🔒</div>
+          <p class="text-sm">Telegram hisobingizga (<b id="otp-tg-masked">***9701</b>) bir martalik 6 xonali tasdiqlash kodi yuborildi.</p>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Bir martalik kod (OTP)</label>
+          <input type="text" id="otp-input" class="form-input font-mono text-center tracking-widest text-lg" placeholder="123456" maxlength="6" pattern="\d{6}" required autocomplete="one-time-code">
+          <div class="otp-timer text-xs text-muted mt-2 text-center">Kod amal qilish muddati: <span id="otp-countdown" class="font-mono text-emerald">05:00</span></div>
+        </div>
+        <button type="submit" id="btn-otp-submit" class="btn btn-primary btn-block">Tasdiqlash & Kirish</button>
+        <button type="button" id="btn-otp-back" class="btn btn-ghost btn-block text-xs mt-2">← Ortga qaytish</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================= MAIN ADMIN COCKPIT LAYOUT ================= -->
+  <div id="app-container" class="cockpit-layout" style="display: none;">
+    
+    <!-- DESKTOP LEFT SIDEBAR (Hidden on mobile) -->
+    <aside class="sidebar desktop-only">
+      <div class="sidebar-brand">
+        <div class="brand-logo">R</div>
+        <div class="brand-info">
+          <span class="brand-title">RULLY</span>
+          <span class="brand-sub">Admin Cockpit</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a href="#overview" class="nav-item active" data-view="overview">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          <span>Asosiy Panel</span>
+        </a>
+
+        <a href="#payments" class="nav-item" data-view="payments">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+          <span>To‘lovlar & Buyurtmalar</span>
+          <span class="nav-badge" id="badge-nav-orders" style="display:none;">0</span>
+        </a>
+
+        <a href="#users" class="nav-item" data-view="users">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span>Foydalanuvchilar</span>
+        </a>
+
+        <a href="#broadcast" class="nav-item" data-view="broadcast">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon"><path d="M22 2L11 13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          <span>Xabarnoma</span>
+        </a>
+
+        <a href="#settings" class="nav-item" data-view="settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span>Sozlamalar & Karta</span>
+          <span class="status-dot-mini" id="mtproto-status-dot-desktop"></span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="admin-profile-pill">
+          <div class="admin-avatar">A</div>
+          <div class="admin-meta">
+            <span class="admin-name" id="topbar-admin-name">Anvarjon</span>
+            <span class="admin-role">Super Admin</span>
+          </div>
+          <button id="btn-logout" class="btn-logout" title="Chiqish">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN CONTENT VIEWPORT -->
+    <main class="main-content">
+      
+      <!-- MOBILE / DESKTOP TOP STATUS BAR -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <div class="mobile-logo-mark mobile-only">R</div>
+          <h2 class="view-title" id="topbar-view-title">Asosiy Panel</h2>
+        </div>
+        <div class="topbar-right">
+          <div class="live-status-pill" id="topbar-mtproto-pill" onclick="switchView('settings')">
+            <span class="indicator-dot" id="topbar-mtproto-dot"></span>
+            <span id="topbar-mtproto-text">MTProto...</span>
+          </div>
+          <button id="btn-mobile-logout" class="btn-logout mobile-only" title="Chiqish" onclick="handleLogout()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- SCROLLABLE CONTENT BODY (With padding for mobile bottom bar) -->
+      <div class="content-body">
+
+        <!-- ================= VIEW 1: ASOSIY PANEL (DASHBOARD) ================= -->
+        <section id="view-overview" class="view-panel active">
+          
+          <!-- 4 REAL FINANCIAL KPI CARDS -->
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <div class="kpi-label">Foydalanuvchilar</div>
+              <div class="kpi-value font-mono" id="kpi-total-users">0</div>
+              <div class="kpi-sub"><span class="text-emerald" id="kpi-new-today">0 yangi</span> bugun</div>
+            </div>
+
+            <div class="kpi-card">
+              <div class="kpi-label">Faol PRO Obunachilar</div>
+              <div class="kpi-value font-mono text-emerald" id="kpi-active-subs">0</div>
+              <div class="kpi-sub">Bugun faollashgan: <span id="kpi-subs-today" class="font-bold">0</span></div>
+            </div>
+
+            <div class="kpi-card">
+              <div class="kpi-label">Bugungi Tushum</div>
+              <div class="kpi-value font-mono text-emerald" id="kpi-today-rev">0 UZS</div>
+              <div class="kpi-sub">Real tushum</div>
+            </div>
+
+            <div class="kpi-card">
+              <div class="kpi-label">Jami Tushum</div>
+              <div class="kpi-value font-mono" id="kpi-total-rev">0 UZS</div>
+              <div class="kpi-sub">Oylik: <span id="kpi-month-rev">0 UZS</span></div>
+            </div>
+          </div>
+
+          <!-- MTProto CONNECTION QUICK ACTION BANNER -->
+          <div class="mtproto-banner-card" id="ov-mtproto-banner">
+            <div class="mtproto-banner-left">
+              <div class="mtproto-banner-icon" id="ov-mtproto-icon">⚡</div>
+              <div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <h3 class="font-bold text-sm" id="ov-mtproto-title">Telegram MTProto</h3>
+                  <span class="badge" id="overview-mtproto-badge">Tekshirilmoqda</span>
+                </div>
+                <p class="text-xs text-muted mt-0.5" id="ov-mtproto-desc">
+                  Humocardbot xabarlarini avtomatik ushlash holati
+                </p>
+              </div>
+            </div>
+            <div class="mtproto-banner-right" id="ov-mtproto-action">
+              <button class="btn btn-primary btn-sm" onclick="switchView('settings')">
+                <span id="ov-mtproto-btn-txt">Akkauntni Ulash</span> →
+              </button>
+            </div>
+          </div>
+
+          <!-- RECENT ORDERS (MOBILE-FRIENDLY CARDS) -->
+          <div class="mt-6">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-bold text-sm text-slate-200">So‘nggi To‘lovlar & Buyurtmalar</h3>
+              <button class="btn btn-ghost btn-sm text-xs" onclick="switchView('payments')">Barchasi →</button>
+            </div>
+            
+            <div id="overview-orders-container" class="space-y-2.5">
+              <div class="text-center text-muted text-xs py-8">Hozircha buyurtmalar yo‘q</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= VIEW 2: TO‘LOVLAR & BUYURTMALAR ================= -->
+        <section id="view-payments" class="view-panel">
+          <div class="subtabs-bar">
+            <button class="subtab-btn active" data-ptab="ALL" onclick="setPaymentTab('ALL')">Barchasi</button>
+            <button class="subtab-btn" data-ptab="PAID" onclick="setPaymentTab('PAID')">Muvaffaqiyatli</button>
+            <button class="subtab-btn" data-ptab="PENDING" onclick="setPaymentTab('PENDING')">Kutilayotgan</button>
+            <button class="subtab-btn" data-ptab="REVIEW" onclick="setPaymentTab('REVIEW')">Ko‘rib chiqish</button>
+          </div>
+
+          <div class="filter-row mt-3">
+            <div class="search-box flex-1">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="payments-search-input" class="form-input search-input" placeholder="Buyurtma ID yoki Foydalanuvchi qidirish..." oninput="filterPaymentsList()">
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="loadPaymentsHub()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="sm-icon"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            </button>
+          </div>
+
+          <!-- LIST CONTAINER -->
+          <div id="payments-list-container" class="space-y-2.5 mt-3">
+            <div class="text-center text-muted text-xs py-8">Yuklanmoqda...</div>
+          </div>
+        </section>
+
+        <!-- ================= VIEW 3: FOYDALANUVCHILAR ================= -->
+        <section id="view-users" class="view-panel">
+          <div class="filter-row">
+            <div class="search-box flex-1">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="users-search-input" class="form-input search-input" placeholder="ID, username yoki ism..." oninput="debounceUserSearch()">
+            </div>
+            <select id="users-filter-sub" class="form-input form-select text-xs" onchange="loadUsers()">
+              <option value="all">Barchasi</option>
+              <option value="pro">Faqat PRO</option>
+              <option value="free">Bepul</option>
+              <option value="blocked">Bloklanganlar</option>
+            </select>
+            <button type="button" class="btn btn-sm btn-outline text-xs whitespace-nowrap" onclick="switchView('broadcast')" title="Foydalanuvchilarga xabarnoma yuborish">
+              📢 Xabarnoma
+            </button>
+          </div>
+
+          <!-- USERS CARDS CONTAINER -->
+          <div id="users-list-container" class="space-y-2.5 mt-3">
+            <div class="text-center text-muted text-xs py-8">Yuklanmoqda...</div>
+          </div>
+        </section>
+
+        <!-- ================= VIEW 4: XABARNOMA YUBORISH (BROADCAST) ================= -->
+        <section id="view-broadcast" class="view-panel">
+          <div class="card p-4 space-y-4">
+            
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h3 class="font-bold text-sm text-slate-100 flex items-center gap-2">
+                  <span class="text-base">📢</span> Telegram Foydalanuvchilariga Xabarnoma
+                </h3>
+                <p class="text-xs text-muted mt-0.5">Barcha yoki saralangan foydalanuvchilar botiga xabar yuborish</p>
+              </div>
+              <button type="button" class="btn btn-sm btn-ghost text-xs" onclick="loadBroadcastAudience()">
+                <span>Yangilash</span>
+              </button>
+            </div>
+
+            <!-- AUDIENCE TARGET SELECTOR -->
+            <div class="form-group">
+              <label class="form-label text-xs font-semibold text-slate-300">Maqsadli auditoriya:</label>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-1.5">
+                <label class="plan-radio-label broadcast-target-opt active" id="target-opt-all" onclick="selectBroadcastTarget('all')">
+                  <input type="radio" name="broadcast-target" value="all" checked style="display:none;">
+                  <div class="flex items-center justify-between w-full">
+                    <span class="font-bold text-xs">👥 Barchaga</span>
+                    <span class="badge badge-emerald text-xs" id="bc-count-all">...</span>
+                  </div>
+                </label>
+
+                <label class="plan-radio-label broadcast-target-opt" id="target-opt-free" onclick="selectBroadcastTarget('free')">
+                  <input type="radio" name="broadcast-target" value="free" style="display:none;">
+                  <div class="flex items-center justify-between w-full">
+                    <span class="font-bold text-xs">🆓 Bepul tarifdagilar</span>
+                    <span class="badge text-xs" id="bc-count-free">...</span>
+                  </div>
+                </label>
+
+                <label class="plan-radio-label broadcast-target-opt" id="target-opt-pro" onclick="selectBroadcastTarget('pro')">
+                  <input type="radio" name="broadcast-target" value="pro" style="display:none;">
+                  <div class="flex items-center justify-between w-full">
+                    <span class="font-bold text-xs">⭐ PRO obunachilar</span>
+                    <span class="badge badge-indigo text-xs" id="bc-count-pro">...</span>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <!-- MESSAGE COMPOSER -->
+            <div class="form-group">
+              <div class="flex items-center justify-between mb-1.5">
+                <label class="form-label text-xs font-semibold text-slate-300 mb-0">Xabar matni:</label>
+                <!-- Formatting Helper Buttons -->
+                <div class="flex gap-1">
+                  <button type="button" class="btn btn-xs btn-ghost text-xs font-bold" onclick="insertTag('b')" title="Qalin matn"><b>B</b></button>
+                  <button type="button" class="btn btn-xs btn-ghost text-xs italic" onclick="insertTag('i')" title="Kursiv matn"><i>I</i></button>
+                  <button type="button" class="btn btn-xs btn-ghost text-xs font-mono" onclick="insertTag('code')" title="Kod formati">&lt;&gt;</button>
+                  <button type="button" class="btn btn-xs btn-ghost text-xs line-through" onclick="insertTag('s')" title="O‘chirilgan matn"><s>S</s></button>
+                  <button type="button" class="btn btn-xs btn-ghost text-xs" onclick="insertLinkPrompt()" title="Havola qo‘shish">🔗</button>
+                </div>
+              </div>
+
+              <textarea id="broadcast-message-text" class="form-input text-xs font-sans" rows="5" placeholder="Foydalanuvchilarga yuboriladigan xabar matnini kiriting... HTML teglari (<b>, <i>, <code>, <a>) qo‘llab-quvvatlanadi." oninput="updateBroadcastPreview()"></textarea>
+              <div class="flex justify-between items-center text-xs text-muted mt-1">
+                <span>Telegram HTML formati qo‘llanadi</span>
+                <span id="broadcast-char-count">0 / 4000</span>
+              </div>
+            </div>
+
+            <!-- LIVE TELEGRAM PREVIEW -->
+            <div>
+              <label class="form-label text-xs font-semibold text-slate-300 mb-1.5">Telegramda ko‘rinishi (Jonli oldindan ko‘rish):</label>
+              <div class="tg-preview-bubble-wrap">
+                <div class="tg-preview-bubble">
+                  <div class="tg-preview-header">
+                    <span class="tg-preview-bot-name">RULLY Bot</span>
+                    <span class="tg-preview-time">Hozir</span>
+                  </div>
+                  <div class="tg-preview-body" id="broadcast-live-preview">
+                    <i>Xabar matni kiritilmagan...</i>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ACTION BUTTON & PROGRESS -->
+            <div class="pt-2">
+              <button type="button" id="btn-send-broadcast" class="btn btn-primary btn-block flex items-center justify-center gap-2" onclick="confirmAndSendBroadcast()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4"><path d="M22 2L11 13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                <span id="btn-broadcast-label">Xabarni Yuborish</span>
+              </button>
+            </div>
+
+            <!-- RECENT BROADCAST HISTORY -->
+            <div class="mt-4 border-t border-slate-800 pt-4">
+              <h4 class="font-bold text-xs text-slate-300 mb-2">So‘nggi yuborilgan xabarnomalar:</h4>
+              <div id="broadcast-history-list" class="space-y-2">
+                <div class="text-muted text-xs">Tarix yuklanmoqda...</div>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- ================= VIEW 4: MTProto & SOZLAMALAR (OCHILUVCHI BARLAR) ================= -->
+        <section id="view-settings" class="view-panel">
+          
+          <div class="space-y-3">
+            
+            <!-- ACCORDION BAR 1: MTProto Akkaunt Ulanishi -->
+            <div class="accordion-bar" id="acc-mtproto">
+              <div class="accordion-header" onclick="toggleAccordion('acc-mtproto')">
+                <div class="flex items-center gap-2.5">
+                  <span class="acc-icon">⚡</span>
+                  <div>
+                    <h3 class="font-bold text-sm text-slate-200">Telegram MTProto Akkaunti</h3>
+                    <p class="text-xs text-muted">Humocardbot xabarlarini tinglash hisobi</p>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="badge" id="mtproto-status-badge">Tekshirilmoqda</span>
+                  <span class="acc-chevron">▼</span>
+                </div>
+              </div>
+
+              <div class="accordion-content">
+                <!-- Disconnected Box -->
+                <div id="mtproto-disconnected-box">
+                  <p class="text-xs text-muted mb-3">
+                    Bank karta SMS xabarlari keladigan Telegram akkauntingiz telefon raqamini kiriting:
+                  </p>
+                  <form id="form-mtproto-connect" class="space-y-3">
+                    <div class="form-group">
+                      <label class="form-label text-xs">Telegram Telefon Raqami</label>
+                      <input type="tel" id="inp-mtproto-phone" class="form-input font-mono" placeholder="+998901234567" required>
+                    </div>
+
+                    <!-- Optional custom API ID -->
+                    <details class="text-xs text-muted">
+                      <summary class="cursor-pointer hover:text-slate-300">Ixtiyoriy: Telegram API ID & Hash</summary>
+                      <div class="space-y-2 mt-2 p-2.5 bg-slate-900 rounded border border-slate-800">
+                        <input type="number" id="inp-mtproto-api-id" class="form-input font-mono text-xs" placeholder="API ID (standart: 2040)">
+                        <input type="text" id="inp-mtproto-api-hash" class="form-input font-mono text-xs" placeholder="API Hash">
+                      </div>
+                    </details>
+
+                    <button type="submit" id="btn-mtproto-send-code" class="btn btn-primary btn-block">
+                      <span>Tasdiqlash Kodini Olish</span>
+                    </button>
+                  </form>
+
+                  <!-- Step 2: Code Form -->
+                  <form id="form-mtproto-code-step" class="space-y-3 mt-3" style="display:none;">
+                    <div class="form-group">
+                      <label class="form-label text-xs">Telegram yuborgan 5 xonali kod</label>
+                      <input type="text" id="inp-mtproto-code-val" class="form-input font-mono text-center text-lg tracking-widest" placeholder="12345" required maxlength="10">
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block">Akkauntni Faollashtirish</button>
+                    <button type="button" class="btn btn-ghost btn-block text-xs" onclick="resetMtprotoForm()">Ortga</button>
+                  </form>
+
+                  <!-- Step 3: 2FA Password Form -->
+                  <form id="form-mtproto-2fa-step" class="space-y-3 mt-3" style="display:none;">
+                    <div class="form-group">
+                      <label class="form-label text-xs">2FA Bulutli Parol</label>
+                      <input type="password" id="inp-mtproto-2fa-val" class="form-input font-mono" placeholder="••••••••" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block">2FA bilan Tasdiqlash</button>
+                  </form>
+                </div>
+
+                <!-- Connected Box -->
+                <div id="mtproto-connected-box" style="display:none;">
+                  <div class="connected-account-card">
+                    <div class="success-icon-badge">✓</div>
+                    <div class="flex-1 min-w-0">
+                      <strong class="text-emerald font-bold text-sm block truncate" id="mtproto-account-title">Telegram Akkaunt Ulangan</strong>
+                      <div class="text-xs text-muted font-mono" id="mtproto-account-phone">+998901234567</div>
+                      <div class="text-xs text-slate-400 mt-1">Kuzatuvda: <b class="text-emerald font-mono">Humocardbot</b></div>
+                    </div>
+                  </div>
+                  <button type="button" class="btn btn-danger btn-block btn-sm mt-3" onclick="disconnectMTProto()">
+                    Ulanishni Uzish (Chiqish)
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ACCORDION BAR 2: Qabul Qiluvchi Bank Kartasi (O‘ZGARTIRISH BILAN) -->
+            <div class="accordion-bar" id="acc-card">
+              <div class="accordion-header" onclick="toggleAccordion('acc-card')">
+                <div class="flex items-center gap-2.5">
+                  <span class="acc-icon">💳</span>
+                  <div>
+                    <h3 class="font-bold text-sm text-slate-200">Qabul Qiluvchi Bank Kartasi</h3>
+                    <p class="text-xs text-muted" id="acc-card-summary">HUMO •••• 5370</p>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="badge badge-emerald">FAOL</span>
+                  <span class="acc-chevron">▼</span>
+                </div>
+              </div>
+
+              <div class="accordion-content">
+                <!-- Current Card Preview -->
+                <div class="bank-card-visual mb-3">
+                  <div class="flex justify-between items-center text-xs text-slate-400 mb-2">
+                    <span id="disp-card-type">HUMO CARD</span>
+                    <span class="badge badge-emerald">QABUL QILUVCHI</span>
+                  </div>
+                  <div class="font-mono text-base font-bold text-emerald tracking-wider" id="disp-card-number">
+                    9860 **** **** 5370
+                  </div>
+                  <div class="flex justify-between items-center mt-3 text-xs">
+                    <div>
+                      <span class="text-muted block text-[10px]">KARTA EGASI</span>
+                      <strong id="disp-card-holder">ANVARJON ARALOV</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Form to Change Card Details Directly -->
+                <form id="form-edit-card" class="space-y-3 p-3 bg-slate-900 rounded-lg border border-slate-800">
+                  <input type="hidden" id="edit-card-id" value="1">
+                  <h4 class="font-bold text-xs text-slate-300 mb-1">To‘lov kartasini yangilash:</h4>
+                  
+                  <div class="form-group">
+                    <label class="form-label text-xs">Yangi Karta Raqami (16 xonali)</label>
+                    <input type="text" id="inp-card-number" class="form-input font-mono text-xs" placeholder="9860 0000 0000 0000" maxlength="19">
+                  </div>
+
+                  <div class="grid grid-cols-2 gap-2">
+                    <div class="form-group">
+                      <label class="form-label text-xs">Karta Egasi Ismi</label>
+                      <input type="text" id="inp-card-holder" class="form-input text-xs" placeholder="ANVARJON ARALOV" required>
+                    </div>
+                    <div class="form-group">
+                      <label class="form-label text-xs">Turi</label>
+                      <select id="inp-card-type" class="form-input text-xs">
+                        <option value="HUMO">HUMO</option>
+                        <option value="UZCARD">UZCARD</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <button type="submit" id="btn-save-card" class="btn btn-primary btn-block btn-sm">
+                    Karta Ma’lumotlarini Saqlash
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            <!-- ACCORDION BAR 3: Tarif Narxlari -->
+            <div class="accordion-bar" id="acc-pricing">
+              <div class="accordion-header" onclick="toggleAccordion('acc-pricing')">
+                <div class="flex items-center gap-2.5">
+                  <span class="acc-icon">🏷️</span>
+                  <div>
+                    <h3 class="font-bold text-sm text-slate-200">Tarif Narxlari</h3>
+                    <p class="text-xs text-muted">14 kunlik va 30 kunlik PRO narxlari</p>
+                  </div>
+                </div>
+                <span class="acc-chevron">▼</span>
+              </div>
+
+              <div class="accordion-content">
+                <div class="space-y-2.5" id="plans-pricing-container">
+                  <div class="text-xs text-muted">Yuklanmoqda...</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ACCORDION BAR 4: Savollar Bazasi & Avtomatik Sinxronizatsiya -->
+            <div class="accordion-bar" id="acc-sync">
+              <div class="accordion-header" onclick="toggleAccordion('acc-sync')">
+                <div class="flex items-center gap-2.5">
+                  <span class="acc-icon">🔄</span>
+                  <div>
+                    <h3 class="font-bold text-sm text-slate-200">Nazariy Savollar & Manbalar Monitoringi</h3>
+                    <p class="text-xs text-muted">YesPrava va ProPDD dan avtomatik yangilash</p>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="badge badge-emerald" id="sync-overall-badge">1 295 ta savol</span>
+                  <span class="acc-chevron">▼</span>
+                </div>
+              </div>
+
+              <div class="accordion-content">
+                <!-- Metrics Grid -->
+                <div class="sync-metrics-grid">
+                  <div class="sync-metric-tile">
+                    <span class="sync-metric-val" id="sync-kpi-cq">1 295</span>
+                    <span class="sync-metric-label">Kanonik savollar</span>
+                  </div>
+                  <div class="sync-metric-tile">
+                    <span class="sync-metric-val" id="sync-kpi-ct">3 885</span>
+                    <span class="sync-metric-label">3 tildagi matnlar</span>
+                  </div>
+                  <div class="sync-metric-tile">
+                    <span class="sync-metric-val" id="sync-kpi-img">1 423</span>
+                    <span class="sync-metric-label">WebP rasmlar</span>
+                  </div>
+                  <div class="sync-metric-tile">
+                    <span class="sync-metric-val" id="sync-kpi-pending" style="color: #f59e0b;">0</span>
+                    <span class="sync-metric-label">Tekshiruvda (Kutilmoqda)</span>
+                  </div>
+                </div>
+
+                <!-- Live Sources Status -->
+                <div class="space-y-2 mb-3" id="sync-sources-list">
+                  <div class="sync-source-card">
+                    <div>
+                      <div class="font-bold text-xs text-slate-200">YesPrava (Next.js Dynamic API)</div>
+                      <div class="text-[11px] text-muted" id="sync-meta-yesprava">Yuklanmoqda...</div>
+                    </div>
+                    <span class="badge badge-emerald" id="sync-badge-yesprava">Tekshirilmoqda</span>
+                  </div>
+                  <div class="sync-source-card">
+                    <div>
+                      <div class="font-bold text-xs text-slate-200">ProPDD (Static Data Bundle)</div>
+                      <div class="text-[11px] text-muted" id="sync-meta-propdd">Yuklanmoqda...</div>
+                    </div>
+                    <span class="badge badge-emerald" id="sync-badge-propdd">Tekshirilmoqda</span>
+                  </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="grid grid-cols-2 gap-2 mb-3">
+                  <button type="button" id="btn-check-sync-updates" class="btn btn-secondary btn-sm">
+                    🔍 Yangiliklarni Tekshirish
+                  </button>
+                  <button type="button" id="btn-approve-all-sync" class="btn btn-primary btn-sm" style="display:none;">
+                    ⚡ Barchasini Tasdiqlash
+                  </button>
+                </div>
+
+                <!-- Live Status Console -->
+                <div id="sync-console-output" class="sync-console mb-3">Tizim tayyor. Manbalar monitoringi faol. Yangi savollar avval moderatsiyaga olinadi.</div>
+
+                <!-- Staged Moderation Review Queue -->
+                <div id="staged-review-container" class="mt-4">
+                  <div class="flex items-center justify-between mb-2">
+                    <h4 class="font-bold text-xs text-slate-200 flex items-center gap-1.5">
+                      <span>🛡️ Moderatsiya Navbati</span>
+                      <span class="badge badge-amber text-[10px]" id="staged-count-badge">0 kutilmoqda</span>
+                    </h4>
+                    <button type="button" class="btn btn-ghost btn-sm text-[11px] py-0.5" onclick="loadStagedQuestions()">
+                      🔄 Yangilash
+                    </button>
+                  </div>
+                  <div id="staged-questions-list" class="space-y-3">
+                    <div class="text-xs text-muted text-center py-4 bg-slate-900/40 rounded border border-slate-800">
+                      Kutilayotgan savollar yo‘q. Yangiliklarni aniqlash uchun yuqoridagi "Yangiliklarni Tekshirish" tugmasini bosing.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+      </div>
+    </main>
+
+    <!-- MOBILE BOTTOM NAVIGATION BAR (FIXED UNDER THUMB) -->
+    <nav class="mobile-bottom-nav mobile-only">
+      <button class="m-nav-item active" data-view="overview" onclick="switchView('overview')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        <span>Asosiy</span>
+      </button>
+
+      <button class="m-nav-item" data-view="payments" onclick="switchView('payments')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+        <span>To‘lovlar</span>
+        <span class="m-nav-badge" id="m-badge-orders" style="display:none;">0</span>
+      </button>
+
+      <button class="m-nav-item" data-view="users" onclick="switchView('users')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+        <span>Userlar</span>
+      </button>
+
+      <button class="m-nav-item" data-view="broadcast" onclick="switchView('broadcast')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        <span>Xabar</span>
+      </button>
+
+      <button class="m-nav-item" data-view="settings" onclick="switchView('settings')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>Sozlamalar</span>
+        <span class="m-status-dot" id="m-dot-mtproto"></span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- ================= USER MODAL (MANUAL PRO GRANT / EXTEND) ================= -->
+  <div id="modal-grant-sub" class="modal-overlay" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title" id="grant-modal-title">Foydalanuvchiga PRO Obuna Berish</h3>
+        <button class="modal-close" onclick="closeModal('modal-grant-sub')">&times;</button>
+      </div>
+      <form id="form-grant-sub" class="space-y-4 p-4">
+        <input type="hidden" id="grant-user-id">
+        <div class="form-group">
+          <label class="form-label text-xs">Foydalanuvchi:</label>
+          <div id="grant-user-display" class="font-bold text-slate-200 text-sm">ID: ...</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label text-xs">Qo‘shiladigan muddat:</label>
+          <div class="grid grid-cols-2 gap-2 mt-1">
+            <label class="plan-radio-label">
+              <input type="radio" name="grant-duration" value="14" checked>
+              <span>+14 Kun</span>
+            </label>
+            <label class="plan-radio-label">
+              <input type="radio" name="grant-duration" value="30">
+              <span>+30 Kun</span>
+            </label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label text-xs">Sababi (Audit uchun):</label>
+          <input type="text" id="grant-reason" class="form-input text-xs" placeholder="Masalan: Test uchun, Sovg'a..." required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Faollashtirish</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================= PLAN PRICE CHANGE MODAL ================= -->
+  <div id="modal-edit-price" class="modal-overlay" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">Tarif Narxini O‘zgartirish</h3>
+        <button class="modal-close" onclick="closeModal('modal-edit-price')">&times;</button>
+      </div>
+      <form id="form-edit-price" class="space-y-4 p-4">
+        <input type="hidden" id="edit-plan-id">
+        <div class="form-group">
+          <label class="form-label text-xs">Tarif nomi:</label>
+          <div id="edit-plan-name" class="font-bold text-slate-200">14 kunlik PRO</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label text-xs">Yangi narx (UZS):</label>
+          <input type="number" id="edit-plan-price" class="form-input font-mono" step="1000" min="1000" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label text-xs">O‘zgartirish sababi:</label>
+          <input type="text" id="edit-plan-reason" class="form-input text-xs" placeholder="Masalan: Aksiya, Narx yangilanishi" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Saqlash</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================= EDIT & APPROVE STAGED QUESTION MODAL ================= -->
+  <div id="modal-edit-staged" class="modal-overlay" style="display:none;">
+    <div class="modal-card" style="max-width: 580px; max-height: 90vh; overflow-y: auto;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="edit-staged-title">Savolni Tahrirlash & Tasdiqlash</h3>
+        <button class="modal-close" onclick="closeModal('modal-edit-staged')">&times;</button>
+      </div>
+      <form id="form-edit-staged" class="space-y-3 p-4">
+        <input type="hidden" id="inp-edit-staged-id">
+
+        <div class="form-group">
+          <label class="form-label text-xs">🇺🇿 Lotincha Savol Matni:</label>
+          <textarea id="inp-edit-staged-latn" class="form-input text-xs" rows="2" required></textarea>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div class="form-group">
+            <label class="form-label text-xs">🇺🇿 Kirillcha Matn:</label>
+            <textarea id="inp-edit-staged-cyrl" class="form-input text-xs" rows="2"></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label text-xs">🇷🇺 Ruscha Matn:</label>
+            <textarea id="inp-edit-staged-ru" class="form-input text-xs" rows="2"></textarea>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label text-xs">To‘g‘ri Javob Kaliti:</label>
+          <select id="inp-edit-staged-correct-key" class="form-input text-xs">
+            <option value="A">A varianti</option>
+            <option value="B">B varianti</option>
+            <option value="C">C varianti</option>
+            <option value="D">D varianti</option>
+            <option value="E">E varianti</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label text-xs">Izoh / Tushuntirish (Ixtiyoriy):</label>
+          <textarea id="inp-edit-staged-explanation" class="form-input text-xs" rows="2" placeholder="YHQ bandi yoki tushuntirish"></textarea>
+        </div>
+
+        <div class="flex items-center gap-2 pt-2">
+          <button type="submit" class="btn btn-primary btn-block">
+            Saqlash & Bazaga Tasdiqlash
+          </button>
+          <button type="button" class="btn btn-ghost" onclick="closeModal('modal-edit-staged')">
+            Bekor qilish
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="/static/admin/admin.js?v=2.5.0"></script>
+</body>
+</html>
