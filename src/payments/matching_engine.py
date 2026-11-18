@@ -21,6 +21,7 @@ from src.payments.order_manager import expire_stale_orders
 from src.security.telegram_notifier import (
     send_payment_alert_to_admin,
     send_late_payment_alert_to_admin,
+    send_unmatched_payment_alert,
     send_user_payment_success_notification
 )
 
@@ -276,6 +277,11 @@ async def process_incoming_payment_event(
         """, (f"Amount: {amount_uzs} UZS, Card: {card_suffix}, Source: {payment_source}", now_str))
 
         conn.commit()
+
+        try:
+            await send_unmatched_payment_alert(amount_uzs, card_suffix, payment_source)
+        except Exception as e:
+            logger.error(f"Error sending unmatched payment alert: {e}")
 
         return {
             "status": "UNMATCHED",

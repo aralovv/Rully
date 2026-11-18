@@ -1,11 +1,12 @@
 """
-Telegram Delivery & Notification Service for Admin OTP, Alerts, and User Payment Confirmations.
+Telegram Delivery & Notification Service for Admin OTP, Order/Payment Alerts, and User Payment Confirmations.
 """
 
 import os
+import sqlite3
 import logging
 import httpx
-from typing import Optional
+from typing import Optional, Dict, Any
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -16,6 +17,25 @@ logger = logging.getLogger(__name__)
 OTP_BOT_TOKEN = os.getenv("ADMIN_OTP_BOT_TOKEN") or os.getenv("BOT_TOKEN", "8657532177:AAGsyMFpzuwPus9jOdFRNP8f65qa8E-4q8g")
 MAIN_BOT_TOKEN = os.getenv("BOT_TOKEN", "8657532177:AAGsyMFpzuwPus9jOdFRNP8f65qa8E-4q8g")
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "1956239701"))
+ORDERS_GROUP_CHAT_ID = int(os.getenv("ORDERS_GROUP_CHAT_ID", "-5464313435"))
+DB_PATH = os.getenv("DB_PATH", "master_database.sqlite")
+
+
+def get_user_mention(user_id: int) -> str:
+    """Helper to fetch username or first name from database for rich Telegram mentions."""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            c = conn.cursor()
+            c.execute("SELECT username, first_name FROM telegram_users WHERE user_id = ?", (user_id,))
+            row = c.fetchone()
+            if row:
+                if row[0]:
+                    return f"@{row[0]} (ID: <code>{user_id}</code>)"
+                elif row[1]:
+                    return f"<b>{row[1]}</b> (ID: <code>{user_id}</code>)"
+    except Exception:
+        pass
+    return f"<code>{user_id}</code>"
 
 
 async def send_telegram_message(bot_token: str, chat_id: int, text: str, parse_mode: str = "HTML") -> bool:
@@ -39,6 +59,23 @@ async def send_telegram_message(bot_token: str, chat_id: int, text: str, parse_m
         return False
 
 
+async def broadcast_order_alert(text: str) -> bool:
+    """
+    Broadcasts an order-related alert to the official 'Buyurtmalar Rully' group,
+    and also to the admin's private chat.
+    """
+    success = False
+    if ORDERS_GROUP_CHAT_ID:
+        ok = await send_telegram_message(MAIN_BOT_TOKEN, ORDERS_GROUP_CHAT_ID, text)
+        if ok:
+            success = True
+
+    if ADMIN_TELEGRAM_ID and ADMIN_TELEGRAM_ID != ORDERS_GROUP_CHAT_ID:
+        await send_telegram_message(MAIN_BOT_TOKEN, ADMIN_TELEGRAM_ID, text)
+
+    return success
+
+
 async def send_admin_otp(otp_code: str, admin_telegram_id: int = ADMIN_TELEGRAM_ID, ip_address: Optional[str] = None) -> bool:
     """
     Delivers a single-use OTP code to the administrator's Telegram account.
@@ -54,34 +91,89 @@ async def send_admin_otp(otp_code: str, admin_telegram_id: int = ADMIN_TELEGRAM_
     return await send_telegram_message(OTP_BOT_TOKEN, admin_telegram_id, text)
 
 
+async def send_order_created_alert(order: Dict[str, Any]) -> bool:
+    """
+    Notifies the 'Buyurtmalar Rully' group when a user generates a new payment order / invoice.
+    """
+    amount = order.get("final_amount_uzs", 0)
+    amount_str = f"{amount:,}".replace(",", " ")
+    user_id = order.get("user_id", 0)
+    user_label = get_user_mention(user_id)
+    plan_name = order.get("plan_name", "PRO Obuna")
+    card_suffix = order.get("card_suffix", "...")
+    order_id = order.get("order_id", "ORD-...")
+
+    text = (
+        "📋 <b>Yangi buyurtma yaratildi</b>\n\n"
+        f"Buyurtma: <code>{order_id}</code>\n"
+        f"Foydalanuvchi: {user_label}\n"
+        f"Tarif: <b>{plan_name}</b>\n"
+        f"Summa: <b>{amount_str} UZS</b>\n"
+        f"Karta: <b>*{card_suffix}</b>\n"
+        "Holati: ⏳ To‘lov kutilmoqda (15 daqiqa)"
+    )
+    return await broadcast_order_alert(text)
+
+
 async def send_payment_alert_to_admin(order_id: str, amount_uzs: int, user_id: int, plan_name: str, card_suffix: str) -> bool:
-    """Alerts the admin when an automated payment is matched and activated."""
+    """Alerts the 'Buyurtmalar Rully' group and admin when an automated payment is matched and activated."""
     amount_str = f"{amount_uzs:,}".replace(",", " ")
+    user_label = get_user_mention(user_id)
     text = (
         "💰 <b>Yangi muvaffaqiyatli to‘lov</b>\n\n"
         f"Buyurtma: <code>{order_id}</code>\n"
+        f"Foydalanuvchi: {user_label}\n"
         f"Summa: <b>{amount_str} UZS</b>\n"
-        f"Foydalanuvchi: <code>{user_id}</code>\n"
         f"Tarif: <b>{plan_name}</b>\n"
         f"Karta: <b>*{card_suffix}</b>\n"
         "Holati: 🟢 Avtomatik faollashtirildi"
     )
-    return await send_telegram_message(MAIN_BOT_TOKEN, ADMIN_TELEGRAM_ID, text)
+    return await broadcast_order_alert(text)
 
 
 async def send_late_payment_alert_to_admin(order_id: str, amount_uzs: int, user_id: int, card_suffix: str) -> bool:
-    """Alerts the admin when a payment arrives for an expired order (Review Required)."""
+    """Alerts the 'Buyurtmalar Rully' group and admin when a payment arrives for an expired order."""
     amount_str = f"{amount_uzs:,}".replace(",", " ")
+    user_label = get_user_mention(user_id)
     text = (
         "⚠️ <b>Kechiktirilgan to‘lov aniqlandi</b>\n\n"
         f"Buyurtma: <code>{order_id}</code> (Muddati o‘tgan)\n"
+        f"Foydalanuvchi: {user_label}\n"
         f"Summa: <b>{amount_str} UZS</b>\n"
-        f"Foydalanuvchi: <code>{user_id}</code>\n"
         f"Karta: <b>*{card_suffix}</b>\n"
         "Holati: 🟡 Admin tekshiruvi talab qilinadi\n\n"
         "Boshqaruv panelida 'To‘lovlar' bo‘limidan tasdiqlashingiz mumkin."
     )
-    return await send_telegram_message(MAIN_BOT_TOKEN, ADMIN_TELEGRAM_ID, text)
+    return await broadcast_order_alert(text)
+
+
+async def send_late_payment_approved_alert(order_id: str, amount_uzs: int, user_id: int, plan_name: str, admin_name: str) -> bool:
+    """Alerts the 'Buyurtmalar Rully' group and admin when an administrator manually approves a late payment."""
+    amount_str = f"{amount_uzs:,}".replace(",", " ")
+    user_label = get_user_mention(user_id)
+    text = (
+        "✅ <b>Kechiktirilgan to‘lov tasdiqlandi</b>\n\n"
+        f"Buyurtma: <code>{order_id}</code>\n"
+        f"Foydalanuvchi: {user_label}\n"
+        f"Summa: <b>{amount_str} UZS</b>\n"
+        f"Tarif: <b>{plan_name}</b>\n"
+        f"Admin: <b>{admin_name}</b>\n"
+        "Holati: 🟢 Obuna berildi"
+    )
+    return await broadcast_order_alert(text)
+
+
+async def send_unmatched_payment_alert(amount_uzs: int, card_suffix: str, payment_source: str) -> bool:
+    """Alerts the 'Buyurtmalar Rully' group and admin when an incoming payment does not match any order."""
+    amount_str = f"{amount_uzs:,}".replace(",", " ")
+    text = (
+        "❓ <b>Noma’lum to‘lov kelib tushdi</b>\n\n"
+        f"Summa: <b>{amount_str} UZS</b>\n"
+        f"Karta: <b>*{card_suffix}</b>\n"
+        f"Manba: <b>{payment_source}</b>\n"
+        "Holati: ⚪ Mos buyurtma topilmadi (Tekshirish lozim)"
+    )
+    return await broadcast_order_alert(text)
 
 
 async def send_user_payment_success_notification(user_id: int, plan_name: str, expires_at: str, duration_days: Optional[int] = None) -> bool:

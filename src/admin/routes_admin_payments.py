@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.admin.deps import get_current_admin
-from src.security.telegram_notifier import send_user_payment_success_notification
+from src.security.telegram_notifier import send_user_payment_success_notification, send_late_payment_approved_alert
 
 router = APIRouter(prefix="/api/admin/payments", tags=["Admin Payments & Reconciliation"])
 DB_PATH = os.getenv("DB_PATH", "master_database.sqlite")
@@ -273,9 +273,10 @@ async def approve_late_payment(
 
         conn.commit()
 
-    # Notify user
+    # Notify user and orders group
     try:
         await send_user_payment_success_notification(user_id, plan_name, new_expires_str, duration_days=duration_days)
+        await send_late_payment_approved_alert(order_id, amount_uzs, user_id, plan_name, admin_name)
     except Exception:
         pass
 

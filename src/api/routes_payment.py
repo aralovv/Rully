@@ -17,7 +17,7 @@ from src.payments.order_manager import (
     get_user_active_order,
     get_order_by_id
 )
-from src.security.telegram_notifier import send_payment_invoice_to_user
+from src.security.telegram_notifier import send_payment_invoice_to_user, send_order_created_alert
 
 router = APIRouter(prefix="/api/payment", tags=["User Payment"])
 
@@ -52,6 +52,8 @@ async def api_create_payment_order(
             final_amount_uzs=order.get("final_amount_uzs", 0),
             order_id=order.get("order_id", "")
         ))
+        if message == "Yangi to‘lov buyurtmasi yaratildi.":
+            asyncio.create_task(send_order_created_alert(order))
     except Exception:
         pass
 
