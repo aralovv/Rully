@@ -259,7 +259,23 @@ const I18N = {
     ai_chip_3_label: "🚦 Tartibga soluvchi (regulyirovshik)",
     ai_chip_3_prompt: "Tartibga soluvchi (regulyirovshik) ishoralarini qanday oson tushunish va eslab qolish mumkin?",
     ai_chip_4_label: "📊 Xatolarim tahlili",
-    ai_chip_4_prompt: "Mening testlardagi xatolarimni tahlil qilib ber va maslahat ber"
+    ai_chip_4_prompt: "Mening testlardagi xatolarimni tahlil qilib ber va maslahat ber",
+
+    // Trilingual Dynamic Badges & Loading
+    saved_questions_count_caption: "{n} ta savol • To‘g‘ri javob va izohlar",
+    loading_brand: "Rully — Avtotest tayyorlov",
+    loading_status_engine: "Dvigatel ishga tushmoqda...",
+    loading_status_check: "Boshqaruv tizimlari tekshirilmoqda...",
+    loading_status_rules: "Qoidalar va savollar yuklanmoqda...",
+    loading_status_ready: "Tizim tayyor. Oq yo‘l! 🚗",
+    loading_beep: "🚗 Bib-bip!",
+    step_pill: "BOSQICH {n}",
+    badge_baza: "Baza",
+    badge_asosiy: "Asosiy",
+    badge_avtodrom: "Avtodrom",
+    badge_shahar: "Shahar",
+    badge_xavfsizlik: "Xavfsizlik",
+    badge_yakunlash: "Yakunlash"
   },
 
   uz_cyrl: {
@@ -517,7 +533,23 @@ const I18N = {
     ai_chip_3_label: "🚦 Тартибга солувчи (регулировщик)",
     ai_chip_3_prompt: "Тартибга солувчи (регулировщик) ишораларини қандай осон тушуниш ва эслаб қолиш мумкин?",
     ai_chip_4_label: "📊 Хатоларим таҳлили",
-    ai_chip_4_prompt: "Менинг тестлардаги хатоларимни таҳлил қилиб бер ва маслаҳат бер"
+    ai_chip_4_prompt: "Менинг тестлардаги хатоларимни таҳлил қилиб бер ва маслаҳат бер",
+
+    // Trilingual Dynamic Badges & Loading
+    saved_questions_count_caption: "{n} та савол • Тўғри жавоб ва изоҳлар",
+    loading_brand: "Rully — Автотест тайёрлов",
+    loading_status_engine: "Двигатель ишга тушмоқда...",
+    loading_status_check: "Бошқарув тизимлари текширилмоқда...",
+    loading_status_rules: "Қоидалар ва саволлар юкланмоқда...",
+    loading_status_ready: "Тизим тайёр. Оқ йўл! 🚗",
+    loading_beep: "🚗 Биб-бип!",
+    step_pill: "БОСҚИЧ {n}",
+    badge_baza: "База",
+    badge_asosiy: "Асосий",
+    badge_avtodrom: "Автодром",
+    badge_shahar: "Шаҳар",
+    badge_xavfsizlik: "Хавфсизлик",
+    badge_yakunlash: "Якунлаш"
   },
 
   ru: {
@@ -775,7 +807,23 @@ const I18N = {
     ai_chip_3_label: "🚦 Сигналы регулировщика",
     ai_chip_3_prompt: "Как легко понять и запомнить все сигналы регулировщика?",
     ai_chip_4_label: "📊 Анализ моих ошибок",
-    ai_chip_4_prompt: "Проанализируй мои ошибки в тестах и дай рекомендации"
+    ai_chip_4_prompt: "Проанализируй мои ошибки в тестах и дай рекомендации",
+
+    // Trilingual Dynamic Badges & Loading
+    saved_questions_count_caption: "{n} вопросов • Правильные ответы и пояснения",
+    loading_brand: "Rully — Подготовка к Автотесту",
+    loading_status_engine: "Запуск двигателя...",
+    loading_status_check: "Проверка систем управления...",
+    loading_status_rules: "Загрузка правил и вопросов...",
+    loading_status_ready: "Система готова. Счастливого пути! 🚗",
+    loading_beep: "🚗 Би-бип!",
+    step_pill: "ЭТАП {n}",
+    badge_baza: "Базовый",
+    badge_asosiy: "Основной",
+    badge_avtodrom: "Автодром",
+    badge_shahar: "Город",
+    badge_xavfsizlik: "Безопасность",
+    badge_yakunlash: "Финал"
   }
 };
 

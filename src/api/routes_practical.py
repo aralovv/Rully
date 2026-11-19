@@ -13,6 +13,20 @@ from src.amaliy_curriculum import PRACTICAL_MODULES, PRACTICAL_CHECKLIST, PRACTI
 
 router = APIRouter(prefix="/api/amaliy", tags=["Practical Exam"])
 
+PRACTICAL_BADGE_LOCALIZATION = {
+    "Baza": {"uz_latn": "Baza", "uz_cyrl": "База", "ru": "Базовый"},
+    "Asosiy": {"uz_latn": "Asosiy", "uz_cyrl": "Асосий", "ru": "Основной"},
+    "Avtodrom": {"uz_latn": "Avtodrom", "uz_cyrl": "Автодром", "ru": "Автодром"},
+    "Shahar": {"uz_latn": "Shahar", "uz_cyrl": "Шаҳар", "ru": "Город"},
+    "Xavfsizlik": {"uz_latn": "Xavfsizlik", "uz_cyrl": "Хавфсизлик", "ru": "Безопасность"},
+    "Yakunlash": {"uz_latn": "Yakunlash", "uz_cyrl": "Якунлаш", "ru": "Финал"}
+}
+
+def localize_badge(badge_raw: Any, lang: str) -> str:
+    if isinstance(badge_raw, dict):
+        return badge_raw.get(lang, badge_raw.get("uz_latn", "Baza"))
+    return PRACTICAL_BADGE_LOCALIZATION.get(badge_raw, {}).get(lang, str(badge_raw) if badge_raw else "Baza")
+
 def get_valid_lang(lang: Optional[str], default_lang: str = "uz_latn") -> str:
     if lang in ["uz_latn", "uz_cyrl", "ru"]:
         return lang
@@ -37,7 +51,7 @@ async def list_modules(
             "order": m["order"],
             "title": m["title"].get(selected_lang, m["title"]["uz_latn"]),
             "description": m["description"].get(selected_lang, m["description"]["uz_latn"]),
-            "badge": m.get("badge", "Baza"),
+            "badge": localize_badge(m.get("badge", "Baza"), selected_lang),
             "duration_min": m.get("duration_min", 15),
             "steps_count": len(m.get("steps", [])),
             "is_completed": is_done
@@ -98,7 +112,7 @@ async def get_module_detail(
         "order": mod["order"],
         "title": mod["title"].get(selected_lang, mod["title"]["uz_latn"]),
         "description": mod["description"].get(selected_lang, mod["description"]["uz_latn"]),
-        "badge": mod.get("badge", "Baza"),
+        "badge": localize_badge(mod.get("badge", "Baza"), selected_lang),
         "duration_min": mod.get("duration_min", 15),
         "steps": steps,
         "common_mistakes": mistakes,

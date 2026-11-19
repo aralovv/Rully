@@ -55,6 +55,7 @@
 
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --nav-height: calc(54px + var(--safe-bottom, 0px));
 
   --font-stack: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
@@ -2207,11 +2208,13 @@ body {
   left: 0;
   right: 0;
   z-index: 150;
+  height: var(--nav-height);
+  box-sizing: border-box;
   background: var(--bg-glass);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border-top: 1px solid var(--border-hairline);
-  padding: 6px 12px calc(6px + var(--safe-bottom)) 12px;
+  padding: 6px 12px calc(6px + var(--safe-bottom, 0px)) 12px;
   display: flex;
   justify-content: space-around;
   align-items: center;
@@ -4752,28 +4755,18 @@ body {
    ========================================================================== */
 
 /* Full Viewport Chat Mode: Lock Window & Pin Native Layout */
-html.tab-ai-active {
+html.tab-ai-active,
+body.tab-ai-active {
   height: 100% !important;
-  height: 100dvh !important;
   overflow: hidden !important;
   position: fixed !important;
   width: 100% !important;
-}
-
-body.tab-ai-active {
-  position: fixed !important;
   top: 0 !important;
   left: 0 !important;
   right: 0 !important;
-  width: 100% !important;
-  height: var(--ai-viewport-height, 100%) !important;
-  max-height: var(--ai-viewport-height, 100%) !important;
   bottom: 0 !important;
-  padding: 0 !important;
-  padding-top: 0 !important;
-  padding-bottom: 0 !important;
   margin: 0 !important;
-  overflow: hidden !important;
+  padding: 0 !important;
   overscroll-behavior: none !important;
   -webkit-overflow-scrolling: auto !important;
 }
@@ -4784,33 +4777,35 @@ body.tab-ai-active .app-header {
 
 body.tab-ai-active .main-container {
   padding: 0 !important;
-  margin: 0 auto;
-  width: 100%;
-  max-width: 600px;
+  margin: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
   height: 100% !important;
-  max-height: 100% !important;
   overflow: hidden !important;
-  display: flex !important;
-  flex-direction: column !important;
-  position: relative !important;
+  display: block !important;
 }
 
 body.tab-ai-active .cockpit-bottom-nav {
-  height: calc(52px + var(--safe-bottom, 0px)) !important;
+  height: var(--nav-height) !important;
   box-sizing: border-box !important;
 }
 
 #view-ai {
   display: none;
-  flex-direction: column;
-  flex: 1 1 0%;
-  min-height: 0;
-  height: 100%;
-  max-height: 100%;
-  padding-bottom: calc(52px + var(--safe-bottom, 0px));
-  overflow: hidden;
-  position: relative;
-  box-sizing: border-box;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: var(--nav-height) !important;
+  height: auto !important;
+  max-width: 600px !important;
+  margin: 0 auto !important;
+  background: var(--bg-surface-0, #090f1d);
+  flex-direction: column !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  z-index: 100 !important;
+  padding-bottom: 0 !important;
 }
 
 #view-ai.active {
@@ -4819,7 +4814,9 @@ body.tab-ai-active .cockpit-bottom-nav {
 
 /* Mobile Virtual Keyboard State */
 body.tab-ai-active.keyboard-open #view-ai {
-  padding-bottom: 0 !important;
+  bottom: auto !important;
+  height: var(--ai-viewport-height, 100%) !important;
+  max-height: var(--ai-viewport-height, 100%) !important;
 }
 
 body.tab-ai-active.keyboard-open .cockpit-bottom-nav {
@@ -4831,7 +4828,7 @@ body.tab-ai-active.keyboard-open .ai-chips-wrap {
 }
 
 body.tab-ai-active.keyboard-open .ai-input-bar {
-  padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px)) !important;
+  padding-bottom: 8px !important;
 }
 
 .ai-view-wrapper {
@@ -5127,20 +5124,23 @@ body.tab-ai-active.keyboard-open .ai-input-bar {
 
 /* Quick Chips Bar - Modern Horizontal Scrollable Carousel */
 .ai-chips-wrap {
-  display: flex;
-  flex-direction: row;
-  gap: 8px;
-  margin: 8px 0;
-  padding: 4px 2px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-  flex-shrink: 0;
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  gap: 8px !important;
+  margin: 6px 0 !important;
+  padding: 4px 2px !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  scrollbar-width: none !important;
+  flex-shrink: 0 !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
 }
 
 .ai-chips-wrap::-webkit-scrollbar {
-  display: none;
+  display: none !important;
 }
 
 .ai-chip-btn {
@@ -5154,12 +5154,12 @@ body.tab-ai-active.keyboard-open .ai-input-bar {
   text-align: left;
   cursor: pointer;
   transition: all 0.2s ease;
-  display: inline-flex;
-  align-items: center;
+  display: inline-flex !important;
+  align-items: center !important;
   gap: 6px;
   line-height: 1.35;
-  white-space: nowrap;
-  flex-shrink: 0;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
 }
 
 .ai-chip-btn:active {

@@ -170,6 +170,9 @@
     updateSubscriptionUI();
     renderCheatsheetContent();
     renderAiChips();
+    if (typeof updateSavedQuestionsCount === 'function') {
+      updateSavedQuestionsCount();
+    }
   }
   function renderCheatsheetContent() {
     const bodyEl = document.getElementById('secrets-modal-body');
@@ -845,11 +848,11 @@
 
     // Step 3: Status phase updates
     setTimeout(() => {
-      if (statusTextEl) statusTextEl.textContent = "Gidrousilitel va tizimlar tekshirilmoqda...";
+      if (statusTextEl) statusTextEl.textContent = t('loading_status_check');
     }, 450);
 
     setTimeout(() => {
-      if (statusTextEl) statusTextEl.textContent = "Qoidalar va savollar yuklanmoqda...";
+      if (statusTextEl) statusTextEl.textContent = t('loading_status_rules');
     }, 950);
 
     // Interactive Klaxon Easter Egg on steering wheel tap
@@ -860,7 +863,7 @@
         } catch (e) {}
         if (statusTextEl) {
           const prev = statusTextEl.textContent;
-          statusTextEl.textContent = "🚗 Bib-bip!";
+          statusTextEl.textContent = t('loading_beep');
           setTimeout(() => { statusTextEl.textContent = prev; }, 600);
         }
       });
@@ -872,7 +875,7 @@
       const remaining = Math.max(0, MIN_DISPLAY_MS - elapsed);
 
       setTimeout(() => {
-        if (statusTextEl) statusTextEl.textContent = "Tizim tayyor. Oq yo‘l!";
+        if (statusTextEl) statusTextEl.textContent = t('loading_status_ready');
         try {
           window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
         } catch (e) {}
@@ -889,6 +892,18 @@
 
   // 8. Application Bootstrap
   async function initApp() {
+    // Immediate pre-auth trilingual detection for instant localized loading screen
+    try {
+      const cachedLang = localStorage.getItem('rully_lang');
+      const tgLang = window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code;
+      if (cachedLang && ['uz_latn', 'uz_cyrl', 'ru'].includes(cachedLang)) {
+        state.lang = cachedLang;
+      } else if (tgLang === 'ru') {
+        state.lang = 'ru';
+      }
+    } catch (e) {}
+    applyLocalization();
+
     const dismissLoading = initLoadingScreen();
     injectSvgIcons();
     setupEventListeners();
@@ -906,7 +921,8 @@
 
       state.user = authRes.user;
       state.subscription = authRes.subscription || authRes.user?.subscription || { is_pro: false, tier: 'free' };
-      state.lang = authRes.user.language || 'uz_latn';
+      state.lang = authRes.user.language || state.lang || 'uz_latn';
+      try { localStorage.setItem('rully_lang', state.lang); } catch (e) {}
       state.stats = {
         stats: authRes.stats,
         streak: authRes.streak
@@ -918,8 +934,7 @@
     } catch (e) {
       console.warn("Auth initialization error, using fallback session:", e);
       initData = "dev_user_8809526955";
-      state.user = { first_name: "Haydovchi", username: "kurs_savdo", language: "uz_latn" };
-      state.lang = "uz_latn";
+      state.user = { first_name: "Haydovchi", username: "kurs_savdo", language: state.lang || "uz_latn" };
       state.subscription = { is_pro: false, tier: 'free' };
       updateDriverProfileUI();
       updateSubscriptionUI();
@@ -1758,7 +1773,7 @@
       const stepsWrap = document.getElementById('module-steps-list');
       stepsWrap.innerHTML = mod.steps.map(s => `
         <div class="curriculum-step-card">
-          <div class="step-seq-pill">BOSQICH ${s.step}</div>
+          <div class="step-seq-pill">${t('step_pill', { n: s.step })}</div>
           <h5 class="step-heading">${s.title}</h5>
           <p class="step-body-inst">${s.instruction}</p>
         </div>
@@ -1867,6 +1882,7 @@
         if (lang === state.lang) return;
         triggerHaptic('impact', 'medium');
         state.lang = lang;
+        try { localStorage.setItem('rully_lang', lang); } catch (e) {}
         applyLocalization();
         await apiFetch('/api/user/language', {
           method: 'POST',
@@ -1914,7 +1930,7 @@
       const captionEl = document.getElementById('saved-questions-caption-text');
       if (captionEl) {
         if (count > 0) {
-          captionEl.textContent = `${count} ta savol • To‘g‘ri javob va izohlar`;
+          captionEl.textContent = t('saved_questions_count_caption', { n: count });
         } else {
           captionEl.textContent = t('saved_questions_card_desc');
         }
@@ -2114,7 +2130,7 @@
               if (badgePill) badgePill.style.display = newCount > 0 ? 'inline-flex' : 'none';
               const captionEl = document.getElementById('saved-questions-caption-text');
               if (captionEl) {
-                captionEl.textContent = newCount > 0 ? `${newCount} ta savol • To‘g‘ri javob va izohlar` : t('saved_questions_card_desc');
+                captionEl.textContent = newCount > 0 ? t('saved_questions_count_caption', { n: newCount }) : t('saved_questions_card_desc');
               }
               if (newCount === 0) {
                 renderSavedQuestionsList([]);
@@ -2159,7 +2175,11 @@
         container.innerHTML = '';
         
         data.messages.forEach(msg => {
-          appendAiMessageToUI(msg.role, msg.text, []);
+          let text = msg.text;
+          if (msg.role !== 'user' && (text.includes("Mavzuli test") || text.includes("Saqlanganlarimdan test"))) {
+            text = t('ai_welcome_bubble');
+          }
+          appendAiMessageToUI(msg.role, text, []);
         });
 
         if (chips) container.appendChild(chips);
@@ -2936,8 +2956,6 @@
 
         if (!isFocused) {
           document.documentElement.style.removeProperty('--ai-viewport-height');
-          document.documentElement.style.removeProperty('--ai-viewport-top');
-          document.documentElement.style.removeProperty('--ai-keyboard-offset');
           window.scrollTo(0, 0);
           return;
         }
@@ -2947,7 +2965,7 @@
 
         let visibleH = window.innerHeight;
 
-        if (vv) {
+        if (vv && typeof vv.height === 'number') {
           visibleH = vv.height;
         } else if (tg && typeof tg.viewportHeight === 'number') {
           visibleH = tg.viewportHeight;
@@ -2956,7 +2974,10 @@
         if (visibleH > 100) {
           document.documentElement.style.setProperty('--ai-viewport-height', `${visibleH}px`);
         }
-        document.documentElement.style.removeProperty('--ai-viewport-top');
+
+        if (window.scrollY !== 0) {
+          window.scrollTo(0, 0);
+        }
 
         scrollAiToBottom(true);
       };
@@ -2973,8 +2994,6 @@
       aiInput.addEventListener('blur', () => {
         document.body.classList.remove('keyboard-open');
         document.documentElement.style.removeProperty('--ai-viewport-height');
-        document.documentElement.style.removeProperty('--ai-viewport-top');
-        document.documentElement.style.removeProperty('--ai-keyboard-offset');
         window.scrollTo(0, 0);
         document.body.scrollTop = 0;
         document.documentElement.scrollTop = 0;
