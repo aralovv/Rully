@@ -55,7 +55,7 @@ def tool_search_questions(
         rows = c.fetchall()
     
     results = []
-    for r in rows:
+    for idx, r in enumerate(rows):
         cid = r["canonical_id"]
         c.execute(f"""
             SELECT option_key, {col_text} AS opt_text
@@ -67,6 +67,7 @@ def tool_search_questions(
         
         results.append({
             "canonical_id": cid,
+            "question_number": idx + 1,
             "category_name": localize_category(r["category_name"], lang),
             "question": r["question_text"],
             "legal_reference": r["legal_reference"],
@@ -101,7 +102,7 @@ def tool_get_user_bookmarks(user_id: int, limit: int = 5, language: str = "uz_la
     
     rows = c.fetchall()
     results = []
-    for r in rows:
+    for idx, r in enumerate(rows):
         cid = r["canonical_id"]
         c.execute(f"""
             SELECT option_key, {col_text} AS opt_text
@@ -113,6 +114,7 @@ def tool_get_user_bookmarks(user_id: int, limit: int = 5, language: str = "uz_la
         
         results.append({
             "canonical_id": cid,
+            "question_number": idx + 1,
             "category_name": localize_category(r["category_name"], lang),
             "question": r["question_text"],
             "legal_reference": r["legal_reference"],
@@ -147,7 +149,7 @@ def tool_get_user_mistakes(user_id: int, limit: int = 5, language: str = "uz_lat
     
     rows = c.fetchall()
     results = []
-    for r in rows:
+    for idx, r in enumerate(rows):
         cid = r["canonical_id"]
         c.execute(f"""
             SELECT option_key, {col_text} AS opt_text
@@ -159,6 +161,7 @@ def tool_get_user_mistakes(user_id: int, limit: int = 5, language: str = "uz_lat
         
         results.append({
             "canonical_id": cid,
+            "question_number": idx + 1,
             "mistake_count": r["mistake_count"],
             "category_name": localize_category(r["category_name"], lang),
             "question": r["question_text"],

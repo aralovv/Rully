@@ -1935,6 +1935,9 @@
     if (!modal) return;
     modal.classList.add('active');
 
+    // Ensure all modal elements are translated to active language
+    applyLocalization();
+
     const bodyEl = document.getElementById('saved-modal-body');
     const searchWrap = document.getElementById('saved-search-wrap');
     const searchInput = document.getElementById('saved-filter-input');
@@ -2065,7 +2068,7 @@
               <span class="r-icon xs" style="display:inline-flex;">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
               </span>
-              <span>№${idx + 1} • ${q.category_name || 'Yo‘l qoidasi'}</span>
+              <span>№${idx + 1} • ${q.category_name || t('ai_rule_badge')}</span>
             </div>
             <button class="btn-remove-saved" data-qid="${q.canonical_id}" aria-label="O‘chirish">
               <span class="r-icon xs" style="display:inline-flex;">
@@ -2180,6 +2183,11 @@
   function formatAiMarkdown(text) {
     if (!text) return '';
     let escaped = escapeHtml(text);
+
+    // Strip technical canonical IDs and "Canon yhq" artifacts from assistant output
+    escaped = escaped.replace(/\b(?:Canon(?:ical)?\s*(?:yhq)?[:\-]?\s*)?UZ-YHQ-[A-Z0-9]+\b/gi, '');
+    escaped = escaped.replace(/\bCanon\s*yhq\b/gi, t('ai_question_prefix') || 'Savol');
+    escaped = escaped.replace(/\bCanon\b/gi, t('ai_question_prefix') || 'Savol');
     
     // Headings: ### Header or ## Header
     escaped = escaped.replace(/^###\s+(.+)$/gm, '<h4 class="ai-msg-h4">$1</h4>');
@@ -2226,11 +2234,15 @@
 
     let cardsHtml = '';
     if (cards && cards.length > 0) {
-      cardsHtml = cards.map(c => `
-        <div class="ai-card-slot" id="ai-card-${c.canonical_id}">
+      cardsHtml = cards.map((c, idx) => {
+        const qNum = c.question_number || (idx + 1);
+        const qPrefix = t('ai_question_prefix') || 'Savol';
+        const catName = c.category_name || t('ai_rule_badge');
+        return `
+        <div class="ai-card-slot" id="ai-card-${c.canonical_id || idx}">
           <div class="ai-card-title">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 13px; height: 13px;"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
-            <span>${c.canonical_id} • ${c.category_name || t('ai_rule_badge')}</span>
+            <span>${qPrefix} №${qNum} • ${catName}</span>
           </div>
           <div class="ai-card-q-text">${c.question}</div>
           <div class="ai-card-options">
@@ -2244,7 +2256,8 @@
             }).join('')}
           </div>
         </div>
-      `).join('');
+      `;
+      }).join('');
     }
 
     const formattedText = formatAiMarkdown(text);

@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import logging
 from typing import Dict, Any, List, Optional
@@ -207,13 +208,23 @@ class GeminiService:
                             if k in tool_result:
                                 question_cards.extend(tool_result[k])
 
+                        # Sanitize data for LLM so it never sees raw canonical IDs
+                        def _clean_for_llm(data):
+                            if isinstance(data, dict):
+                                return {k: _clean_for_llm(v) for k, v in data.items() if k != "canonical_id"}
+                            elif isinstance(data, list):
+                                return [_clean_for_llm(item) for item in data]
+                            return data
+
+                        gemini_safe_result = _clean_for_llm(tool_result)
+
                         # Send function response back to Gemini for final user answer
                         fn_response_content = {
                             "role": "function",
                             "parts": [{
                                 "functionResponse": {
                                     "name": fn_name,
-                                    "response": {"result": tool_result}
+                                    "response": {"result": gemini_safe_result}
                                 }
                             }]
                         }
@@ -243,6 +254,11 @@ class GeminiService:
                         final_text = "Noma'lum vosita chaqirildi."
                 else:
                     final_text = "".join(p.get("text", "") for p in parts)
+
+                # Clean any leaked technical identifiers from final text
+                final_text = re.sub(r'\b(?:Canon(?:ical)?\s*(?:yhq)?[:\-]?\s*)?UZ-YHQ-[A-Z0-9]+\b', '', final_text, flags=re.IGNORECASE)
+                final_text = re.sub(r'\bCanon\s*yhq\b', 'savol', final_text, flags=re.IGNORECASE)
+                final_text = re.sub(r'\bCanon\b', 'Savol', final_text, flags=re.IGNORECASE)
 
                 # Save assistant response
                 meta_json = json.dumps({"cards": len(question_cards)}) if question_cards else None
