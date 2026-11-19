@@ -304,7 +304,7 @@
       'search-bar-icon-slot': 'search',
       'nav-icon-home': 'home',
       'nav-icon-tests': 'tests',
-      'nav-icon-ai': 'sparkles',
+      'nav-icon-ai': 'instructor',
       'nav-icon-amaliy': 'amaliy',
       'nav-icon-results': 'results',
       'nav-icon-profile': 'profile',
@@ -992,6 +992,14 @@
     state.activeTab = tabName;
     triggerHaptic('impact', 'light');
 
+    // Toggle full-viewport chat layout for AI Ustoz
+    const isAi = tabName === 'ai';
+    document.body.classList.toggle('tab-ai-active', isAi);
+    if (!isAi) {
+      document.body.classList.remove('keyboard-open');
+      document.documentElement.style.removeProperty('--ai-viewport-height');
+    }
+
     document.querySelectorAll('.view-pane').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.nav-bar-item').forEach(el => el.classList.remove('active'));
 
@@ -1012,6 +1020,9 @@
       updateSavedQuestionsCount();
     } else if (tabName === 'ai') {
       initAiChat();
+      setTimeout(() => {
+        scrollAiToBottom(false);
+      }, 80);
     }
   }
 
@@ -2139,6 +2150,42 @@
       .replace(/'/g, '&#039;');
   }
 
+  function formatAiMarkdown(text) {
+    if (!text) return '';
+    let escaped = escapeHtml(text);
+    
+    // Headings: ### Header or ## Header
+    escaped = escaped.replace(/^###\s+(.+)$/gm, '<h4 class="ai-msg-h4">$1</h4>');
+    escaped = escaped.replace(/^##\s+(.+)$/gm, '<h4 class="ai-msg-h4" style="font-size:15px;">$1</h4>');
+    
+    // Bold: **text**
+    escaped = escaped.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    
+    // Italic: *text*
+    escaped = escaped.replace(/\*([^\*]+?)\*/g, '<em>$1</em>');
+    
+    // Inline code: `code`
+    escaped = escaped.replace(/`([^`]+?)`/g, '<code class="ai-msg-code">$1</code>');
+    
+    // Bullet lists: lines starting with "- " or "* "
+    escaped = escaped.replace(/^[-*]\s+(.+)$/gm, '<div class="ai-msg-list-item"><span class="ai-msg-bullet"></span><span>$1</span></div>');
+    
+    // Clean up newlines around headings/lists, then convert remainder to <br>
+    escaped = escaped.replace(/(<\/h4>|<\/div>)\n/g, '$1');
+    escaped = escaped.replace(/\n/g, '<br>');
+    
+    return escaped;
+  }
+
+  function scrollAiToBottom(smooth = true) {
+    const container = document.getElementById('ai-chat-messages');
+    if (!container) return;
+    container.scrollTo({
+      top: container.scrollHeight + 120,
+      behavior: smooth ? 'smooth' : 'auto'
+    });
+  }
+
   function appendAiMessageToUI(role, text, cards = []) {
     const container = document.getElementById('ai-chat-messages');
     if (!container) return;
@@ -2173,13 +2220,12 @@
       `).join('');
     }
 
-    const formattedText = escapeHtml(text)
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em>$1</em>')
-      .replace(/\n/g, '<br>');
+    const formattedText = formatAiMarkdown(text);
+    const botAvatarHtml = `<img src="/static/images/rully-avatar-128.png" alt="Rully" class="ai-avatar-thumb">`;
+    const userAvatarHtml = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 15px; height: 15px;"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
 
     msgDiv.innerHTML = `
-      <div class="ai-msg-avatar">${isBot ? '✨' : '👤'}</div>
+      <div class="ai-msg-avatar">${isBot ? botAvatarHtml : userAvatarHtml}</div>
       <div class="ai-msg-content">
         <div class="ai-msg-bubble">${formattedText}${cardsHtml}</div>
         <span class="ai-msg-time">${timeStr}</span>
@@ -2193,7 +2239,7 @@
       container.appendChild(msgDiv);
     }
 
-    container.scrollTop = container.scrollHeight;
+    scrollAiToBottom(true);
   }
 
   function showAiTypingIndicator() {
@@ -2206,7 +2252,9 @@
       typing.id = 'ai-typing-indicator';
       typing.className = 'ai-msg ai-msg-bot';
       typing.innerHTML = `
-        <div class="ai-msg-avatar">✨</div>
+        <div class="ai-msg-avatar">
+          <img src="/static/images/rully-avatar-128.png" alt="Rully" class="ai-avatar-thumb">
+        </div>
         <div class="ai-msg-content">
           <div class="ai-typing-bubble">
             <span class="ai-typing-dot"></span>
@@ -2221,7 +2269,7 @@
       } else {
         container.appendChild(typing);
       }
-      container.scrollTop = container.scrollHeight;
+      scrollAiToBottom(true);
     }
   }
 
@@ -2284,7 +2332,9 @@
         const chips = document.getElementById('ai-quick-chips');
         container.innerHTML = `
           <div class="ai-msg ai-msg-bot">
-            <div class="ai-msg-avatar">✨</div>
+            <div class="ai-msg-avatar">
+              <img src="/static/images/rully-avatar-128.png" alt="Rully" class="ai-avatar-thumb">
+            </div>
             <div class="ai-msg-content">
               <div class="ai-msg-bubble">
                 Suhbat tarixi tozalandi. Qanday savolingiz bor? Men yordam berishga tayyorman! 🚗
@@ -2816,8 +2866,50 @@
       });
       aiInput.addEventListener('input', () => {
         aiInput.style.height = 'auto';
-        aiInput.style.height = Math.min(aiInput.scrollHeight, 90) + 'px';
+        aiInput.style.height = Math.min(aiInput.scrollHeight, 100) + 'px';
       });
+
+      // Viewport & Keyboard Handling for Mobile (Telegram WebApp & Touch)
+      const updateAiViewport = () => {
+        if (state.activeTab !== 'ai') return;
+        const vv = window.visualViewport;
+        const vh = vv ? vv.height : window.innerHeight;
+        const winH = window.innerHeight;
+        const isKb = (winH - vh > 120) || (document.activeElement === aiInput);
+        document.body.classList.toggle('keyboard-open', isKb);
+        if (isKb) {
+          document.documentElement.style.setProperty('--ai-viewport-height', `${vh}px`);
+        } else {
+          document.documentElement.style.removeProperty('--ai-viewport-height');
+        }
+      };
+
+      aiInput.addEventListener('focus', () => {
+        document.body.classList.add('keyboard-open');
+        updateAiViewport();
+        setTimeout(() => scrollAiToBottom(true), 120);
+        setTimeout(() => scrollAiToBottom(true), 350);
+      });
+
+      aiInput.addEventListener('blur', () => {
+        setTimeout(() => {
+          if (document.activeElement !== aiInput) {
+            document.body.classList.remove('keyboard-open');
+            document.documentElement.style.removeProperty('--ai-viewport-height');
+            scrollAiToBottom(false);
+          }
+        }, 150);
+      });
+
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', updateAiViewport);
+        window.visualViewport.addEventListener('scroll', () => {
+          if (state.activeTab === 'ai') window.scrollTo(0, 0);
+        });
+      }
+      if (window.Telegram?.WebApp?.onEvent) {
+        window.Telegram.WebApp.onEvent('viewportChanged', updateAiViewport);
+      }
     }
 
     if (aiClearBtn) {
@@ -2829,7 +2921,10 @@
         const chip = e.target.closest('.ai-chip-btn');
         if (chip) {
           const prompt = chip.getAttribute('data-prompt');
-          if (prompt) sendAiMessage(prompt);
+          if (prompt) {
+            triggerHaptic('impact', 'light');
+            sendAiMessage(prompt);
+          }
         }
       });
     }

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>RULLY — O‘zbekiston Haydovchilik Imtihoni</title>
-  <link rel="stylesheet" href="/static/css/rully.css?v=3.5.1">
+  <link rel="stylesheet" href="/static/css/rully.css?v=3.6.0">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -257,15 +257,16 @@
         <div class="ai-top-header">
           <div class="ai-header-left">
             <div class="ai-avatar-box">
-              <span class="ai-avatar-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><circle cx="19" cy="5" r="1.5"/><circle cx="5" cy="19" r="1"/></svg>
-              </span>
+              <img src="/static/images/rully-avatar-128.png" alt="Rully" class="ai-avatar-header-img">
               <span class="ai-status-dot"></span>
             </div>
             <div class="ai-header-meta">
               <div class="ai-header-title-row">
                 <h3 class="ai-header-title">AI Ustoz</h3>
-                <span class="ai-version-pill">Gemini 3.1</span>
+                <span class="ai-status-badge">
+                  <span class="ai-pulse-dot"></span>
+                  <span class="ai-status-txt">Onlayn</span>
+                </span>
               </div>
               <div class="ai-header-subtitle" id="ai-usage-label">5/5 bepul so‘rov</div>
             </div>
@@ -278,7 +279,9 @@
         <!-- Chat Messages Area -->
         <div class="ai-chat-body" id="ai-chat-messages">
           <div class="ai-msg ai-msg-bot">
-            <div class="ai-msg-avatar">✨</div>
+            <div class="ai-msg-avatar">
+              <img src="/static/images/rully-avatar-128.png" alt="Rully" class="ai-avatar-thumb">
+            </div>
             <div class="ai-msg-content">
               <div class="ai-msg-bubble">
                 Assalomu alaykum! Men <strong>Rully AI Ustoz</strong>man. 🚗<br><br>
@@ -935,9 +938,9 @@
   </nav>
 
   <!-- Application Scripts -->
-  <script src="/static/js/icons.js?v=3.5.1"></script>
-  <script src="/static/js/translations.js?v=3.5.1"></script>
-  <script src="/static/js/cheatsheet_data.js?v=3.5.1"></script>
-  <script src="/static/js/app.js?v=3.5.1"></script>
+  <script src="/static/js/icons.js?v=3.6.0"></script>
+  <script src="/static/js/translations.js?v=3.6.0"></script>
+  <script src="/static/js/cheatsheet_data.js?v=3.6.0"></script>
+  <script src="/static/js/app.js?v=3.6.0"></script>
 </body>
 </html>
