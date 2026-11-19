@@ -2,6 +2,7 @@
 Authentication and User Profile Endpoints for RULLY Mini App.
 """
 
+import os
 from fastapi import APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
@@ -90,6 +91,14 @@ async def activate_subscription(
     user: Dict[str, Any] = Depends(get_current_user),
     db: BotDatabase = Depends(get_db)
 ):
+    # Security: Disable direct activation backdoor in production
+    is_prod = os.getenv("ENVIRONMENT", "").lower() == "production" or bool(os.getenv("VERCEL"))
+    if is_prod:
+        raise HTTPException(
+            status_code=403,
+            detail="DIRECT_ACTIVATION_DISABLED: Manual activation is disabled in production. Please use /api/payment/orders/create"
+        )
+
     user_id = user["user_id"]
     sub = db.activate_subscription(user_id, req.plan_id)
     return {

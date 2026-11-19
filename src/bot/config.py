@@ -7,7 +7,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BOT_TOKEN: str = os.getenv("BOT_TOKEN", "8657532177:AAGsyMFpzuwPus9jOdFRNP8f65qa8E-4q8g")
+_env_token = os.getenv("BOT_TOKEN", "").strip()
+_is_prod = os.getenv("ENVIRONMENT", "").lower() == "production" or bool(os.getenv("VERCEL"))
+if not _env_token and not _is_prod:
+    BOT_TOKEN: str = "8657532177:AAGsyMFpzuwPus9jOdFRNP8f65qa8E-4q8g"
+else:
+    BOT_TOKEN: str = _env_token
+
 DB_PATH: str = os.getenv("DB_PATH", "master_database.sqlite")
 
 # Admin IDs (comma-separated integers in environment variable, or default list)

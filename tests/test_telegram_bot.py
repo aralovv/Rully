@@ -25,11 +25,15 @@ DB_PATH = "master_database.sqlite"
 def cleanup_bot_test_users():
     def _clean():
         with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("PRAGMA foreign_keys = ON;")
             real_ids = (1956239701, 8515329556, 8809526955)
+            conn.execute("DELETE FROM session_answers WHERE session_id IN (SELECT session_id FROM user_sessions WHERE user_id NOT IN (?, ?, ?))", real_ids)
             conn.execute("DELETE FROM telegram_users WHERE user_id NOT IN (?, ?, ?)", real_ids)
             conn.execute("DELETE FROM user_sessions WHERE user_id NOT IN (?, ?, ?)", real_ids)
             conn.execute("DELETE FROM user_mistakes WHERE user_id NOT IN (?, ?, ?)", real_ids)
             conn.execute("DELETE FROM exam_results WHERE user_id NOT IN (?, ?, ?)", real_ids)
+            conn.execute("DELETE FROM session_answers WHERE session_id NOT IN (SELECT session_id FROM user_sessions)")
+            conn.commit()
     _clean()
     yield
     _clean()

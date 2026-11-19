@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: rully-all-in-one
+    runtime: python
+    region: frankfurt
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python run_server.py
+    envVars:
+      - key: TURSO_DATABASE_URL
+        value: https://rully-aralovv.aws-ap-south-1.turso.io
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: BOT_TOKEN
+        value: 8657532177:AAGsyMFpzuwPus9jOdFRNP8f65qa8E-4q8g
+      - key: SECRET_KEY
+        value: rully_secure_secret_key_32_bytes_minimum_for_crypto_production_2026
+      - key: ADMIN_IDS
+        value: "1956239701"
+      - key: ADMIN_TELEGRAM_ID
+        value: "1956239701"
+      - key: ADMIN_USERNAME
+        value: Admin
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 10000

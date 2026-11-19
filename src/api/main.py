@@ -70,9 +70,13 @@ async def periodic_question_sync_worker():
 
 
 IS_VERCEL = bool(os.getenv("VERCEL"))
+_bot_instance = None
+_dp_instance = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _bot_instance, _dp_instance
+
     # 1. Run migrations and database schema updates only on local development
     if not IS_VERCEL:
         try:
@@ -83,6 +87,8 @@ async def lifespan(app: FastAPI):
 
     expiration_task = None
     question_sync_task = None
+    mtproto_task = None
+    bot_task = None
 
     if not IS_VERCEL:
         # 2. Start background order expiration task
@@ -91,27 +97,88 @@ async def lifespan(app: FastAPI):
         # 3. Start periodic question sync worker
         question_sync_task = asyncio.create_task(periodic_question_sync_worker())
 
-        # 4. Attempt to initialize MTProto client if stored session exists
-        try:
-            mtproto = get_mtproto_manager()
-            asyncio.create_task(mtproto.initialize_and_start())
-        except Exception as e:
-            logger.error(f"MTProto startup initialization error: {e}")
+        # 4. Start resilient 24/7 MTProto worker loop
+        async def mtproto_worker_loop():
+            from src.mtproto.service import get_mtproto_manager
+            manager = get_mtproto_manager()
+            retry_delay = 5
+            while True:
+                try:
+                    logger.info("Initializing and connecting MTProto client from stored session...")
+                    connected = await manager.initialize_and_start()
+                    if not connected:
+                        logger.warning(
+                            f"MTProto session not ready or login required. Status: {manager.connection_status}. "
+                            f"Waiting {retry_delay}s before retry..."
+                        )
+                        await asyncio.sleep(retry_delay)
+                        continue
+
+                    logger.info("MTProto successfully CONNECTED! Listening for Humocardbot messages...")
+                    retry_delay = 5
+                    if manager.client:
+                        await manager.client.run_until_disconnected()
+                    logger.warning("MTProto client disconnected. Reconnecting in 5s...")
+                    await asyncio.sleep(5)
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    logger.error(f"MTProto worker loop exception: {e}. Retrying in {retry_delay}s...")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 2, 60)
+
+        mtproto_task = asyncio.create_task(mtproto_worker_loop())
+
+        # 5. Start Telegram Bot polling in background
+        bot_token = os.getenv("BOT_TOKEN", "").strip()
+        if bot_token and not bot_token.startswith("your_"):
+            async def bot_worker_loop():
+                global _bot_instance, _dp_instance
+                try:
+                    from src.bot.bot import create_bot_app, setup_bot_commands
+                    bot, dp, _, _ = create_bot_app()
+                    _bot_instance = bot
+                    _dp_instance = dp
+                    await bot.delete_webhook(drop_pending_updates=True)
+                    await setup_bot_commands(bot)
+                    me = await bot.get_me()
+                    logger.info(f"Telegram Bot @{me.username} polling started successfully in All-in-One server.")
+                    await dp.start_polling(bot)
+                except asyncio.CancelledError:
+                    pass
+                except Exception as e:
+                    logger.error(f"Telegram Bot polling error: {e}")
+
+            bot_task = asyncio.create_task(bot_worker_loop())
     else:
         logger.info("Running in Vercel Serverless environment. Long-running daemons disabled.")
 
     yield
 
     # Teardown
-    if expiration_task:
-        expiration_task.cancel()
-    if question_sync_task:
-        question_sync_task.cancel()
+    if bot_task:
+        bot_task.cancel()
+    if _dp_instance:
+        try:
+            await _dp_instance.stop_polling()
+        except Exception:
+            pass
+    if _bot_instance:
+        try:
+            await _bot_instance.session.close()
+        except Exception:
+            pass
+    if mtproto_task:
+        mtproto_task.cancel()
     if not IS_VERCEL:
         try:
             await get_mtproto_manager().disconnect()
         except Exception:
             pass
+    if expiration_task:
+        expiration_task.cancel()
+    if question_sync_task:
+        question_sync_task.cancel()
 
 
 app = FastAPI(
@@ -124,7 +191,7 @@ app = FastAPI(
 # CORS Configuration for Mini App webviews and private admin web access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=r"^https?://.*$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -211,12 +278,19 @@ async def favicon():
     return Response(status_code=204)
 
 @app.get("/api/health")
+@app.get("/healthz")
 async def health_check():
+    from src.mtproto.service import get_mtproto_manager
+    mtproto = get_mtproto_manager()
     return {
         "status": "healthy",
         "service": "rully-miniapp-api",
         "version": "2.0.0",
-        "canonical_db": "master_database.sqlite"
+        "environment": "vercel" if IS_VERCEL else "standalone-cloud",
+        "canonical_db": "master_database.sqlite",
+        "turso_configured": bool(os.getenv("TURSO_DATABASE_URL")),
+        "mtproto_status": mtproto.connection_status,
+        "bot_active": _bot_instance is not None
     }
 
 # --- Independent Admin Panel Route ---

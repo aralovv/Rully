@@ -27,16 +27,16 @@ async def get_ai_status(
     sub = db.get_user_subscription(user_id)
     is_pro = sub.get("is_pro", False)
 
-    # Check today's usage
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute("""
-    SELECT request_count FROM ai_usage_limits
-    WHERE user_id = ? AND usage_date = DATE('now')
-    """, (user_id,))
-    row = c.fetchone()
-    current = row["request_count"] if row else 0
-    max_limit = 100 if is_pro else 0
+    # Check today's usage safely with context manager
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute("""
+        SELECT request_count FROM ai_usage_limits
+        WHERE user_id = ? AND usage_date = DATE('now')
+        """, (user_id,))
+        row = c.fetchone()
+        current = row["request_count"] if row else 0
+        max_limit = 100 if is_pro else 0
 
     return {
         "ok": True,

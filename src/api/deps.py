@@ -2,6 +2,7 @@
 FastAPI Dependencies for RULLY Mini App API.
 """
 
+import os
 from fastapi import Header, Query, HTTPException, Depends
 from typing import Optional, Dict, Any
 from src.api.security import verify_telegram_init_data
@@ -19,7 +20,11 @@ async def get_current_user(
 
     # Development fallback
     if not raw_data or str(raw_data).strip().lower() in ["null", "undefined", "none", ""]:
-        # Default dev user for direct browser previews
+        is_prod = os.getenv("ENVIRONMENT", "").lower() == "production" or bool(os.getenv("VERCEL"))
+        if is_prod:
+            raise HTTPException(status_code=401, detail="Missing Telegram authentication data")
+
+        # Default dev user for local testing and direct browser previews only
         user = db.get_or_create_user(
             user_id=8809526955,
             username="kurs_savdo",

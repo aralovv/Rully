@@ -222,56 +222,69 @@ def create_or_get_payment_order(user_id: int, plan_id: str) -> Tuple[bool, str, 
                 c.execute("UPDATE payment_orders SET status = 'EXPIRED' WHERE order_id = ?", (existing_order["order_id"],))
                 conn.commit()
 
-        # 5. Generate Unique Suffix (1 to 999 UZS)
-        # Find all currently allocated amounts for this card among active pending orders
-        c.execute("""
-            SELECT final_amount_uzs FROM payment_orders 
-            WHERE card_id = ? AND status = 'PENDING' AND expires_at > ?
-        """, (card["id"], now_str))
-        active_amounts = set(row[0] for row in c.fetchall())
-
+        # 5. Generate Unique Suffix (1 to 999 UZS) with retry protection against race condition
         base_price = plan["base_price_uzs"]
-        allocated_suffix = None
+        max_retries = 5
+        created_order_id = None
 
-        # Try random suffixes first
-        candidate_suffixes = list(range(1, 1000))
-        secrets.SystemRandom().shuffle(candidate_suffixes)
+        for attempt in range(max_retries):
+            # Refresh active amounts for this card
+            c.execute("""
+                SELECT final_amount_uzs FROM payment_orders 
+                WHERE card_id = ? AND status = 'PENDING' AND expires_at > ?
+            """, (card["id"], now_str))
+            active_amounts = set(row[0] for row in c.fetchall())
 
-        for s in candidate_suffixes:
-            candidate_amount = base_price + s
-            if candidate_amount not in active_amounts:
-                allocated_suffix = s
+            candidate_suffixes = list(range(1, 1000))
+            secrets.SystemRandom().shuffle(candidate_suffixes)
+
+            allocated_suffix = None
+            for s in candidate_suffixes:
+                candidate_amount = base_price + s
+                if candidate_amount not in active_amounts:
+                    allocated_suffix = s
+                    break
+
+            if allocated_suffix is None:
+                return False, "To‘lov tizimi ayni paytda band. Iltimos, 1-2 daqiqadan so‘ng qayta urinib ko‘ring.", None
+
+            final_amount = base_price + allocated_suffix
+            order_id = f"ORD-{now_dt.strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3).upper()}"
+            expires_dt = now_dt + timedelta(minutes=ORDER_LIFETIME_MINUTES)
+            expires_str = expires_dt.isoformat()
+
+            try:
+                # 6. Insert new payment order atomically
+                c.execute("""
+                    INSERT INTO payment_orders (
+                        order_id, user_id, plan_id, plan_name, duration_days, base_price_uzs,
+                        suffix_uzs, final_amount_uzs, card_id, card_suffix, card_number_masked,
+                        cardholder_name, status, created_at, expires_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
+                """, (
+                    order_id, user_id, plan["id"], plan["name"], plan["duration_days"],
+                    base_price, allocated_suffix, final_amount, card["id"],
+                    card["card_suffix"], card["card_number_masked"], card["cardholder_name"],
+                    now_str, expires_str
+                ))
+
+                # 7. Record user activity event
+                c.execute("""
+                    INSERT INTO user_activity_events (user_id, event_name, event_data, created_at)
+                    VALUES (?, 'PAYMENT_ORDER_CREATED', ?, ?)
+                """, (user_id, f'{{"order_id": "{order_id}", "plan_id": "{plan_id}", "amount": {final_amount}}}', now_str))
+
+                conn.commit()
+                created_order_id = order_id
                 break
+            except sqlite3.IntegrityError:
+                # Collision detected on concurrent insertion - retry with new suffix
+                continue
 
-        if allocated_suffix is None:
-            return False, "To‘lov tizimi ayni paytda band. Iltimos, 1-2 daqiqadan so‘ng qayta urinib ko‘ring.", None
+        if not created_order_id:
+            return False, "To‘lov tizimida ziddiyat yuz berdi. Iltimos, qayta urinib ko‘ring.", None
 
-        final_amount = base_price + allocated_suffix
-        order_id = f"ORD-{now_dt.strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3).upper()}"
-        expires_dt = now_dt + timedelta(minutes=ORDER_LIFETIME_MINUTES)
-        expires_str = expires_dt.isoformat()
-
-        # 6. Insert new payment order atomically
-        c.execute("""
-            INSERT INTO payment_orders (
-                order_id, user_id, plan_id, plan_name, duration_days, base_price_uzs,
-                suffix_uzs, final_amount_uzs, card_id, card_suffix, card_number_masked,
-                cardholder_name, status, created_at, expires_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
-        """, (
-            order_id, user_id, plan["id"], plan["name"], plan["duration_days"],
-            base_price, allocated_suffix, final_amount, card["id"],
-            card["card_suffix"], card["card_number_masked"], card["cardholder_name"],
-            now_str, expires_str
-        ))
-
-        # 7. Record user activity event
-        c.execute("""
-            INSERT INTO user_activity_events (user_id, event_name, event_data, created_at)
-            VALUES (?, 'PAYMENT_ORDER_CREATED', ?, ?)
-        """, (user_id, f'{{"order_id": "{order_id}", "plan_id": "{plan_id}", "amount": {final_amount}}}', now_str))
-
-        conn.commit()
+        order_id = created_order_id
 
         c.execute("SELECT * FROM payment_orders WHERE order_id = ?", (order_id,))
         created_order = dict(c.fetchone())

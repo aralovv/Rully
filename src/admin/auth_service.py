@@ -31,6 +31,10 @@ SESSION_DURATION_HOURS = 12
 OTP_EXPIRY_MINUTES = 5
 MAX_OTP_ATTEMPTS = 5
 
+_is_prod = os.getenv("ENVIRONMENT", "").lower() == "production" or bool(os.getenv("VERCEL"))
+if _is_prod and not os.getenv("ADMIN_PASSWORD"):
+    logger.critical("SECURITY ALERT: ADMIN_PASSWORD environment variable is not set! Using default fallback.")
+
 # In-memory rate limiter for failed login attempts by IP
 _login_failures: Dict[str, list] = {}
 

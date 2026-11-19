@@ -5,6 +5,7 @@ Supports multi-token fallback for zero-downtime token rotation.
 """
 
 import os
+import time
 import hmac
 import hashlib
 import json
@@ -25,14 +26,23 @@ def get_allowed_bot_tokens() -> List[str]:
     if BOT_TOKEN and BOT_TOKEN not in tokens:
         tokens.append(BOT_TOKEN)
 
-    # Known valid tokens in this system for seamless transition
-    known_tokens = [
-        "8657532177:AAGsyMFpzuwPus9jOdFRNP8f65qa8E-4q8g",
-        "5875526565:AAEwGdyseiyejQQkf67_WEkvKX0cz0EX94s"
-    ]
-    for kt in known_tokens:
-        if kt not in tokens:
-            tokens.append(kt)
+    # Additional tokens from environment for rotation
+    rotation_tokens = os.getenv("BOT_PREVIOUS_TOKENS", "").split(",")
+    for rt in rotation_tokens:
+        clean_rt = rt.strip()
+        if clean_rt and clean_rt not in tokens:
+            tokens.append(clean_rt)
+
+    # In local testing/dev only: fallback to test tokens if no token set
+    is_prod = os.getenv("ENVIRONMENT", "").lower() == "production" or bool(os.getenv("VERCEL"))
+    if not is_prod:
+        known_tokens = [
+            "8657532177:AAGsyMFpzuwPus9jOdFRNP8f65qa8E-4q8g",
+            "5875526565:AAEwGdyseiyejQQkf67_WEkvKX0cz0EX94s"
+        ]
+        for kt in known_tokens:
+            if kt not in tokens:
+                tokens.append(kt)
 
     return tokens
 
@@ -67,8 +77,11 @@ def verify_telegram_init_data(init_data: str, bot_token: Optional[str] = None) -
     if "hash=" not in init_data and "hash%3D" in init_data:
         init_data = urllib.parse.unquote(init_data)
 
-    # Allow dev / testing bypass if prefixed with dev_ or mock mode
+    # Allow dev / testing bypass only in non-production environments
     if init_data.startswith("dev_user_") or init_data.startswith("test_user_"):
+        is_prod = os.getenv("ENVIRONMENT", "").lower() == "production" or bool(os.getenv("VERCEL"))
+        if is_prod:
+            return False, None
         user_id_str = init_data.split("_")[-1]
         user_id = int(user_id_str) if user_id_str.isdigit() else 8809526955
         return True, {
@@ -87,6 +100,16 @@ def verify_telegram_init_data(init_data: str, bot_token: Optional[str] = None) -
             return False, None
 
         received_hash = params_dict.pop("hash")
+
+        # Check auth_date expiration to prevent replay attacks
+        auth_date_val = params_dict.get("auth_date")
+        if auth_date_val and str(auth_date_val).isdigit():
+            auth_timestamp = int(auth_date_val)
+            now_ts = int(time.time())
+            is_prod = os.getenv("ENVIRONMENT", "").lower() == "production" or bool(os.getenv("VERCEL"))
+            # Stale if older than 24h or more than 5 minutes in future (clock drift)
+            if is_prod and ((now_ts - auth_timestamp > 86400) or (auth_timestamp - now_ts > 300)):
+                return False, None
 
         # Sort alphabetically and format as key=value separated by \n
         sorted_pairs = sorted(params_dict.items(), key=lambda x: x[0])
@@ -143,7 +166,7 @@ def generate_dev_init_data(user_id: int = 8809526955, bot_token: Optional[str] =
     }, separators=(',', ':'))
 
     params = {
-        "auth_date": "1731760000",
+        "auth_date": str(int(time.time())),
         "query_id": "AAHd6g0bAAAAAN3qDRvVq2x1",
         "user": user_json
     }

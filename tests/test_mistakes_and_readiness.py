@@ -78,6 +78,7 @@ def test_mistakes_bank_strict_isolation_on_unanswered(test_db):
         c = conn.cursor()
         c.execute("DELETE FROM user_mistakes WHERE user_id = ?", (user_id,))
         c.execute("DELETE FROM exam_results WHERE user_id = ?", (user_id,))
+        c.execute("DELETE FROM session_answers WHERE session_id IN (SELECT session_id FROM user_sessions WHERE user_id = ?)", (user_id,))
         c.execute("DELETE FROM session_answers WHERE session_id LIKE 'test-session-iso-%'")
         c.execute("DELETE FROM user_sessions WHERE user_id = ?", (user_id,))
         c.execute("DELETE FROM telegram_users WHERE user_id = ?", (user_id,))
@@ -153,3 +154,11 @@ def test_mistakes_bank_strict_isolation_on_unanswered(test_db):
     test_db.resolve_mistake(user_id, question_ids[1])
     active_mistakes_after = test_db.get_user_mistakes(user_id)
     assert len(active_mistakes_after) == 0
+
+    # Clean up test session answers and sessions
+    with test_db._get_connection() as conn:
+        c = conn.cursor()
+        c.execute("DELETE FROM session_answers WHERE session_id = ?", (session_id,))
+        c.execute("DELETE FROM user_sessions WHERE session_id = ?", (session_id,))
+        c.execute("DELETE FROM telegram_users WHERE user_id = ?", (user_id,))
+        conn.commit()

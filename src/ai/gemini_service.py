@@ -31,55 +31,55 @@ class GeminiService:
             return False, 0, 0
 
         max_limit = 100
-        conn = get_db_connection()
-        c = conn.cursor()
-        
-        # Today's date in YYYY-MM-DD
-        c.execute("""
-        SELECT request_count FROM ai_usage_limits
-        WHERE user_id = ? AND usage_date = DATE('now')
-        """, (user_id,))
-        row = c.fetchone()
-        
-        current = row["request_count"] if row else 0
-        if current >= max_limit:
-            return False, current, max_limit
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            
+            # Today's date in YYYY-MM-DD
+            c.execute("""
+            SELECT request_count FROM ai_usage_limits
+            WHERE user_id = ? AND usage_date = DATE('now')
+            """, (user_id,))
+            row = c.fetchone()
+            
+            current = row["request_count"] if row else 0
+            if current >= max_limit:
+                return False, current, max_limit
 
-        # Increment or insert
-        c.execute("""
-        INSERT INTO ai_usage_limits (user_id, usage_date, request_count)
-        VALUES (?, DATE('now'), 1)
-        ON CONFLICT(user_id, usage_date) DO UPDATE SET request_count = request_count + 1
-        """, (user_id,))
-        conn.commit()
-        
-        return True, current + 1, max_limit
+            # Increment or insert
+            c.execute("""
+            INSERT INTO ai_usage_limits (user_id, usage_date, request_count)
+            VALUES (?, DATE('now'), 1)
+            ON CONFLICT(user_id, usage_date) DO UPDATE SET request_count = request_count + 1
+            """, (user_id,))
+            conn.commit()
+            
+            return True, current + 1, max_limit
 
     def get_conversation_history(self, user_id: int, session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
         try:
-            conn = get_db_connection()
-            c = conn.cursor()
-            c.execute("""
-            SELECT role, content FROM ai_conversations
-            WHERE user_id = ? AND session_id = ?
-            ORDER BY id DESC LIMIT ?
-            """, (user_id, session_id, limit))
-            rows = c.fetchall()
-            rows.reverse() # chronological
-            return [{"role": "user" if r["role"] == "user" else "model", "parts": [{"text": r["content"]}]} for r in rows]
+            with get_db_connection() as conn:
+                c = conn.cursor()
+                c.execute("""
+                SELECT role, content FROM ai_conversations
+                WHERE user_id = ? AND session_id = ?
+                ORDER BY id DESC LIMIT ?
+                """, (user_id, session_id, limit))
+                rows = c.fetchall()
+                rows.reverse() # chronological
+                return [{"role": "user" if r["role"] == "user" else "model", "parts": [{"text": r["content"]}]} for r in rows]
         except Exception as e:
             logger.warning(f"Failed to fetch conversation history: {e}")
             return []
 
     def save_message(self, user_id: int, session_id: str, role: str, content: str, meta_json: Optional[str] = None):
         try:
-            conn = get_db_connection()
-            c = conn.cursor()
-            c.execute("""
-            INSERT INTO ai_conversations (user_id, session_id, role, content, meta_json)
-            VALUES (?, ?, ?, ?, ?)
-            """, (user_id, session_id, role, content, meta_json))
-            conn.commit()
+            with get_db_connection() as conn:
+                c = conn.cursor()
+                c.execute("""
+                INSERT INTO ai_conversations (user_id, session_id, role, content, meta_json)
+                VALUES (?, ?, ?, ?, ?)
+                """, (user_id, session_id, role, content, meta_json))
+                conn.commit()
         except Exception as e:
             logger.warning(f"Failed to persist AI conversation message: {e}")
 

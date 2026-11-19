@@ -7,7 +7,9 @@ import asyncio
 import logging
 import argparse
 
-sys.path.insert(0, os.path.abspath("c:/Users/Администратор/AvtoTest"))
+root_dir = os.path.dirname(os.path.abspath(__file__))
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 

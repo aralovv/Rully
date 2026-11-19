@@ -28,7 +28,16 @@ _hasher = PasswordHasher(
 )
 
 # Encryption key for sensitive data (cards, sessions)
-_SECRET_KEY = os.getenv("SECRET_KEY", "rully_secure_secret_key_32_bytes_minimum_for_crypto_production_2026")
+_raw_secret = os.getenv("SECRET_KEY", "")
+_is_prod = os.getenv("ENVIRONMENT", "").lower() == "production" or bool(os.getenv("VERCEL"))
+if not _raw_secret:
+    if _is_prod:
+        import warnings
+        warnings.warn("SECURITY WARNING: SECRET_KEY is not defined in production environment variables! Using fallback.", RuntimeWarning)
+    _SECRET_KEY = "rully_secure_secret_key_32_bytes_minimum_for_crypto_production_2026"
+else:
+    _SECRET_KEY = _raw_secret
+
 # Generate a deterministic 32-byte url-safe base64 key from _SECRET_KEY
 _fernet_key = base64.urlsafe_b64encode(hashlib.sha256(_SECRET_KEY.encode()).digest())
 _cipher = Fernet(_fernet_key)

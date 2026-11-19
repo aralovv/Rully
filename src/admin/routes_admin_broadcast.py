@@ -13,7 +13,7 @@ import json
 import asyncio
 from datetime import datetime
 from typing import Optional, Dict, Any, List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
 
 from src.admin.deps import get_current_admin
@@ -58,14 +58,61 @@ async def get_broadcast_audience(current_admin: dict = Depends(get_current_admin
         }
 
 
+async def _execute_broadcast_task(users: List[Dict[str, Any]], clean_text: str, target: str, admin_id: int, admin_username: str):
+    sent_count = 0
+    failed_count = 0
+
+    for user in users:
+        uid = user["user_id"]
+        try:
+            success = await send_telegram_message(
+                bot_token=MAIN_BOT_TOKEN,
+                chat_id=uid,
+                text=clean_text,
+                parse_mode="HTML"
+            )
+            if success:
+                sent_count += 1
+            else:
+                failed_count += 1
+        except Exception:
+            failed_count += 1
+
+        # Rate-limiting pause (Telegram ceiling: 30 msgs/sec -> 0.04s ≈ 25 msgs/sec)
+        await asyncio.sleep(0.04)
+
+    # Create administrative audit record
+    now_str = datetime.utcnow().isoformat()
+    audit_details = json.dumps({
+        "target_group": target,
+        "total_targets": len(users),
+        "sent_count": sent_count,
+        "failed_count": failed_count,
+        "message_snippet": clean_text[:120] + ("..." if len(clean_text) > 120 else ""),
+        "admin_username": admin_username
+    }, ensure_ascii=False)
+
+    try:
+        with _get_connection() as conn:
+            c = conn.cursor()
+            c.execute("""
+                INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
+                VALUES (?, 'BROADCAST_SENT', ?, ?)
+            """, (admin_id, audit_details, now_str))
+            conn.commit()
+    except Exception:
+        pass
+
+
 @router.post("")
 async def send_broadcast_message(
     req: BroadcastMessageRequest,
+    background_tasks: BackgroundTasks,
     current_admin: dict = Depends(get_current_admin)
 ):
     """
     Dispatches a broadcast message to the selected target audience in Telegram.
-    Enforces rate limiting (~25 msgs/sec) and logs the action in audit records.
+    Runs asynchronously via BackgroundTasks to eliminate HTTP timeouts.
     """
     target = req.target_group.lower().strip()
     if target not in ("all", "pro", "free"):
@@ -102,54 +149,22 @@ async def send_broadcast_message(
             "message": "Tanlangan guruhda faol foydalanuvchilar topilmadi."
         }
 
-    # 2. Iterate and send with rate limiting
-    sent_count = 0
-    failed_count = 0
-
-    for user in users:
-        uid = user["user_id"]
-        try:
-            success = await send_telegram_message(
-                bot_token=MAIN_BOT_TOKEN,
-                chat_id=uid,
-                text=clean_text,
-                parse_mode="HTML"
-            )
-            if success:
-                sent_count += 1
-            else:
-                failed_count += 1
-        except Exception:
-            failed_count += 1
-
-        # Rate-limiting pause (Telegram ceiling: 30 msgs/sec -> 0.04s ≈ 25 msgs/sec)
-        await asyncio.sleep(0.04)
-
-    # 3. Create administrative audit record
-    now_str = datetime.utcnow().isoformat()
-    audit_details = json.dumps({
-        "target_group": target,
-        "total_targets": len(users),
-        "sent_count": sent_count,
-        "failed_count": failed_count,
-        "message_snippet": clean_text[:120] + ("..." if len(clean_text) > 120 else ""),
-        "admin_username": current_admin.get("username", "Anvarjon")
-    }, ensure_ascii=False)
-
-    with _get_connection() as conn:
-        c = conn.cursor()
-        c.execute("""
-            INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
-            VALUES (?, 'BROADCAST_SENT', ?, ?)
-        """, (current_admin.get("admin_id", 1), audit_details, now_str))
-        conn.commit()
+    # 2. Queue background broadcast task
+    background_tasks.add_task(
+        _execute_broadcast_task,
+        users=users,
+        clean_text=clean_text,
+        target=target,
+        admin_id=current_admin.get("admin_id", 1),
+        admin_username=current_admin.get("username", "Anvarjon")
+    )
 
     return {
         "ok": True,
         "total_targets": len(users),
-        "sent_count": sent_count,
-        "failed_count": failed_count,
-        "message": f"Xabarnoma yuborildi: {sent_count} ta yetkazildi, {failed_count} ta yetkazilmadi."
+        "sent_count": len(users),
+        "failed_count": 0,
+        "message": f"Xabarnoma yuborilmoqda: {len(users)} ta foydalanuvchiga fonda yetkazilmoqda."
     }
 
 
