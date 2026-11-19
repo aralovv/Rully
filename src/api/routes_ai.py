@@ -36,16 +36,18 @@ async def get_ai_status(
     """, (user_id,))
     row = c.fetchone()
     current = row["request_count"] if row else 0
-    max_limit = 100 if is_pro else 5
+    max_limit = 100 if is_pro else 0
 
     return {
         "ok": True,
         "is_pro": is_pro,
+        "locked": not is_pro,
+        "requires_pro": not is_pro,
         "has_api_key": bool(gemini_service.api_key),
         "usage": {
             "current": current,
             "max": max_limit,
-            "remaining": max(0, max_limit - current)
+            "remaining": max(0, max_limit - current) if is_pro else 0
         }
     }
 
@@ -58,8 +60,27 @@ async def chat_with_ai(
     user_id = user["user_id"]
     sub = db.get_user_subscription(user_id)
     is_pro = sub.get("is_pro", False)
-
     lang = req.language or user.get("language") or "uz_latn"
+
+    # AI Assistant is exclusively for RULLY PRO subscribers
+    if not is_pro:
+        pro_msg = (
+            "🔒 <b>AI Ustoz faqat RULLY PRO obunasi bilan ishlaydi!</b>\n\n"
+            "Yo‘l harakati qoidalari, murakkab chorrahalar va testdagi xatolaringizni sun’iy intellekt orqali chuqur tahlil qilish uchun PRO tarifni faollashtiring."
+            if lang == "uz_latn" else (
+                "🔒 <b>AI Устоз фақат RULLY PRO обунаси билан ишлайди!</b>\n\n"
+                "Йўл ҳаракати қоидалари, мураккаб чорраҳалар ва тестдаги хатоларингизни сунъий интеллект орқали чуқур таҳлил қилиш учун PRO тарифни фаоллаштиринг."
+                if lang == "uz_cyrl" else
+                "🔒 <b>AI Наставник доступен только по подписке RULLY PRO!</b>\n\n"
+                "Чтобы разбирать ПДД, сложные перекрёстки и ваши ошибки в тестах с помощью искусственного интеллекта, активируйте тариф PRO."
+            )
+        )
+        return {
+            "ok": False,
+            "requires_pro": True,
+            "reply": pro_msg
+        }
+
     msg = req.message.strip()
     if not msg:
         empty_reply = "Iltimos, savolingizni yozing." if lang == "uz_latn" else ("Илтимос, саволингизни ёзинг." if lang == "uz_cyrl" else "Пожалуйста, введите ваш вопрос.")

@@ -22,12 +22,15 @@ class GeminiService:
 
     def check_and_increment_rate_limit(self, user_id: int, is_pro: bool) -> tuple[bool, int, int]:
         """
-        Rate limiting:
-        Free users: 5 requests per day.
-        PRO users: Unlimited (100 per day max for spam protection).
+        AI Assistant is an exclusive PRO subscription feature.
+        Non-PRO users: 0 requests allowed.
+        PRO users: up to 100 requests per day for fair use / anti-spam protection.
         Returns: (allowed: bool, current_usage: int, max_limit: int)
         """
-        max_limit = 100 if is_pro else 5
+        if not is_pro:
+            return False, 0, 0
+
+        max_limit = 100
         conn = get_db_connection()
         c = conn.cursor()
         
@@ -90,29 +93,46 @@ class GeminiService:
     ) -> Dict[str, Any]:
         lang = normalize_lang(language)
 
-        # 1. Rate Limit Check
+        # 1. Pro Subscription Check
+        if not is_pro:
+            if lang == "ru":
+                pro_msg = (
+                    "🔒 **AI Наставник доступен только по подписке RULLY PRO!**\n\n"
+                    "⚡ Подключите **PRO-подписку** для персонального автоинструктора, "
+                    "разбора сложных правил, перекрёстков и анализа ваших ошибок."
+                )
+            elif lang == "uz_cyrl":
+                pro_msg = (
+                    "🔒 **AI Устоз фақат RULLY PRO обунаси билан ишлайди!**\n\n"
+                    "⚡ Шахсий автоинструктор, йўл ҳаракати қоидалари таҳлили ва хатоларингизни кўриб чиқиш учун "
+                    "**PRO обунани** фаоллаштиринг!"
+                )
+            else:
+                pro_msg = (
+                    "🔒 **AI Ustoz faqat RULLY PRO obunasi bilan ishlaydi!**\n\n"
+                    "⚡ Shaxsiy avtoinstruktor, yo‘l harakati qoidalari tahlili va xatolaringizni ko‘rib chiqish uchun "
+                    "**PRO obunani** faollashtiring!"
+                )
+            return {
+                "ok": False,
+                "requires_pro": True,
+                "reply": pro_msg,
+                "limit_reached": True,
+                "usage": {"current": 0, "max": 0},
+                "cards": []
+            }
+
+        # 2. Rate Limit Check (PRO users fair use limit)
         allowed, current_count, max_limit = self.check_and_increment_rate_limit(user_id, is_pro)
         if not allowed:
             if lang == "ru":
-                limit_msg = (
-                    f"Ваш дневной лимит бесплатных запросов к AI ({max_limit}) исчерпан.\n\n"
-                    f"⚡ Подключите **PRO-подписку** для безлимитного персонального автоинструктора, "
-                    f"разбора правил и подробных консультаций!"
-                )
+                limit_msg = f"Ваш дневной лимит запросов к AI ({max_limit}) исчерпан. Пожалуйста, продолжите завтра."
             elif lang == "uz_cyrl":
-                limit_msg = (
-                    f"Кунлик бепул AI сўровлар лимитингиз ({max_limit} та) тугади.\n\n"
-                    f"⚡ Чексиз AI йўриқнома, қоидалар таҳлили ва шахсий машғулотлар учун "
-                    f"**PRO обунага** уланинг!"
-                )
+                limit_msg = f"Кунлик AI сўровлар лимитингиз ({max_limit} та) тугади. Илтимос, эртага давом этинг."
             else:
-                limit_msg = (
-                    f"Kunlik bepul AI so'rovlar limitingiz ({max_limit} ta) tugadi.\n\n"
-                    f"⚡ Cheksiz AI yo'riqnoma, qoidalar tahlili va shaxsiy mashg'ulotlar uchun "
-                    f"**PRO obunaga** ulaning!"
-                )
+                limit_msg = f"Kunlik AI so‘rovlar limitingiz ({max_limit} ta) tugadi. Iltimos, ertaga davom eting."
             return {
-                "ok": True,
+                "ok": False,
                 "reply": limit_msg,
                 "limit_reached": True,
                 "usage": {"current": current_count, "max": max_limit},

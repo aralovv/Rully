@@ -596,6 +596,9 @@
       const planName = state.selectedPlanId === 'pro_30' ? '30 kunlik PRO' : '14 kunlik PRO';
       modalBtnText.textContent = `${planName} faollashtirish (${planPriceStr})`;
     }
+
+    // Refresh AI Pro Lock UI
+    updateAiProLockState();
   }
 
   function selectSubscriptionPlan(planId) {
@@ -1075,10 +1078,15 @@
     } else if (tabName === 'tests') {
       updateSavedQuestionsCount();
     } else if (tabName === 'ai') {
-      initAiChat();
-      setTimeout(() => {
-        scrollAiToBottom(false);
-      }, 80);
+      updateAiProLockState();
+      if (!state.subscription?.is_pro) {
+        openPaywallModal('ai');
+      } else {
+        initAiChat();
+        setTimeout(() => {
+          scrollAiToBottom(false);
+        }, 80);
+      }
     }
   }
 
@@ -2287,9 +2295,43 @@
   let aiChatInitialized = false;
   let aiIsGenerating = false;
 
+  function updateAiProLockState() {
+    const isPro = !!(state.subscription && state.subscription.is_pro);
+    const lockedBox = document.getElementById('ai-pro-locked-box');
+    const inputEl = document.getElementById('ai-input-field');
+    const chipsWrap = document.getElementById('ai-quick-chips');
+
+    if (lockedBox) {
+      lockedBox.style.display = isPro ? 'none' : 'flex';
+      const activateBtn = document.getElementById('btn-ai-pro-activate');
+      if (activateBtn) {
+        activateBtn.onclick = (e) => {
+          e.stopPropagation();
+          openPaywallModal('ai');
+        };
+      }
+    }
+
+    if (inputEl) {
+      if (!isPro) {
+        inputEl.placeholder = t('ai_pro_locked_placeholder') || "🔒 AI Ustozdan foydalanish uchun PRO talab qilinadi";
+        inputEl.setAttribute('readonly', 'readonly');
+      } else {
+        inputEl.placeholder = t('ai_input_placeholder') || "YHQ yoki savol haqida so‘rang...";
+        inputEl.removeAttribute('readonly');
+      }
+    }
+
+    if (chipsWrap) {
+      chipsWrap.style.opacity = isPro ? '1' : '0.4';
+      chipsWrap.style.pointerEvents = isPro ? 'auto' : 'none';
+    }
+  }
+
   async function initAiChat() {
+    updateAiProLockState();
     loadAiChatStatus();
-    if (!aiChatInitialized) {
+    if (!aiChatInitialized && state.subscription?.is_pro) {
       aiChatInitialized = true;
       loadAiChatHistory();
     }
@@ -2297,7 +2339,11 @@
 
   async function loadAiChatStatus() {
     try {
-      await apiFetch('/api/ai/status');
+      const data = await apiFetch('/api/ai/status');
+      if (data && data.requires_pro && state.subscription) {
+        state.subscription.is_pro = false;
+      }
+      updateAiProLockState();
     } catch (e) {
       console.warn("Failed to load AI status:", e);
     }
@@ -2478,6 +2524,10 @@
   }
 
   async function sendAiMessage(promptText = null) {
+    if (!state.subscription?.is_pro) {
+      openPaywallModal('ai');
+      return;
+    }
     if (aiIsGenerating) return;
 
     const inputEl = document.getElementById('ai-input-field');
@@ -2504,6 +2554,14 @@
       });
 
       hideAiTypingIndicator();
+
+      if (res && res.requires_pro) {
+        if (state.subscription) state.subscription.is_pro = false;
+        updateAiProLockState();
+        openPaywallModal('ai');
+        appendAiMessageToUI('assistant', res.reply);
+        return;
+      }
 
       if (res && res.ok) {
         appendAiMessageToUI('assistant', res.reply || t('ai_cleared_reply'), res.cards || []);
@@ -2570,6 +2628,11 @@
     document.querySelectorAll('.nav-bar-item').forEach(item => {
       item.addEventListener('click', () => {
         const tab = item.getAttribute('data-tab');
+        if (tab === 'ai' && !state.subscription?.is_pro) {
+          switchTab('ai');
+          openPaywallModal('ai');
+          return;
+        }
         switchTab(tab);
       });
     });
@@ -3158,12 +3221,24 @@
       }
     }
 
+    if (aiInput) {
+      aiInput.addEventListener('click', () => {
+        if (!state.subscription?.is_pro) {
+          openPaywallModal('ai');
+        }
+      });
+    }
+
     if (aiClearBtn) {
       aiClearBtn.onclick = () => clearAiChat();
     }
 
     if (aiChipsWrap) {
       aiChipsWrap.addEventListener('click', (e) => {
+        if (!state.subscription?.is_pro) {
+          openPaywallModal('ai');
+          return;
+        }
         const chip = e.target.closest('.ai-chip-btn');
         if (chip) {
           const prompt = chip.getAttribute('data-prompt');
@@ -3178,6 +3253,10 @@
     if (btnAiSavedTutor) {
       btnAiSavedTutor.onclick = () => {
         closeSavedQuestionsModal();
+        if (!state.subscription?.is_pro) {
+          openPaywallModal('ai');
+          return;
+        }
         switchTab('ai');
         sendAiMessage(t('btn_ai_saved_tutor_prompt'));
       };

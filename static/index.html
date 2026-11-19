@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
   <title>RULLY — O‘zbekiston Haydovchilik Imtihoni</title>
-  <link rel="stylesheet" href="/static/css/rully.css?v=3.7.4">
+  <link rel="stylesheet" href="/static/css/rully.css?v=3.7.5">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -267,6 +267,29 @@
           <button type="button" class="btn-ai-clear" id="btn-ai-clear" data-i18n-title="ai_btn_clear" title="Suhbatni tozalash">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
           </button>
+        </div>
+
+        <!-- Locked Paywall Overlay for Non-PRO Users -->
+        <div class="ai-locked-overlay" id="ai-pro-locked-box" style="display: none;">
+          <div class="ai-locked-card">
+            <div class="ai-locked-crown-badge">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14v2H5v-2z"/>
+              </svg>
+            </div>
+            <h3 class="ai-locked-title" data-i18n="ai_pro_locked_banner_title">AI Ustoz — Faqat RULLY PRO obunachilar uchun</h3>
+            <p class="ai-locked-desc" data-i18n="ai_pro_locked_banner_desc">
+              Yo‘l harakati qoidalari, murakkab chorrahalar va testdagi xatolaringizni sun’iy intellekt orqali chuqur tahlil qilish uchun PRO tarifni faollashtiring.
+            </p>
+            <div class="ai-locked-perks">
+              <div class="ai-perk-row"><span>⚡</span> <span data-i18n="ai_perk_1">YHQ qoidalari bo‘yicha 24/7 shaxsiy instruktor</span></div>
+              <div class="ai-perk-row"><span>🚦</span> <span data-i18n="ai_perk_2">Murakkab chorrahalar va belgilarning batafsil tahlili</span></div>
+              <div class="ai-perk-row"><span>📊</span> <span data-i18n="ai_perk_3">Testdagi xatolaringiz sababini tushuntirib berish</span></div>
+            </div>
+            <button type="button" class="btn-sub-action ai-locked-action-btn" id="btn-ai-pro-activate">
+              <span data-i18n="ai_pro_locked_btn">PRO tarifni faollashtirish</span>
+            </button>
+          </div>
         </div>
 
         <!-- Chat Messages Area -->
@@ -791,6 +814,10 @@
           <div class="paywall-feat-text" data-i18n="sub_feature_mistakes">Xatolar Banki — Yiqilgan savollarni to‘liq bartaraf etish</div>
         </div>
         <div class="paywall-feat-item">
+          <div class="paywall-feat-icon gold">⚡</div>
+          <div class="paywall-feat-text" data-i18n="sub_feature_ai">AI Ustoz — YHQ va testlarni sun’iy intellekt bilan tahlil qilish</div>
+        </div>
+        <div class="paywall-feat-item">
           <div class="paywall-feat-icon blue">✓</div>
           <div class="paywall-feat-text" data-i18n="sub_feature_custom">Aralash Test — 30, 50, 100 talik kengaytirilgan testlar</div>
         </div>
@@ -937,9 +964,9 @@
   </nav>
 
   <!-- Application Scripts -->
-  <script src="/static/js/icons.js?v=3.7.4"></script>
-  <script src="/static/js/translations.js?v=3.7.4"></script>
-  <script src="/static/js/cheatsheet_data.js?v=3.7.4"></script>
-  <script src="/static/js/app.js?v=3.7.4"></script>
+  <script src="/static/js/icons.js?v=3.7.5"></script>
+  <script src="/static/js/translations.js?v=3.7.5"></script>
+  <script src="/static/js/cheatsheet_data.js?v=3.7.5"></script>
+  <script src="/static/js/app.js?v=3.7.5"></script>
 </body>
 </html>
