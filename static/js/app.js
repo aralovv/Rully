@@ -998,13 +998,11 @@
     // Toggle full-viewport chat layout for AI Ustoz
     const isAi = tabName === 'ai';
     document.body.classList.toggle('tab-ai-active', isAi);
+    document.body.classList.remove('keyboard-open');
+    document.documentElement.style.removeProperty('--ai-keyboard-offset');
     window.scrollTo(0, 0);
     document.body.scrollTop = 0;
     document.documentElement.scrollTop = 0;
-    if (!isAi) {
-      document.body.classList.remove('keyboard-open');
-      document.documentElement.style.removeProperty('--ai-keyboard-offset');
-    }
 
     document.querySelectorAll('.view-pane').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.nav-bar-item').forEach(el => el.classList.remove('active'));
@@ -2872,17 +2870,23 @@
         if (state.activeTab !== 'ai') return;
         window.scrollTo(0, 0);
 
+        const isFocused = (document.activeElement === aiInput);
+        if (!isFocused) {
+          document.body.classList.remove('keyboard-open');
+          document.documentElement.style.removeProperty('--ai-keyboard-offset');
+          return;
+        }
+
         const vv = window.visualViewport;
         const winH = window.innerHeight;
         const vh = vv ? vv.height : winH;
         const kbOffset = Math.max(0, winH - vh);
-        const isKb = (kbOffset > 100) || (document.activeElement === aiInput);
 
-        document.body.classList.toggle('keyboard-open', isKb);
-        if (isKb && kbOffset > 100) {
+        document.body.classList.add('keyboard-open');
+        if (kbOffset > 80) {
           document.documentElement.style.setProperty('--ai-keyboard-offset', `${kbOffset}px`);
         } else {
-          document.documentElement.style.removeProperty('--ai-keyboard-offset');
+          document.documentElement.style.setProperty('--ai-keyboard-offset', '0px');
         }
       };
 

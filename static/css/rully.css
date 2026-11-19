@@ -4760,7 +4760,10 @@ body.tab-ai-active {
   bottom: 0 !important;
   width: 100% !important;
   height: 100% !important;
-  height: var(--tg-viewport-stable-height, 100dvh) !important;
+  padding: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  margin: 0 !important;
   overflow: hidden !important;
   overscroll-behavior: none !important;
   -webkit-overflow-scrolling: auto !important;
@@ -4783,6 +4786,11 @@ body.tab-ai-active .main-container {
   position: relative !important;
 }
 
+body.tab-ai-active .cockpit-bottom-nav {
+  height: calc(58px + var(--safe-bottom, 0px)) !important;
+  box-sizing: border-box !important;
+}
+
 #view-ai {
   display: none;
   flex-direction: column;
@@ -4790,11 +4798,10 @@ body.tab-ai-active .main-container {
   min-height: 0;
   height: 100%;
   max-height: 100%;
-  padding-bottom: calc(64px + var(--safe-bottom, 0px));
+  padding-bottom: calc(58px + var(--safe-bottom, 0px));
   overflow: hidden;
   position: relative;
   box-sizing: border-box;
-  transition: padding-bottom 0.15s ease-out;
 }
 
 #view-ai.active {
@@ -4811,7 +4818,7 @@ body.tab-ai-active.keyboard-open .cockpit-bottom-nav {
 }
 
 body.tab-ai-active.keyboard-open .ai-input-bar {
-  padding-bottom: 10px !important;
+  padding-bottom: 8px !important;
 }
 
 .ai-view-wrapper {
@@ -5221,7 +5228,7 @@ body.tab-ai-active.keyboard-open .ai-input-bar {
 
 /* Fixed Chat Input Bar */
 .ai-input-bar {
-  padding: 10px 14px calc(10px + var(--safe-bottom, 0px)) 14px;
+  padding: 8px 12px;
   background: var(--bg-surface-1, #0f172a);
   border-top: 1px solid var(--border-hairline, rgba(255, 255, 255, 0.08));
   flex-shrink: 0;
