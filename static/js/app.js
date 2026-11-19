@@ -340,7 +340,7 @@
       'search-bar-icon-slot': 'search',
       'nav-icon-home': 'home',
       'nav-icon-tests': 'tests',
-      'nav-icon-ai': 'instructor',
+      'nav-icon-ai': 'bot',
       'nav-icon-amaliy': 'amaliy',
       'nav-icon-results': 'results',
       'nav-icon-profile': 'profile',
