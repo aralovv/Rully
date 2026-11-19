@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
   <title>RULLY — O‘zbekiston Haydovchilik Imtihoni</title>
-  <link rel="stylesheet" href="/static/css/rully.css?v=3.7.1">
+  <link rel="stylesheet" href="/static/css/rully.css?v=3.7.2">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -597,58 +597,6 @@
     </div>
   </div>
 
-  <!-- THEORY MODULE LESSON & TEST MODAL (NAZARIY MODUL DARSI VA TEST) -->
-  <div class="module-sheet-modal" id="theory-module-modal">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <span class="module-badge-tag" id="theory-modal-badge" style="background: rgba(14, 165, 233, 0.15); color: #38bdf8; border-color: rgba(14, 165, 233, 0.35);">1-Mavzu</span>
-        <span class="theory-meta-pill" id="theory-modal-duration">⏱️ 7 daqiqa</span>
-      </div>
-      <button class="quiz-hud-close" id="btn-close-theory-modal" aria-label="Yopish">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-    </div>
-
-    <h3 class="readiness-title" id="theory-modal-title" style="font-size: 19px; line-height: 1.35; margin-bottom: 8px;">Mavzu sarlavhasi</h3>
-    <p class="readiness-subtext" id="theory-modal-summary" style="margin-bottom: 16px; color: var(--text-medium); font-size: 13.5px; line-height: 1.5;"></p>
-
-    <!-- SECTION 1: ASOSIY QOIDALAR VA DARSLIK (KEY RULES) -->
-    <div class="theory-lesson-block">
-      <div class="theory-block-header">
-        <span class="theory-block-icon" style="color: #38bdf8;">📘</span>
-        <h4 class="cockpit-section-heading" data-i18n="theory_key_rules_heading" style="font-size: 14px; margin: 0;">Asosiy qoidalar va talablar:</h4>
-      </div>
-      <div class="theory-rules-container" id="theory-modal-rules"></div>
-    </div>
-
-    <!-- SECTION 2: IMTIHONDA KO'P ADASHTIRADIGAN TUZOQLAR (EXAM TRAPS) -->
-    <div class="theory-traps-block" style="margin-top: 18px;">
-      <div class="theory-block-header">
-        <span class="theory-block-icon" style="color: #f59e0b;">⚠️</span>
-        <h4 class="cockpit-section-heading" data-i18n="theory_exam_traps_heading" style="font-size: 14px; margin: 0; color: #fbbf24;">Imtihondagi tuzoqlar va muhim eslatmalar:</h4>
-      </div>
-      <div class="theory-traps-container" id="theory-modal-traps"></div>
-    </div>
-
-    <!-- SECTION 3: ASK AI TUTOR PROMPT -->
-    <div class="theory-ai-help-card" id="theory-modal-ai-ask-card" style="margin-top: 16px;">
-      <div class="theory-ai-left">
-        <span class="r-icon sm" style="color: #a855f7;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg></span>
-        <span class="theory-ai-txt" data-i18n="theory_ai_tutor_help">Mavzuni tushunish qiyin bo‘ldimi? AI Ustozdan so‘rang</span>
-      </div>
-      <button type="button" class="btn-theory-ai-ask" id="btn-theory-ai-ask" data-i18n="btn_ask_ai_tutor">AI dan so‘rash 💬</button>
-    </div>
-
-    <!-- STICKY ACTION BUTTONS AT BOTTOM: START MODULE TEST -->
-    <div class="theory-sheet-actions" style="margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--border-hairline); display: flex; flex-direction: column; gap: 10px;">
-      <button class="btn-apex-primary" id="btn-start-theory-category-quiz" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 15px; font-weight: 800; padding: 14px 18px;">
-        <span id="theory-start-quiz-icon">🚀</span>
-        <span id="theory-modal-start-btn-text">Modul bo‘yicha test ishlash (63 ta savol)</span>
-      </button>
-    </div>
-  </div>
-
-
   <!-- LIGHTBOX IMAGE ZOOM MODAL -->
   <div class="image-zoom-overlay" id="lightbox-modal">
     <img src="" alt="Kattalashtirilgan rasm" class="image-zoom-display" id="lightbox-img">
@@ -982,9 +930,9 @@
   </nav>
 
   <!-- Application Scripts -->
-  <script src="/static/js/icons.js?v=3.7.1"></script>
-  <script src="/static/js/translations.js?v=3.7.1"></script>
-  <script src="/static/js/cheatsheet_data.js?v=3.7.1"></script>
-  <script src="/static/js/app.js?v=3.7.1"></script>
+  <script src="/static/js/icons.js?v=3.7.2"></script>
+  <script src="/static/js/translations.js?v=3.7.2"></script>
+  <script src="/static/js/cheatsheet_data.js?v=3.7.2"></script>
+  <script src="/static/js/app.js?v=3.7.2"></script>
 </body>
 </html>

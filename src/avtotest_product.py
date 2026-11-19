@@ -163,7 +163,7 @@ class AvtotestProductEngine:
         with self._get_connection() as conn:
             c = conn.cursor()
             if category_id == 0:
-                query = "SELECT canonical_id FROM canonical_questions WHERE category_id = 0 OR category_id IS NULL OR category_id IN (39, 41)"
+                query = "SELECT canonical_id FROM canonical_questions WHERE category_id = 0 OR category_id IS NULL"
                 params = []
             else:
                 query = "SELECT canonical_id FROM canonical_questions WHERE category_id = ?"

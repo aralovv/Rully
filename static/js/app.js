@@ -1004,154 +1004,31 @@
     const listEl = document.getElementById('categories-list');
     if (!listEl) return;
 
-    const query = (filterText || "").trim().toLowerCase();
-    const filtered = (state.categories || []).filter(c => {
-      if (!query) return true;
-      const title = (c.title || c.name || "").toLowerCase();
-      const summary = (c.summary || "").toLowerCase();
-      return title.includes(query) || summary.includes(query);
-    });
+    const filtered = state.categories.filter(c =>
+      c.name.toLowerCase().includes(filterText.toLowerCase())
+    );
 
-    listEl.innerHTML = filtered.map(cat => {
-      const orderNum = cat.order ? String(cat.order).padStart(2, '0') : '#';
-      const title = cat.title || cat.name || '';
-      const qCount = cat.question_count || 0;
-      const duration = cat.duration_min || 7;
-      const durationLabel = t('duration_mins') || 'daqiqa';
-      const countLabel = t('questions_count', { n: qCount });
-      const lessonBadge = t('badge_lesson_available') || 'Darslik';
-      const actionPill = t('btn_study_and_test') || 'Dars & Test';
-
-      return `
-      <div class="category-row-card" data-cat-id="${cat.category_id}" data-cat-order="${cat.order}">
+    listEl.innerHTML = filtered.map(cat => `
+      <div class="category-row-card" data-cat-id="${cat.category_id}">
         <div class="cat-row-left">
-          <div class="cat-badge-number">${orderNum}</div>
+          <div class="cat-badge-number">${cat.category_id !== null ? cat.category_id : '#'}</div>
           <div class="cat-info-block">
-            <div class="cat-name-txt" style="display: flex; align-items: center; flex-wrap: wrap; gap: 5px;">
-              <span>${title}</span>
-              <span class="cat-lesson-badge">${lessonBadge}</span>
-            </div>
-            <div class="cat-count-txt">${countLabel} • ⏱️ ${duration} ${durationLabel}</div>
+            <div class="cat-name-txt">${cat.name}</div>
+            <div class="cat-count-txt">${t('questions_count', { n: cat.question_count })}</div>
           </div>
         </div>
-        <div class="cat-row-right" style="display: flex; align-items: center; gap: 6px;">
-          <span class="btn-cat-study-pill">${actionPill} ➔</span>
-        </div>
+        <span class="r-icon sm" style="color: var(--apex-emerald);">${window.renderIcon ? window.renderIcon('chevronRight') : '➔'}</span>
       </div>
-    `;
-    }).join('');
+    `).join('');
 
     listEl.querySelectorAll('.category-row-card').forEach(card => {
       card.addEventListener('click', () => {
         triggerHaptic('impact', 'light');
-        const catIdStr = card.getAttribute('data-cat-id');
-        const catOrderStr = card.getAttribute('data-cat-order');
-        const catId = parseInt(catIdStr, 10);
-        const catOrder = parseInt(catOrderStr, 10);
-        const catObj = (state.categories || []).find(c => 
-          c.category_id === (isNaN(catId) ? 0 : catId) || c.order === catOrder
-        );
-        if (catObj) {
-          openTheoryModuleModal(catObj);
-        } else {
-          startQuizSession('CATEGORY', isNaN(catId) ? 0 : catId);
-        }
+        const catId = card.getAttribute('data-cat-id');
+        const parsed = parseInt(catId, 10);
+        startQuizSession('CATEGORY', isNaN(parsed) ? 0 : parsed);
       });
     });
-  }
-
-  function openTheoryModuleModal(cat) {
-    if (!cat) return;
-    const modal = document.getElementById('theory-module-modal');
-    if (!modal) return;
-
-    triggerHaptic('impact', 'light');
-
-    // Header badge and duration
-    const badgeEl = document.getElementById('theory-modal-badge');
-    if (badgeEl) {
-      const unitLabel = t('module_unit_label') || 'Mavzu';
-      badgeEl.textContent = `${cat.order || 1}-${unitLabel}`;
-    }
-    const durEl = document.getElementById('theory-modal-duration');
-    if (durEl) {
-      const durLabel = t('duration_mins') || 'daqiqa';
-      durEl.textContent = `⏱️ ${cat.duration_min || 7} ${durLabel}`;
-    }
-
-    // Title & summary
-    const titleEl = document.getElementById('theory-modal-title');
-    if (titleEl) {
-      titleEl.textContent = cat.title || cat.name;
-    }
-    const summaryEl = document.getElementById('theory-modal-summary');
-    if (summaryEl) {
-      summaryEl.textContent = cat.summary || '';
-      summaryEl.style.display = cat.summary ? 'block' : 'none';
-    }
-
-    // Section 1: Key rules & requirements
-    const rulesEl = document.getElementById('theory-modal-rules');
-    if (rulesEl) {
-      const rules = cat.key_rules && cat.key_rules.length ? cat.key_rules : [];
-      rulesEl.innerHTML = rules.map(r => `<div class="theory-rule-item">${escapeHtml(r)}</div>`).join('');
-    }
-
-    // Section 2: Exam traps & tricky caveats
-    const trapsEl = document.getElementById('theory-modal-traps');
-    if (trapsEl) {
-      const traps = cat.exam_traps && cat.exam_traps.length ? cat.exam_traps : [];
-      trapsEl.innerHTML = traps.map(tr => `<div class="theory-trap-item">${escapeHtml(tr)}</div>`).join('');
-    }
-
-    // Section 3: AI Ustoz prompt button
-    const aiBtn = document.getElementById('btn-theory-ai-ask');
-    if (aiBtn) {
-      aiBtn.onclick = () => {
-        closeTheoryModuleModal();
-        switchTab('ai');
-        const prompt = cat.ai_prompt || `${cat.title || cat.name} qoidalari haqida tushuntirib ber`;
-        setTimeout(() => {
-          sendAiMessage(prompt);
-        }, 150);
-      };
-    }
-
-    // Section 4: Start Module Test Button (Sticky at bottom)
-    const startBtnText = document.getElementById('theory-modal-start-btn-text');
-    if (startBtnText) {
-      startBtnText.textContent = t('start_module_quiz_btn', { n: cat.question_count || 20 });
-    }
-    const startBtn = document.getElementById('btn-start-theory-category-quiz');
-    if (startBtn) {
-      startBtn.onclick = () => {
-        closeTheoryModuleModal();
-        startQuizSession('CATEGORY', cat.category_id, cat.question_count);
-      };
-    }
-
-    // Close button
-    const closeBtn = document.getElementById('btn-close-theory-modal');
-    if (closeBtn) {
-      closeBtn.onclick = () => closeTheoryModuleModal();
-    }
-
-    modal.classList.add('active');
-    modal.scrollTop = 0;
-
-    if (window.Telegram?.WebApp?.BackButton) {
-      window.Telegram.WebApp.BackButton.show();
-      window.Telegram.WebApp.BackButton.onClick(closeTheoryModuleModal);
-    }
-  }
-
-  function closeTheoryModuleModal() {
-    const modal = document.getElementById('theory-module-modal');
-    if (!modal) return;
-    modal.classList.remove('active');
-    if (window.Telegram?.WebApp?.BackButton && state.activeTab !== 'quiz') {
-      window.Telegram.WebApp.BackButton.hide();
-    }
   }
 
   // 10. Navigation View Switching
