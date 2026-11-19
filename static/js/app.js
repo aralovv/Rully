@@ -999,6 +999,8 @@
     const isAi = tabName === 'ai';
     document.body.classList.toggle('tab-ai-active', isAi);
     document.body.classList.remove('keyboard-open');
+    document.documentElement.style.removeProperty('--ai-viewport-height');
+    document.documentElement.style.removeProperty('--ai-viewport-top');
     document.documentElement.style.removeProperty('--ai-keyboard-offset');
     window.scrollTo(0, 0);
     document.body.scrollTop = 0;
@@ -2315,31 +2317,42 @@
   }
 
   async function clearAiChat() {
-    if (!confirm("AI Ustoz bilan suhbat tarixini tozalashni xohlaysizmi?")) return;
-    try {
-      await apiFetch('/api/ai/clear', { method: 'POST' });
-      const container = document.getElementById('ai-chat-messages');
-      if (container) {
-        const chips = document.getElementById('ai-quick-chips');
-        container.innerHTML = `
-          <div class="ai-msg ai-msg-bot">
-            <div class="ai-msg-avatar">
-              <img src="/static/images/rully-avatar-128.png" alt="Rully" class="ai-avatar-thumb">
-            </div>
-            <div class="ai-msg-content">
-              <div class="ai-msg-bubble">
-                Suhbat tarixi tozalandi. Qanday savolingiz bor? Men yordam berishga tayyorman! 🚗
+    const doClear = async () => {
+      try {
+        await apiFetch('/api/ai/clear', { method: 'POST' });
+        const container = document.getElementById('ai-chat-messages');
+        if (container) {
+          const chips = document.getElementById('ai-quick-chips');
+          container.innerHTML = `
+            <div class="ai-msg ai-msg-bot">
+              <div class="ai-msg-avatar">
+                <img src="/static/images/rully-avatar-128.png" alt="Rully" class="ai-avatar-thumb">
               </div>
-              <span class="ai-msg-time">Hozir</span>
+              <div class="ai-msg-content">
+                <div class="ai-msg-bubble">
+                  Suhbat tarixi tozalandi. Qanday savolingiz bor? Men yordam berishga tayyorman! 🚗
+                </div>
+                <span class="ai-msg-time">Hozir</span>
+              </div>
             </div>
-          </div>
-        `;
-        if (chips) container.appendChild(chips);
+          `;
+          if (chips) container.appendChild(chips);
+        }
+        loadAiChatStatus();
+        triggerHaptic('notification', 'success');
+      } catch (e) {
+        console.error("Failed to clear chat:", e);
       }
-      loadAiChatStatus();
-      triggerHaptic('notification', 'success');
-    } catch (e) {
-      console.error("Failed to clear chat:", e);
+    };
+
+    if (window.Telegram?.WebApp?.showConfirm) {
+      window.Telegram.WebApp.showConfirm("AI Ustoz bilan suhbat tarixini tozalashni xohlaysizmi?", (ok) => {
+        if (ok) doClear();
+      });
+    } else {
+      if (confirm("AI Ustoz bilan suhbat tarixini tozalashni xohlaysizmi?")) {
+        doClear();
+      }
     }
   }
 
@@ -2868,52 +2881,65 @@
       // Viewport & Keyboard Handling for Mobile (Telegram WebApp & Touch)
       const updateAiViewport = () => {
         if (state.activeTab !== 'ai') return;
-        window.scrollTo(0, 0);
 
         const isFocused = (document.activeElement === aiInput);
+        document.body.classList.toggle('keyboard-open', isFocused);
+
         if (!isFocused) {
-          document.body.classList.remove('keyboard-open');
+          document.documentElement.style.removeProperty('--ai-viewport-height');
+          document.documentElement.style.removeProperty('--ai-viewport-top');
           document.documentElement.style.removeProperty('--ai-keyboard-offset');
+          window.scrollTo(0, 0);
           return;
         }
 
         const vv = window.visualViewport;
-        const winH = window.innerHeight;
-        const vh = vv ? vv.height : winH;
-        const kbOffset = Math.max(0, winH - vh);
+        const tg = window.Telegram?.WebApp;
 
-        document.body.classList.add('keyboard-open');
-        if (kbOffset > 80) {
-          document.documentElement.style.setProperty('--ai-keyboard-offset', `${kbOffset}px`);
-        } else {
-          document.documentElement.style.setProperty('--ai-keyboard-offset', '0px');
+        let visibleH = window.innerHeight;
+        let offsetTop = 0;
+
+        if (vv) {
+          visibleH = vv.height;
+          offsetTop = vv.offsetTop || 0;
+        } else if (tg && typeof tg.viewportHeight === 'number') {
+          visibleH = tg.viewportHeight;
         }
+
+        if (visibleH > 100) {
+          document.documentElement.style.setProperty('--ai-viewport-height', `${visibleH}px`);
+        }
+        if (offsetTop > 0) {
+          document.documentElement.style.setProperty('--ai-viewport-top', `${offsetTop}px`);
+        } else {
+          document.documentElement.style.removeProperty('--ai-viewport-top');
+        }
+
+        scrollAiToBottom(true);
       };
 
       aiInput.addEventListener('focus', () => {
         document.body.classList.add('keyboard-open');
-        window.scrollTo(0, 0);
         updateAiViewport();
-        setTimeout(() => {
-          window.scrollTo(0, 0);
-          scrollAiToBottom(true);
-        }, 100);
-        setTimeout(() => {
-          window.scrollTo(0, 0);
-          scrollAiToBottom(true);
-        }, 300);
+        setTimeout(updateAiViewport, 60);
+        setTimeout(updateAiViewport, 150);
+        setTimeout(updateAiViewport, 300);
+        setTimeout(updateAiViewport, 500);
       });
 
       aiInput.addEventListener('blur', () => {
         document.body.classList.remove('keyboard-open');
+        document.documentElement.style.removeProperty('--ai-viewport-height');
+        document.documentElement.style.removeProperty('--ai-viewport-top');
         document.documentElement.style.removeProperty('--ai-keyboard-offset');
         window.scrollTo(0, 0);
         document.body.scrollTop = 0;
         document.documentElement.scrollTop = 0;
         setTimeout(() => {
+          updateAiViewport();
           window.scrollTo(0, 0);
           scrollAiToBottom(false);
-        }, 100);
+        }, 120);
       });
 
       window.addEventListener('scroll', () => {
@@ -2924,9 +2950,7 @@
 
       if (window.visualViewport) {
         window.visualViewport.addEventListener('resize', updateAiViewport);
-        window.visualViewport.addEventListener('scroll', () => {
-          if (state.activeTab === 'ai') window.scrollTo(0, 0);
-        });
+        window.visualViewport.addEventListener('scroll', updateAiViewport);
       }
       if (window.Telegram?.WebApp?.onEvent) {
         window.Telegram.WebApp.onEvent('viewportChanged', updateAiViewport);

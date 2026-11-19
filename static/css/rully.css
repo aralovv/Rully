@@ -4754,12 +4754,13 @@ body {
 /* Full Viewport Chat Mode: Lock Window & Pin Native Layout */
 body.tab-ai-active {
   position: fixed !important;
-  top: 0 !important;
+  top: var(--ai-viewport-top, 0px) !important;
   left: 0 !important;
   right: 0 !important;
-  bottom: 0 !important;
   width: 100% !important;
-  height: 100% !important;
+  height: var(--ai-viewport-height, 100%) !important;
+  max-height: var(--ai-viewport-height, 100%) !important;
+  bottom: auto !important;
   padding: 0 !important;
   padding-top: 0 !important;
   padding-bottom: 0 !important;
@@ -4810,10 +4811,14 @@ body.tab-ai-active .cockpit-bottom-nav {
 
 /* Mobile Virtual Keyboard State */
 body.tab-ai-active.keyboard-open #view-ai {
-  padding-bottom: var(--ai-keyboard-offset, 0px) !important;
+  padding-bottom: 0 !important;
 }
 
 body.tab-ai-active.keyboard-open .cockpit-bottom-nav {
+  display: none !important;
+}
+
+body.tab-ai-active.keyboard-open .ai-chips-wrap {
   display: none !important;
 }
 
@@ -5112,36 +5117,47 @@ body.tab-ai-active.keyboard-open .ai-input-bar {
   margin-right: 4px;
 }
 
-/* Quick Chips Bar */
+/* Quick Chips Bar - Modern Horizontal Scrollable Carousel */
 .ai-chips-wrap {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 8px;
-  margin: 6px 0;
-  padding: 0 2px;
+  margin: 8px 0;
+  padding: 4px 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+
+.ai-chips-wrap::-webkit-scrollbar {
+  display: none;
 }
 
 .ai-chip-btn {
   background: var(--bg-surface-2, #0d1527);
-  border: 1px solid rgba(245, 158, 11, 0.28);
-  border-radius: 12px;
-  padding: 10px 14px;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 20px;
+  padding: 8px 14px;
   font-size: 12.5px;
   font-weight: 600;
   color: #fbbf24;
   text-align: left;
   cursor: pointer;
   transition: all 0.2s ease;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   line-height: 1.35;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .ai-chip-btn:active {
-  background: rgba(245, 158, 11, 0.18);
+  background: rgba(245, 158, 11, 0.2);
   border-color: #f59e0b;
-  transform: scale(0.98);
+  transform: scale(0.96);
 }
 
 /* Interactive Question Cards inside Chat */
@@ -5258,7 +5274,7 @@ body.tab-ai-active.keyboard-open .ai-input-bar {
   background: transparent;
   border: none;
   color: var(--text-high, #f8fafc);
-  font-size: 14px;
+  font-size: 16px; /* 16px prevents iOS Safari auto-zoom! */
   line-height: 1.45;
   outline: none;
   resize: none;
