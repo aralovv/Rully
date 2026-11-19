@@ -2099,20 +2099,7 @@
 
   async function loadAiChatStatus() {
     try {
-      const data = await apiFetch('/api/ai/status');
-      if (data && data.ok) {
-        const usageLabel = document.getElementById('ai-usage-label');
-        if (usageLabel) {
-          if (data.is_pro) {
-            usageLabel.textContent = "⚡ PRO — Cheksiz so'rov";
-            usageLabel.style.color = "#fbbf24";
-          } else {
-            const rem = data.usage?.remaining ?? 5;
-            usageLabel.textContent = `${rem}/5 bepul so‘rov qoldi`;
-            usageLabel.style.color = rem > 0 ? "var(--text-muted)" : "var(--crimson)";
-          }
-        }
-      }
+      await apiFetch('/api/ai/status');
     } catch (e) {
       console.warn("Failed to load AI status:", e);
     }
@@ -2859,8 +2846,13 @@
     if (aiSendBtn && aiInput) {
       aiSendBtn.onclick = () => sendAiMessage();
       aiInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
+        if ((e.key === 'Enter' || e.keyCode === 13) && !e.shiftKey) {
           e.preventDefault();
+          const val = aiInput.value.trim();
+          if (!val) {
+            aiInput.blur();
+            return;
+          }
           sendAiMessage();
         }
       });
