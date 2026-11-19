@@ -6,6 +6,32 @@
   <title>RULLY — O‘zbekiston Haydovchilik Imtihoni</title>
   <link rel="stylesheet" href="/static/css/rully.css?v=3.7.5">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script>
+    (function () {
+      function checkTelegram() {
+        try {
+          var tg = window.Telegram && window.Telegram.WebApp;
+          if (tg && tg.initData && tg.initData.length > 5) return true;
+          var hash = window.location.hash || '';
+          if (hash.indexOf('tgWebAppData=') !== -1) return true;
+          var search = window.location.search || '';
+          if (search.indexOf('tgWebAppData=') !== -1) return true;
+          var cached = null;
+          try { cached = sessionStorage.getItem('rully_tg_init_data'); } catch (e) {}
+          if (cached && cached.length > 5 && cached !== 'dev_user_8809526955') return true;
+        } catch (e) {}
+        return false;
+      }
+      if (!checkTelegram()) {
+        window.__NOT_TELEGRAM__ = true;
+        document.documentElement.style.display = 'none';
+        window.addEventListener('DOMContentLoaded', function () {
+          document.body.innerHTML = '';
+          document.documentElement.style.display = 'none';
+        });
+      }
+    })();
+  </script>
 </head>
 <body>
 

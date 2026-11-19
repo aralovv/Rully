@@ -8,6 +8,14 @@
   'use strict';
 
   // 1. Telegram WebApp Integration & Viewport Setup
+  if (window.__NOT_TELEGRAM__) {
+    try {
+      document.body.innerHTML = '';
+      document.documentElement.style.display = 'none';
+    } catch (e) {}
+    return;
+  }
+
   const tg = window.Telegram?.WebApp;
 
   function resolveTelegramInitData() {
@@ -44,14 +52,22 @@
     // 4. Session Storage cache from earlier in this session
     try {
       const cached = sessionStorage.getItem('rully_tg_init_data');
-      if (cached && cached.length > 5) return cached;
+      if (cached && cached.length > 5 && cached !== 'dev_user_8809526955') return cached;
     } catch (e) {}
 
-    // 5. Development fallback for desktop browser testing
-    return "dev_user_8809526955";
+    // Strict: not in Telegram, return empty string
+    return "";
   }
 
   let initData = resolveTelegramInitData();
+
+  if (!initData) {
+    try {
+      document.body.innerHTML = '';
+      document.documentElement.style.display = 'none';
+    } catch (e) {}
+    return;
+  }
 
   if (tg) {
     try {
