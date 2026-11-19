@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
   <title>RULLY — O‘zbekiston Haydovchilik Imtihoni</title>
-  <link rel="stylesheet" href="/static/css/rully.css?v=3.7.3">
+  <link rel="stylesheet" href="/static/css/rully.css?v=3.7.4">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -477,8 +477,15 @@
       </div>
 
       <div class="question-viewport-frame" id="quiz-image-wrap" style="display: none;">
+        <div class="img-loading-spinner" id="quiz-image-spinner">
+          <div class="spinner-mini"></div>
+        </div>
         <img src="" alt="Yo‘l harakati qoidasi rasmi" class="question-viewport-img" id="quiz-image">
-        <span class="zoom-hint-pill">
+        <div class="image-retry-box" id="quiz-image-retry" style="display: none;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 20px; height: 20px;"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          <span data-i18n="btn_retry_image">Rasmni qayta yuklash</span>
+        </div>
+        <span class="zoom-hint-pill" id="quiz-zoom-hint" style="display: none;">
           <span class="r-icon sm" id="zoom-icon-slot"></span>
           <span data-i18n="image_zoom_hint">Kattalashtirish</span>
         </span>
@@ -930,9 +937,9 @@
   </nav>
 
   <!-- Application Scripts -->
-  <script src="/static/js/icons.js?v=3.7.3"></script>
-  <script src="/static/js/translations.js?v=3.7.3"></script>
-  <script src="/static/js/cheatsheet_data.js?v=3.7.3"></script>
-  <script src="/static/js/app.js?v=3.7.3"></script>
+  <script src="/static/js/icons.js?v=3.7.4"></script>
+  <script src="/static/js/translations.js?v=3.7.4"></script>
+  <script src="/static/js/cheatsheet_data.js?v=3.7.4"></script>
+  <script src="/static/js/app.js?v=3.7.4"></script>
 </body>
 </html>

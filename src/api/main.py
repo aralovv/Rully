@@ -162,10 +162,44 @@ app.include_router(admin_logs_router)
 app.include_router(admin_broadcast_router)
 app.include_router(admin_questions_router)
 
-# Mount Images Directory
+# Serve & Proxy Images with Local + Remote Fallback & Edge Caching
 images_dir = os.path.abspath("data/images/original")
-if os.path.exists(images_dir):
-    app.mount("/images", StaticFiles(directory=images_dir), name="images")
+
+@app.get("/images/{filename}")
+async def serve_image(filename: str):
+    """
+    High-resiliency image delivery endpoint:
+    1. Returns local file if present on disk with immutable caching.
+    2. In serverless environments (e.g. Vercel), proxies from GitHub Raw with 1-year immutable edge caching.
+    """
+    clean_name = os.path.basename(filename.replace("\\", "/"))
+    local_path = os.path.join(images_dir, clean_name)
+    if os.path.exists(local_path):
+        return FileResponse(
+            local_path,
+            media_type="image/webp",
+            headers={"Cache-Control": "public, max-age=31536000, immutable"}
+        )
+
+    # Serverless fallback: Proxy from GitHub Raw with edge caching
+    gh_raw_url = f"https://raw.githubusercontent.com/aralovv/Rully/main/data/images/original/{clean_name}"
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(gh_raw_url)
+            if resp.status_code == 200:
+                return Response(
+                    content=resp.content,
+                    media_type="image/webp",
+                    headers={
+                        "Cache-Control": "public, max-age=31536000, s-maxage=31536000, immutable",
+                        "X-Proxy-Source": "github-raw"
+                    }
+                )
+    except Exception as e:
+        logger.warning(f"Failed to fetch image {clean_name} from GitHub Raw: {e}")
+
+    return Response(status_code=404, content="Image not found")
 
 # Mount Static Assets
 static_dir = os.path.abspath("static")

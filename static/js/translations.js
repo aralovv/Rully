@@ -82,6 +82,7 @@ const I18N = {
     correct_badge: "To‘g‘ri javob!",
     wrong_badge: "Xato javob!",
     image_zoom_hint: "Kattalashtirish uchun bosing",
+    btn_retry_image: "Rasmni qayta yuklash",
 
     // Quiz Results
     lbl_time: "Vaqt",
@@ -356,6 +357,7 @@ const I18N = {
     correct_badge: "Тўғри жавоб!",
     wrong_badge: "Хато жавоб!",
     image_zoom_hint: "Катталаштириш учун босинг",
+    btn_retry_image: "Расмни қайта юклаш",
 
     // Quiz Results
     lbl_time: "Вақт",
@@ -630,6 +632,7 @@ const I18N = {
     correct_badge: "Верно!",
     wrong_badge: "Неверно!",
     image_zoom_hint: "Нажмите для увеличения",
+    btn_retry_image: "Повторить загрузку",
 
     // Quiz Results
     lbl_time: "Время",

@@ -1131,6 +1131,11 @@
         isSubmitting: false
       };
 
+      // Background preload all 20 question images across multi-CDN network
+      if (Array.isArray(res.questions)) {
+        preloadQuizImages(res.questions);
+      }
+
       const overlay = document.getElementById('quiz-overlay');
       overlay.classList.add('active');
       const isTerminalMode = (sessionType === 'EXAM' || sessionType === 'CUSTOM');
@@ -1201,6 +1206,98 @@
     }, 1000);
   }
 
+  // ==========================================================================
+  // MULTI-CDN RESILIENT IMAGE DELIVERY & PRELOAD PIPELINE
+  // Candidate fallback chain:
+  // 1. Primary cdn.jsdelivr.net URL
+  // 2. Fastly jsDelivr Edge CDN
+  // 3. GitHub Raw direct origin
+  // 4. Statically Global CDN
+  // 5. Same-origin Vercel serverless proxy (/images/{filename})
+  // ==========================================================================
+  const _imgResolvedCache = new Map();
+
+  function getCdnCandidateUrls(primaryUrl) {
+    if (!primaryUrl) return [];
+    const filename = primaryUrl.split('?')[0].split('/').pop();
+    if (!filename) return [primaryUrl];
+
+    const candidates = [
+      primaryUrl,
+      `https://fastly.jsdelivr.net/gh/aralovv/Rully@main/data/images/original/${filename}`,
+      `https://raw.githubusercontent.com/aralovv/Rully/main/data/images/original/${filename}`,
+      `https://cdn.statically.io/gh/aralovv/Rully/main/data/images/original/${filename}`,
+      `/images/${filename}`
+    ];
+    return Array.from(new Set(candidates));
+  }
+
+  function preloadImage(url) {
+    if (!url || _imgResolvedCache.has(url)) return;
+    const candidates = getCdnCandidateUrls(url);
+    const tryNext = (idx) => {
+      if (idx >= candidates.length) return;
+      const testImg = new Image();
+      testImg.onload = () => {
+        _imgResolvedCache.set(url, candidates[idx]);
+      };
+      testImg.onerror = () => {
+        tryNext(idx + 1);
+      };
+      testImg.src = candidates[idx];
+    };
+    tryNext(0);
+  }
+
+  function preloadQuizImages(questions) {
+    if (!Array.isArray(questions)) return;
+    questions.forEach(q => {
+      if (q && q.has_image && q.image_url) {
+        preloadImage(q.image_url);
+      }
+    });
+  }
+
+  function loadImageWithFallback(imgEl, primaryUrl, onLoaded, onError) {
+    if (!imgEl || !primaryUrl) return;
+
+    const resolvedUrl = _imgResolvedCache.get(primaryUrl);
+    const candidates = resolvedUrl
+      ? [resolvedUrl, ...getCdnCandidateUrls(primaryUrl).filter(u => u !== resolvedUrl)]
+      : getCdnCandidateUrls(primaryUrl);
+
+    let candidateIdx = 0;
+
+    const tryLoad = () => {
+      if (candidateIdx >= candidates.length) {
+        if (typeof onError === 'function') onError();
+        return;
+      }
+      const candidateUrl = candidates[candidateIdx];
+      const loader = new Image();
+      loader.onload = () => {
+        _imgResolvedCache.set(primaryUrl, candidateUrl);
+        imgEl.src = candidateUrl;
+        if (typeof onLoaded === 'function') onLoaded(candidateUrl);
+      };
+      loader.onerror = () => {
+        candidateIdx++;
+        tryLoad();
+      };
+      loader.src = candidateUrl;
+    };
+
+    tryLoad();
+  }
+
+  window.handleSavedImgError = function(imgEl, originalUrl) {
+    if (!imgEl || imgEl._hasTriedFallback) return;
+    imgEl._hasTriedFallback = true;
+    loadImageWithFallback(imgEl, originalUrl, (workingUrl) => {
+      imgEl.src = workingUrl;
+    });
+  };
+
   function renderCurrentQuestion() {
     const q = state.quiz.questions[state.quiz.currentIndex];
     if (!q) return;
@@ -1255,7 +1352,7 @@
     }
 
     // Metadata & Bookmark
-        let catBadgeText = q.category_name || "Yo‘l Harakati Qoidalari";
+    let catBadgeText = q.category_name || "Yo‘l Harakati Qoidalari";
     if (state.quiz.sessionType === 'MISTAKES') {
       catBadgeText = t('card_mistakes_title');
     } else if (state.quiz.sessionType === 'CUSTOM') {
@@ -1271,15 +1368,54 @@
       bookmarkBtn.onclick = () => toggleBookmark(q.canonical_id);
     }
 
-    // Illustration Viewport
+    // Illustration Viewport with Multi-CDN Resilient Pipeline
     const imgWrap = document.getElementById('quiz-image-wrap');
     const imgEl = document.getElementById('quiz-image');
+    const imgSpinner = document.getElementById('quiz-image-spinner');
+    const imgRetry = document.getElementById('quiz-image-retry');
+    const imgZoomHint = document.getElementById('quiz-zoom-hint');
+
     if (q.has_image && q.image_url) {
-      imgEl.src = q.image_url;
       imgWrap.style.display = 'flex';
-      imgWrap.onclick = () => openLightbox(q.image_url);
+      imgEl.classList.remove('loaded');
+      if (imgSpinner) imgSpinner.style.display = 'flex';
+      if (imgRetry) imgRetry.style.display = 'none';
+      if (imgZoomHint) imgZoomHint.style.display = 'none';
+      imgWrap.onclick = null;
+
+      const triggerLoad = () => {
+        if (imgSpinner) imgSpinner.style.display = 'flex';
+        if (imgRetry) imgRetry.style.display = 'none';
+        imgEl.classList.remove('loaded');
+
+        loadImageWithFallback(
+          imgEl,
+          q.image_url,
+          (workingUrl) => {
+            if (imgSpinner) imgSpinner.style.display = 'none';
+            if (imgRetry) imgRetry.style.display = 'none';
+            if (imgZoomHint) imgZoomHint.style.display = 'flex';
+            imgEl.classList.add('loaded');
+            imgWrap.onclick = () => openLightbox(workingUrl);
+          },
+          () => {
+            if (imgSpinner) imgSpinner.style.display = 'none';
+            if (imgRetry) {
+              imgRetry.style.display = 'flex';
+              imgRetry.onclick = (e) => {
+                e.stopPropagation();
+                triggerLoad();
+              };
+            }
+          }
+        );
+      };
+
+      triggerLoad();
     } else {
       imgWrap.style.display = 'none';
+      imgEl.src = '';
+      imgEl.classList.remove('loaded');
     }
 
     // Question Editorial Prompt
@@ -1901,9 +2037,11 @@
     const modal = document.getElementById('lightbox-modal');
     const img = document.getElementById('lightbox-img');
     if (modal && img) {
-      img.src = src;
       modal.classList.add('active');
       modal.onclick = () => modal.classList.remove('active');
+      loadImageWithFallback(img, src, (workingUrl) => {
+        img.src = workingUrl;
+      });
     }
   }
   window.openLightbox = openLightbox;
@@ -2034,7 +2172,7 @@
     bodyEl.innerHTML = questions.map((q, idx) => {
       const imgHtml = (q.has_image && q.image_url) ? `
         <div class="saved-question-image-wrap" onclick="openLightbox('${q.image_url}')">
-          <img src="${q.image_url}" alt="Savol rasmi" loading="lazy" />
+          <img src="${q.image_url}" alt="Savol rasmi" loading="lazy" onerror="window.handleSavedImgError && window.handleSavedImgError(this, '${q.image_url}')" />
           <span class="saved-image-zoom-badge">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
             <span>${t('image_zoom_hint')}</span>
@@ -2955,36 +3093,35 @@
         const isFocused = (document.activeElement === aiInput);
         document.body.classList.toggle('keyboard-open', isFocused);
 
+        const viewAi = document.getElementById('view-ai');
+
         if (!isFocused) {
           document.documentElement.style.removeProperty('--keyboard-inset');
-          document.documentElement.style.removeProperty('--ai-viewport-height');
+          if (viewAi) {
+            viewAi.style.height = '';
+            viewAi.style.bottom = '';
+          }
           return;
         }
 
         const vv = window.visualViewport;
         const tg = window.Telegram?.WebApp;
 
-        let inset = 0;
         if (vv && typeof vv.height === 'number') {
           // On iOS Safari / WKWebView:
-          // window.innerHeight is full layout height.
-          // vv.height is visible height above keyboard.
-          const visibleHeight = vv.height;
-          const diff = window.innerHeight - (visibleHeight + (vv.offsetTop || 0));
-          if (diff > 40) {
-            inset = Math.round(diff);
+          // Directly pin #view-ai height to the visible viewport so the input bar sits right on top of keyboard
+          if (viewAi) {
+            viewAi.style.height = `${Math.round(vv.height)}px`;
+            viewAi.style.bottom = 'auto';
           }
-        } else if (tg && typeof tg.viewportHeight === 'number' && typeof tg.viewportStableHeight === 'number') {
-          const diff = tg.viewportStableHeight - tg.viewportHeight;
-          if (diff > 40) {
-            inset = Math.round(diff);
+          window.scrollTo(0, 0);
+        } else if (tg && typeof tg.viewportHeight === 'number') {
+          if (viewAi) {
+            viewAi.style.height = `${Math.round(tg.viewportHeight)}px`;
+            viewAi.style.bottom = 'auto';
           }
-        }
-
-        if (inset > 40) {
-          document.documentElement.style.setProperty('--keyboard-inset', `${inset}px`);
         } else {
-          document.documentElement.style.setProperty('--keyboard-inset', '0px');
+          document.documentElement.style.setProperty('--keyboard-inset', '300px');
         }
 
         scrollAiToBottom(true);
@@ -3002,7 +3139,11 @@
       aiInput.addEventListener('blur', () => {
         document.body.classList.remove('keyboard-open');
         document.documentElement.style.removeProperty('--keyboard-inset');
-        document.documentElement.style.removeProperty('--ai-viewport-height');
+        const viewAi = document.getElementById('view-ai');
+        if (viewAi) {
+          viewAi.style.height = '';
+          viewAi.style.bottom = '';
+        }
         setTimeout(() => {
           updateAiViewport();
           scrollAiToBottom(false);
