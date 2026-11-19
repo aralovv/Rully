@@ -119,6 +119,25 @@
     return str;
   }
 
+  function renderAiChips() {
+    const chipsWrap = document.getElementById('ai-quick-chips');
+    if (!chipsWrap) return;
+    chipsWrap.innerHTML = `
+      <button type="button" class="ai-chip-btn" data-prompt="${t('ai_chip_1_prompt')}">
+        ${t('ai_chip_1_label')}
+      </button>
+      <button type="button" class="ai-chip-btn" data-prompt="${t('ai_chip_2_prompt')}">
+        ${t('ai_chip_2_label')}
+      </button>
+      <button type="button" class="ai-chip-btn" data-prompt="${t('ai_chip_3_prompt')}">
+        ${t('ai_chip_3_label')}
+      </button>
+      <button type="button" class="ai-chip-btn" data-prompt="${t('ai_chip_4_prompt')}">
+        ${t('ai_chip_4_label')}
+      </button>
+    `;
+  }
+
   function applyLocalization() {
     document.querySelectorAll('[data-i18n]').forEach(el => {
       const key = el.getAttribute('data-i18n');
@@ -128,6 +147,16 @@
     document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
       const key = el.getAttribute('data-i18n-placeholder');
       el.setAttribute('placeholder', t(key));
+    });
+
+    document.querySelectorAll('[data-i18n-html]').forEach(el => {
+      const key = el.getAttribute('data-i18n-html');
+      el.innerHTML = t(key);
+    });
+
+    document.querySelectorAll('[data-i18n-title]').forEach(el => {
+      const key = el.getAttribute('data-i18n-title');
+      el.setAttribute('title', t(key));
     });
 
     // Update Language Pill Label
@@ -140,6 +169,7 @@
     updateReadinessClusterUI();
     updateSubscriptionUI();
     renderCheatsheetContent();
+    renderAiChips();
   }
   function renderCheatsheetContent() {
     const bodyEl = document.getElementById('secrets-modal-body');
@@ -997,11 +1027,15 @@
 
     // Toggle full-viewport chat layout for AI Ustoz
     const isAi = tabName === 'ai';
+    document.documentElement.classList.toggle('tab-ai-active', isAi);
     document.body.classList.toggle('tab-ai-active', isAi);
     document.body.classList.remove('keyboard-open');
     document.documentElement.style.removeProperty('--ai-viewport-height');
     document.documentElement.style.removeProperty('--ai-viewport-top');
     document.documentElement.style.removeProperty('--ai-keyboard-offset');
+    if (isAi && window.Telegram?.WebApp?.expand) {
+      try { window.Telegram.WebApp.expand(); } catch (_) {}
+    }
     window.scrollTo(0, 0);
     document.body.scrollTop = 0;
     document.documentElement.scrollTop = 0;
@@ -2196,7 +2230,7 @@
         <div class="ai-card-slot" id="ai-card-${c.canonical_id}">
           <div class="ai-card-title">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 13px; height: 13px;"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
-            <span>${c.canonical_id} • ${c.category_name || 'Yo‘l qoidasi'}</span>
+            <span>${c.canonical_id} • ${c.category_name || t('ai_rule_badge')}</span>
           </div>
           <div class="ai-card-q-text">${c.question}</div>
           <div class="ai-card-options">
@@ -2294,22 +2328,22 @@
     try {
       const res = await apiFetch('/api/ai/chat', {
         method: 'POST',
-        body: JSON.stringify({ message: text })
+        body: JSON.stringify({ message: text, language: state.lang || 'uz_latn' })
       });
 
       hideAiTypingIndicator();
 
       if (res && res.ok) {
-        appendAiMessageToUI('assistant', res.reply || 'Javob qabul qilindi.', res.cards || []);
+        appendAiMessageToUI('assistant', res.reply || t('ai_cleared_reply'), res.cards || []);
         loadAiChatStatus();
         triggerHaptic('notification', 'success');
       } else {
-        appendAiMessageToUI('assistant', res.reply || 'Kechirasiz, xatolik yuz berdi.');
+        appendAiMessageToUI('assistant', res.reply || t('ai_generic_error'));
       }
     } catch (e) {
       hideAiTypingIndicator();
       console.error("AI chat error:", e);
-      appendAiMessageToUI('assistant', "Aloqa xatosi yuz berdi. Iltimos qaytadan urinib ko'ring.");
+      appendAiMessageToUI('assistant', t('ai_net_error'));
     } finally {
       aiIsGenerating = false;
       if (sendBtn) sendBtn.disabled = false;
@@ -2330,13 +2364,14 @@
               </div>
               <div class="ai-msg-content">
                 <div class="ai-msg-bubble">
-                  Suhbat tarixi tozalandi. Qanday savolingiz bor? Men yordam berishga tayyorman! 🚗
+                  ${t('ai_cleared_reply')}
                 </div>
-                <span class="ai-msg-time">Hozir</span>
+                <span class="ai-msg-time">${t('ai_msg_time_now')}</span>
               </div>
             </div>
           `;
           if (chips) container.appendChild(chips);
+          renderAiChips();
         }
         loadAiChatStatus();
         triggerHaptic('notification', 'success');
@@ -2345,12 +2380,13 @@
       }
     };
 
+    const confirmMsg = t('ai_confirm_clear');
     if (window.Telegram?.WebApp?.showConfirm) {
-      window.Telegram.WebApp.showConfirm("AI Ustoz bilan suhbat tarixini tozalashni xohlaysizmi?", (ok) => {
+      window.Telegram.WebApp.showConfirm(confirmMsg, (ok) => {
         if (ok) doClear();
       });
     } else {
-      if (confirm("AI Ustoz bilan suhbat tarixini tozalashni xohlaysizmi?")) {
+      if (confirm(confirmMsg)) {
         doClear();
       }
     }
@@ -2897,11 +2933,9 @@
         const tg = window.Telegram?.WebApp;
 
         let visibleH = window.innerHeight;
-        let offsetTop = 0;
 
         if (vv) {
           visibleH = vv.height;
-          offsetTop = vv.offsetTop || 0;
         } else if (tg && typeof tg.viewportHeight === 'number') {
           visibleH = tg.viewportHeight;
         }
@@ -2909,11 +2943,7 @@
         if (visibleH > 100) {
           document.documentElement.style.setProperty('--ai-viewport-height', `${visibleH}px`);
         }
-        if (offsetTop > 0) {
-          document.documentElement.style.setProperty('--ai-viewport-top', `${offsetTop}px`);
-        } else {
-          document.documentElement.style.removeProperty('--ai-viewport-top');
-        }
+        document.documentElement.style.removeProperty('--ai-viewport-top');
 
         scrollAiToBottom(true);
       };
@@ -2978,7 +3008,7 @@
       btnAiSavedTutor.onclick = () => {
         closeSavedQuestionsModal();
         switchTab('ai');
-        sendAiMessage("Mening saqlangan savollarimdagi qoidalarni batafsil tushuntirib ber");
+        sendAiMessage(t('btn_ai_saved_tutor_prompt'));
       };
     }
   }

@@ -3,8 +3,8 @@ import json
 import logging
 from typing import Dict, Any, List, Optional
 import httpx
-from src.ai.prompts import SYSTEM_PROMPT_UZ
-from src.ai.tools import GEMINI_TOOLS_DECLARATIONS, TOOL_MAPPING
+from src.ai.prompts import SYSTEM_PROMPT_UZ, get_system_prompt
+from src.ai.tools import GEMINI_TOOLS_DECLARATIONS, TOOL_MAPPING, normalize_lang
 from src.db_adapter import get_db_connection
 
 logger = logging.getLogger(__name__)
@@ -79,15 +79,37 @@ class GeminiService:
         except Exception as e:
             logger.warning(f"Failed to persist AI conversation message: {e}")
 
-    async def chat(self, user_id: int, session_id: str, message: str, is_pro: bool = False) -> Dict[str, Any]:
+    async def chat(
+        self,
+        user_id: int,
+        session_id: str,
+        message: str,
+        is_pro: bool = False,
+        language: str = "uz_latn"
+    ) -> Dict[str, Any]:
+        lang = normalize_lang(language)
+
         # 1. Rate Limit Check
         allowed, current_count, max_limit = self.check_and_increment_rate_limit(user_id, is_pro)
         if not allowed:
-            limit_msg = (
-                f"Kunlik bepul AI so'rovlar limitingiz ({max_limit} ta) tugadi.\n\n"
-                f"⚡ Cheksiz AI repetitor, qoidalar tahlili va shaxsiy mashg'ulotlar uchun "
-                f"**PRO obunaga** ulaning!"
-            )
+            if lang == "ru":
+                limit_msg = (
+                    f"Ваш дневной лимит бесплатных запросов к AI ({max_limit}) исчерпан.\n\n"
+                    f"⚡ Подключите **PRO-подписку** для безлимитного персонального автоинструктора, "
+                    f"разбора правил и подробных консультаций!"
+                )
+            elif lang == "uz_cyrl":
+                limit_msg = (
+                    f"Кунлик бепул AI сўровлар лимитингиз ({max_limit} та) тугади.\n\n"
+                    f"⚡ Чексиз AI йўриқнома, қоидалар таҳлили ва шахсий машғулотлар учун "
+                    f"**PRO обунага** уланинг!"
+                )
+            else:
+                limit_msg = (
+                    f"Kunlik bepul AI so'rovlar limitingiz ({max_limit} ta) tugadi.\n\n"
+                    f"⚡ Cheksiz AI yo'riqnoma, qoidalar tahlili va shaxsiy mashg'ulotlar uchun "
+                    f"**PRO obunaga** ulaning!"
+                )
             return {
                 "ok": True,
                 "reply": limit_msg,
@@ -98,13 +120,15 @@ class GeminiService:
 
         # 2. Check API key
         if not self.api_key:
+            if lang == "ru":
+                reply = "⚠️ **AI Инструктор настраивается.**\n\nСервис скоро заработает в полном объеме."
+            elif lang == "uz_cyrl":
+                reply = "⚠️ **AI Устоз хизмати созланмоқда.**\n\nТез орада тўлиқ ишга тушади."
+            else:
+                reply = "⚠️ **AI Ustoz xizmati sozlanmoqda.**\n\nTez orada to'liq ishga tushadi."
             return {
                 "ok": True,
-                "reply": (
-                    "⚠️ **AI Ustoz xizmati sozlanmoqda.**\n\n"
-                    "Tez orada Gemini 1.5 Flash integratsiyasi to'liq ishga tushadi. "
-                    "Hozirda savollar va testlar bo'limidan to'liq foydalanishingiz mumkin."
-                ),
+                "reply": reply,
                 "limit_reached": False,
                 "usage": {"current": current_count, "max": max_limit},
                 "cards": []
@@ -123,7 +147,7 @@ class GeminiService:
         tools_def = [{"function_declarations": GEMINI_TOOLS_DECLARATIONS}]
         
         system_instruction = {
-            "parts": [{"text": SYSTEM_PROMPT_UZ}]
+            "parts": [{"text": get_system_prompt(lang)}]
         }
 
         url = f"{GEMINI_API_ENDPOINT}?key={self.api_key}"
@@ -147,9 +171,15 @@ class GeminiService:
                 resp = await client.post(url, json=payload, headers=req_headers)
                 if resp.status_code != 200:
                     logger.error(f"Gemini API error: {resp.status_code} {resp.text}")
+                    if lang == "ru":
+                        err_reply = "К сожалению, произошла ошибка связи с искусственным интеллектом. Пожалуйста, попробуйте еще раз."
+                    elif lang == "uz_cyrl":
+                        err_reply = "Кечирасиз, сунъий интеллект хизмати билан алоқада хатолик юз берди. Илтимос, қайта уриниб кўринг."
+                    else:
+                        err_reply = "Kechirasiz, sun'iy intellekt xizmati bilan aloqa o'rnatishda xatolik yuz berdi. Iltimos, qayta urinib ko'ring."
                     return {
                         "ok": False,
-                        "reply": "Kechirasiz, sun'iy intellekt xizmati bilan aloqa o'rnatishda xatolik yuz berdi. Iltimos, qayta urinib ko'ring.",
+                        "reply": err_reply,
                         "error": resp.text
                     }
 
@@ -167,10 +197,10 @@ class GeminiService:
                     fn_args = function_call.get("args", {})
                     logger.info(f"Gemini requested tool: {fn_name} with args: {fn_args}")
 
-                    # Execute tool
+                    # Execute tool with user's language
                     tool_fn = TOOL_MAPPING.get(fn_name)
                     if tool_fn:
-                        tool_result = tool_fn(fn_args, user_id)
+                        tool_result = tool_fn(fn_args, user_id, lang)
                         
                         # Collect question cards if questions were returned
                         for k in ["questions", "saved_questions", "mistake_questions"]:
@@ -208,7 +238,7 @@ class GeminiService:
                             final_parts = second_data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
                             final_text = "".join(p.get("text", "") for p in final_parts)
                         else:
-                            final_text = "Ma'lumotlar olindi va tahlil qilindi."
+                            final_text = "Ma'lumotlar olindi va tahlil qilindi." if lang == "uz_latn" else ("Маълумотлар олинди ва таҳлил қилинди." if lang == "uz_cyrl" else "Данные получены и проанализированы.")
                     else:
                         final_text = "Noma'lum vosita chaqirildi."
                 else:

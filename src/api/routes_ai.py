@@ -13,6 +13,7 @@ gemini_service = GeminiService()
 class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = "default"
+    language: Optional[str] = "uz_latn"
 
 class ClearHistoryRequest(BaseModel):
     session_id: Optional[str] = "default"
@@ -58,16 +59,19 @@ async def chat_with_ai(
     sub = db.get_user_subscription(user_id)
     is_pro = sub.get("is_pro", False)
 
+    lang = req.language or user.get("language") or "uz_latn"
     msg = req.message.strip()
     if not msg:
-        return {"ok": False, "reply": "Iltimos, savolingizni yozing."}
+        empty_reply = "Iltimos, savolingizni yozing." if lang == "uz_latn" else ("Илтимос, саволингизни ёзинг." if lang == "uz_cyrl" else "Пожалуйста, введите ваш вопрос.")
+        return {"ok": False, "reply": empty_reply}
 
     session_id = req.session_id or "default"
     result = await gemini_service.chat(
         user_id=user_id,
         session_id=session_id,
         message=msg,
-        is_pro=is_pro
+        is_pro=is_pro,
+        language=lang
     )
     return result
 

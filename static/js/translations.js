@@ -233,7 +233,32 @@ const I18N = {
     sub_stats_locked: "🔒 Statistika PRO obunachilar uchun ochiq",
     sub_upgrade_btn: "Tarifni oshirish",
     sub_success_title: "Tabriklaymiz!",
-    sub_success_msg: "PRO tarif muvaffaqiyatli faollashtirildi! Barcha bo‘limlar ochildi."
+    sub_success_msg: "PRO tarif muvaffaqiyatli faollashtirildi! Barcha bo‘limlar ochildi.",
+
+    // AI Copilot / AI Ustoz
+    ai_header_title: "AI Ustoz",
+    ai_btn_clear: "Suhbatni tozalash",
+    ai_welcome_bubble: "Assalomu alaykum! Men <strong>Rully AI Ustoz</strong>man. 🚗<br><br>O‘zbekiston Yo‘l Harakati Qoidalari (YHQ), chorrahalar, belgilar va imtihon sirlari bo‘yicha har qanday savolingizga javob beraman.<br><br>Sizni qiynayotgan qoidalar va testdagi xatolaringizni birgalikda tahlil qilamiz!",
+    ai_msg_time_now: "Hozir",
+    ai_input_placeholder: "YHQ yoki savol haqida so‘rang...",
+    ai_send_label: "Yuborish",
+    btn_ai_saved_tutor: "AI Ustoz bilan tahlil qilish",
+    btn_ai_saved_tutor_prompt: "Mening saqlangan savollarimdagi qoidalarni batafsil tushuntirib ber",
+    ai_confirm_clear: "AI Ustoz bilan suhbat tarixini tozalashni xohlaysizmi?",
+    ai_cleared_reply: "Suhbat tarixi tozalandi. Qanday savolingiz bor? Men yordam berishga tayyorman! 🚗",
+    ai_limit_reached: "Kunlik bepul AI so‘rovlar limitingiz tugadi.\n\n⚡ Cheksiz AI yo‘riqnoma va tahlillar uchun PRO obunaga ulaning!",
+    ai_typing_text: "AI javob tayyorlamoqda...",
+    ai_net_error: "Aloqa xatosi yuz berdi. Iltimos qaytadan urinib ko'ring.",
+    ai_generic_error: "Kechirasiz, xatolik yuz berdi.",
+    ai_rule_badge: "Yo‘l qoidasi",
+    ai_chip_1_label: "🚗 Chorrahalarda o‘tish tartibi",
+    ai_chip_1_prompt: "Chorrahada teng huquqli yo‘llarda kim birinchi o‘tadi?",
+    ai_chip_2_label: "🛑 Yo‘l belgilari va chiziqlar",
+    ai_chip_2_prompt: "Eng ko‘p adashtiradigan yo‘l belgilari va ularning farqlarini tushuntirib ber",
+    ai_chip_3_label: "⚠️ 3 ta xato qoidasi",
+    ai_chip_3_prompt: "Nega davlat imtihonida 3 ta xatoda test to‘xtatiladi?",
+    ai_chip_4_label: "📊 Xatolarim tahlili",
+    ai_chip_4_prompt: "Mening testlardagi xatolarimni tahlil qilib ber va maslahat ber"
   },
 
   uz_cyrl: {
@@ -465,7 +490,32 @@ const I18N = {
     sub_stats_locked: "🔒 Статистика PRO обуначилар учун очиқ",
     sub_upgrade_btn: "Тарифни ошириш",
     sub_success_title: "Табриклаймиз!",
-    sub_success_msg: "PRO тариф муваффақиятли фаоллаштирилди! Барча бўлимлар очилди."
+    sub_success_msg: "PRO тариф муваффақиятли фаоллаштирилди! Барча бўлимлар очилди.",
+
+    // AI Copilot / AI Ustoz
+    ai_header_title: "AI Устоз",
+    ai_btn_clear: "Суҳбатни тозалаш",
+    ai_welcome_bubble: "Ассалому алайкум! Мен <strong>Rully AI Устоз</strong>ман. 🚗<br><br>Ўзбекистон Йўл Ҳаракати Қоидалари (ЙҲҚ), чорраҳалар, белгилар ва имтиҳон сирлари бўйича ҳар қандай саволингизга жавоб бераман.<br><br>Сизни қийнаётган қоидалар ва тестдаги хатоларингизни биргаликда таҳлил қиламиз!",
+    ai_msg_time_now: "Ҳозир",
+    ai_input_placeholder: "ЙҲҚ ёки савол ҳақида сўранг...",
+    ai_send_label: "Юбориш",
+    btn_ai_saved_tutor: "AI Устоз билан таҳлил қилиш",
+    btn_ai_saved_tutor_prompt: "Менинг сақланган саволларимдаги қоидаларни батафсил тушунтириб бер",
+    ai_confirm_clear: "AI Устоз билан суҳбат тарихини тозалашни хоҳлайсизми?",
+    ai_cleared_reply: "Суҳбат тарихи тозаланди. Қандай саволингиз бор? Мен ёрдам беришга тайёрман! 🚗",
+    ai_limit_reached: "Кунлик бепул AI сўровлар лимитингиз тугади.\n\n⚡ Чексиз AI йўриқнома ва таҳлиллар учун PRO обунага уланинг!",
+    ai_typing_text: "AI жавоб тайёрламоқда...",
+    ai_net_error: "Алоқа хатоси юз берди. Илтимос қайтадан уриниб кўринг.",
+    ai_generic_error: "Кечирасиз, хатолик юз берди.",
+    ai_rule_badge: "Йўл қоидаси",
+    ai_chip_1_label: "🚗 Чорраҳаларда ўтиш тартиби",
+    ai_chip_1_prompt: "Чорраҳада тенг ҳуқуқли йўлларда ким биринчи ўтади?",
+    ai_chip_2_label: "🛑 Йўл белгилари ва чизиқлар",
+    ai_chip_2_prompt: "Энг кўп адаштирадиган йўл белгилари ва уларнинг фарқларини тушунтириб бер",
+    ai_chip_3_label: "⚠️ 3 та хато қоидаси",
+    ai_chip_3_prompt: "Нега давлат имтиҳонида 3 та хатода тест тўхтатилади?",
+    ai_chip_4_label: "📊 Хатоларим таҳлили",
+    ai_chip_4_prompt: "Менинг тестлардаги хатоларимни таҳлил қилиб бер ва маслаҳат бер"
   },
 
   ru: {
@@ -697,7 +747,32 @@ const I18N = {
     sub_stats_locked: "🔒 Статистика доступна для подписчиков PRO",
     sub_upgrade_btn: "Улучшить тариф",
     sub_success_title: "Поздравляем!",
-    sub_success_msg: "PRO тариф успешно активирован! Все функции разблокированы."
+    sub_success_msg: "PRO тариф успешно активирован! Все функции разблокированы.",
+
+    // AI Copilot / AI Ustoz
+    ai_header_title: "AI Инструктор",
+    ai_btn_clear: "Очистить чат",
+    ai_welcome_bubble: "Здравствуйте! Я <strong>Rully AI Инструктор</strong>. 🚗<br><br>Отвечу на любые ваши вопросы по Правилам дорожного движения (ПДД) Узбекистана, перекрёсткам, знакам и экзаменам.<br><br>Мы вместе разберём сложные правила и ваши ошибки в тестах!",
+    ai_msg_time_now: "Сейчас",
+    ai_input_placeholder: "Спросите о ПДД или правилах...",
+    ai_send_label: "Отправить",
+    btn_ai_saved_tutor: "Анализ с AI Инструктором",
+    btn_ai_saved_tutor_prompt: "Подробно объясни правила из моих сохранённых вопросов",
+    ai_confirm_clear: "Вы действительно хотите очистить историю переписки с AI Инструктором?",
+    ai_cleared_reply: "История переписки очищена. Какой у вас вопрос? Я готов помочь! 🚗",
+    ai_limit_reached: "Ваш дневной лимит бесплатных запросов к AI исчерпан.\n\n⚡ Подключите PRO-подписку для безлимитного персонального автоинструктора!",
+    ai_typing_text: "AI готовит ответ...",
+    ai_net_error: "Произошла ошибка связи. Пожалуйста, попробуйте еще раз.",
+    ai_generic_error: "К сожалению, произошла ошибка.",
+    ai_rule_badge: "Правило ПДД",
+    ai_chip_1_label: "🚗 Проезд перекрёстков",
+    ai_chip_1_prompt: "Кто имеет преимущество на равнозначном перекрёстке?",
+    ai_chip_2_label: "🛑 Знаки и разметка",
+    ai_chip_2_prompt: "Объясни самые сложные дорожные знаки и различия между ними",
+    ai_chip_3_label: "⚠️ Правило 3 ошибок",
+    ai_chip_3_prompt: "Почему на госэкзамене тест прекращается при 3 ошибках?",
+    ai_chip_4_label: "📊 Анализ моих ошибок",
+    ai_chip_4_prompt: "Проанализируй мои ошибки в тестах и дай рекомендации"
   }
 };
 

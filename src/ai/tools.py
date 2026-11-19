@@ -1,15 +1,32 @@
 import json
 from typing import List, Dict, Any, Optional
 from src.db_adapter import get_db_connection
+from src.bot.category_localization import localize_category
 
-def tool_search_questions(query: str, category_id: Optional[int] = None, limit: int = 3) -> Dict[str, Any]:
+def normalize_lang(language: Optional[str]) -> str:
+    lang = (language or "uz_latn").lower().strip()
+    if lang in ("ru", "russian"):
+        return "ru"
+    if lang in ("uz_cyrl", "cyrl", "kirill"):
+        return "uz_cyrl"
+    return "uz_latn"
+
+def tool_search_questions(
+    query: str,
+    category_id: Optional[int] = None,
+    limit: int = 3,
+    language: str = "uz_latn"
+) -> Dict[str, Any]:
     """1295 ta savol ichidan qidirish (savol matni, izohi yoki qonuniy havolasi bo‘yicha)."""
     conn = get_db_connection()
     c = conn.cursor()
     
+    lang = normalize_lang(language)
+    col_text = f"text_{lang}"
     q_pattern = f"%{query}%"
-    params = [q_pattern, q_pattern, q_pattern]
+    
     cat_sql = ""
+    params = [lang, q_pattern, q_pattern, q_pattern]
     if category_id is not None:
         cat_sql = " AND cq.category_id = ? "
         params.append(category_id)
@@ -20,7 +37,7 @@ def tool_search_questions(query: str, category_id: Optional[int] = None, limit: 
     SELECT cq.canonical_id, cq.category_id, cq.category_name, cq.correct_option_key, cq.legal_reference,
            ct.question_text, ct.explanation
     FROM canonical_questions cq
-    JOIN canonical_translations ct ON cq.canonical_id = ct.canonical_id AND ct.language = 'uz_latn'
+    JOIN canonical_translations ct ON cq.canonical_id = ct.canonical_id AND ct.language = ?
     WHERE (ct.question_text LIKE ? OR ct.explanation LIKE ? OR cq.legal_reference LIKE ?)
     {cat_sql}
     LIMIT ?
@@ -28,20 +45,29 @@ def tool_search_questions(query: str, category_id: Optional[int] = None, limit: 
     c.execute(sql, tuple(params))
     rows = c.fetchall()
     
+    # If no results in selected language, fall back to searching in uz_latn
+    if not rows and lang != "uz_latn":
+        fallback_params = ["uz_latn", q_pattern, q_pattern, q_pattern]
+        if category_id is not None:
+            fallback_params.append(category_id)
+        fallback_params.append(min(limit, 5))
+        c.execute(sql, tuple(fallback_params))
+        rows = c.fetchall()
+    
     results = []
     for r in rows:
         cid = r["canonical_id"]
-        c.execute("""
-            SELECT option_key, text_uz_latn
+        c.execute(f"""
+            SELECT option_key, {col_text} AS opt_text
             FROM canonical_answers
             WHERE canonical_id = ?
             ORDER BY sort_order
         """, (cid,))
-        answers = [{"key": a["option_key"], "text": a["text_uz_latn"]} for a in c.fetchall()]
+        answers = [{"key": a["option_key"], "text": a["opt_text"]} for a in c.fetchall()]
         
         results.append({
             "canonical_id": cid,
-            "category_name": r["category_name"],
+            "category_name": localize_category(r["category_name"], lang),
             "question": r["question_text"],
             "legal_reference": r["legal_reference"],
             "explanation": r["explanation"],
@@ -54,37 +80,40 @@ def tool_search_questions(query: str, category_id: Optional[int] = None, limit: 
         "questions": results
     }
 
-def tool_get_user_bookmarks(user_id: int, limit: int = 5) -> Dict[str, Any]:
+def tool_get_user_bookmarks(user_id: int, limit: int = 5, language: str = "uz_latn") -> Dict[str, Any]:
     """Foydalanuvchining saqlangan (bookmark) savollarini olish."""
     conn = get_db_connection()
     c = conn.cursor()
+    
+    lang = normalize_lang(language)
+    col_text = f"text_{lang}"
     
     c.execute("""
     SELECT ub.canonical_id, cq.category_name, cq.correct_option_key, cq.legal_reference,
            ct.question_text, ct.explanation
     FROM user_bookmarks ub
     JOIN canonical_questions cq ON ub.canonical_id = cq.canonical_id
-    JOIN canonical_translations ct ON ub.canonical_id = ct.canonical_id AND ct.language = 'uz_latn'
+    JOIN canonical_translations ct ON ub.canonical_id = ct.canonical_id AND ct.language = ?
     WHERE ub.user_id = ?
     ORDER BY ub.created_at DESC
     LIMIT ?
-    """, (user_id, min(limit, 10)))
+    """, (lang, user_id, min(limit, 10)))
     
     rows = c.fetchall()
     results = []
     for r in rows:
         cid = r["canonical_id"]
-        c.execute("""
-            SELECT option_key, text_uz_latn
+        c.execute(f"""
+            SELECT option_key, {col_text} AS opt_text
             FROM canonical_answers
             WHERE canonical_id = ?
             ORDER BY sort_order
         """, (cid,))
-        answers = [{"key": a["option_key"], "text": a["text_uz_latn"]} for a in c.fetchall()]
+        answers = [{"key": a["option_key"], "text": a["opt_text"]} for a in c.fetchall()]
         
         results.append({
             "canonical_id": cid,
-            "category_name": r["category_name"],
+            "category_name": localize_category(r["category_name"], lang),
             "question": r["question_text"],
             "legal_reference": r["legal_reference"],
             "explanation": r["explanation"],
@@ -97,38 +126,41 @@ def tool_get_user_bookmarks(user_id: int, limit: int = 5) -> Dict[str, Any]:
         "saved_questions": results
     }
 
-def tool_get_user_mistakes(user_id: int, limit: int = 5) -> Dict[str, Any]:
+def tool_get_user_mistakes(user_id: int, limit: int = 5, language: str = "uz_latn") -> Dict[str, Any]:
     """Foydalanuvchining testlarda adashgan (xato qilgan) savollarini olish."""
     conn = get_db_connection()
     c = conn.cursor()
+    
+    lang = normalize_lang(language)
+    col_text = f"text_{lang}"
     
     c.execute("""
     SELECT um.canonical_id, um.mistake_count, cq.category_name, cq.correct_option_key, cq.legal_reference,
            ct.question_text, ct.explanation
     FROM user_mistakes um
     JOIN canonical_questions cq ON um.canonical_id = cq.canonical_id
-    JOIN canonical_translations ct ON um.canonical_id = ct.canonical_id AND ct.language = 'uz_latn'
+    JOIN canonical_translations ct ON um.canonical_id = ct.canonical_id AND ct.language = ?
     WHERE um.user_id = ?
     ORDER BY um.mistake_count DESC, um.last_mistake_at DESC
     LIMIT ?
-    """, (user_id, min(limit, 10)))
+    """, (lang, user_id, min(limit, 10)))
     
     rows = c.fetchall()
     results = []
     for r in rows:
         cid = r["canonical_id"]
-        c.execute("""
-            SELECT option_key, text_uz_latn
+        c.execute(f"""
+            SELECT option_key, {col_text} AS opt_text
             FROM canonical_answers
             WHERE canonical_id = ?
             ORDER BY sort_order
         """, (cid,))
-        answers = [{"key": a["option_key"], "text": a["text_uz_latn"]} for a in c.fetchall()]
+        answers = [{"key": a["option_key"], "text": a["opt_text"]} for a in c.fetchall()]
         
         results.append({
             "canonical_id": cid,
             "mistake_count": r["mistake_count"],
-            "category_name": r["category_name"],
+            "category_name": localize_category(r["category_name"], lang),
             "question": r["question_text"],
             "legal_reference": r["legal_reference"],
             "explanation": r["explanation"],
@@ -141,7 +173,7 @@ def tool_get_user_mistakes(user_id: int, limit: int = 5) -> Dict[str, Any]:
         "mistake_questions": results
     }
 
-def tool_get_user_statistics(user_id: int) -> Dict[str, Any]:
+def tool_get_user_statistics(user_id: int, language: str = "uz_latn") -> Dict[str, Any]:
     """Foydalanuvchining umumiy tayyorgarlik darajasi, imtihonlari va statistikasini olish."""
     conn = get_db_connection()
     c = conn.cursor()
@@ -236,8 +268,8 @@ GEMINI_TOOLS_DECLARATIONS = [
 ]
 
 TOOL_MAPPING = {
-    "search_questions": lambda args, uid: tool_search_questions(args.get("query", ""), args.get("category_id"), args.get("limit", 3)),
-    "get_user_bookmarks": lambda args, uid: tool_get_user_bookmarks(uid, args.get("limit", 5)),
-    "get_user_mistakes": lambda args, uid: tool_get_user_mistakes(uid, args.get("limit", 5)),
-    "get_user_statistics": lambda args, uid: tool_get_user_statistics(uid)
+    "search_questions": lambda args, uid, lang="uz_latn": tool_search_questions(args.get("query", ""), args.get("category_id"), args.get("limit", 3), language=lang),
+    "get_user_bookmarks": lambda args, uid, lang="uz_latn": tool_get_user_bookmarks(uid, args.get("limit", 5), language=lang),
+    "get_user_mistakes": lambda args, uid, lang="uz_latn": tool_get_user_mistakes(uid, args.get("limit", 5), language=lang),
+    "get_user_statistics": lambda args, uid, lang="uz_latn": tool_get_user_statistics(uid, language=lang)
 }

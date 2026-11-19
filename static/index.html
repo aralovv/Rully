@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
   <title>RULLY — O‘zbekiston Haydovchilik Imtihoni</title>
-  <link rel="stylesheet" href="/static/css/rully.css?v=3.6.6">
+  <link rel="stylesheet" href="/static/css/rully.css?v=3.6.7">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -261,10 +261,10 @@
               <span class="ai-status-dot"></span>
             </div>
             <div class="ai-header-meta">
-              <h3 class="ai-header-title">AI Ustoz</h3>
+              <h3 class="ai-header-title" data-i18n="ai_header_title">AI Ustoz</h3>
             </div>
           </div>
-          <button type="button" class="btn-ai-clear" id="btn-ai-clear" title="Suhbatni tozalash">
+          <button type="button" class="btn-ai-clear" id="btn-ai-clear" data-i18n-title="ai_btn_clear" title="Suhbatni tozalash">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
           </button>
         </div>
@@ -276,12 +276,12 @@
               <img src="/static/images/rully-avatar-128.png" alt="Rully" class="ai-avatar-thumb">
             </div>
             <div class="ai-msg-content">
-              <div class="ai-msg-bubble">
+              <div class="ai-msg-bubble" id="ai-welcome-bubble" data-i18n-html="ai_welcome_bubble">
                 Assalomu alaykum! Men <strong>Rully AI Ustoz</strong>man. 🚗<br><br>
                 O‘zbekiston Yo‘l Harakati Qoidalari (YHQ), chorrahalar, belgilar va imtihon sirlari bo‘yicha har qanday savolingizga javob beraman.<br><br>
-                Sizni qiynayotgan qoidalar, saqlangan savollaringiz va testdagi xatolaringizni birgalikda tahlil qilamiz!
+                Sizni qiynayotgan qoidalar va testdagi xatolaringizni birgalikda tahlil qilamiz!
               </div>
-              <span class="ai-msg-time">Hozir</span>
+              <span class="ai-msg-time" data-i18n="ai_msg_time_now">Hozir</span>
             </div>
           </div>
 
@@ -299,17 +299,14 @@
             <button type="button" class="ai-chip-btn" data-prompt="Mening testlardagi xatolarimni tahlil qilib ber va maslahat ber">
               📊 Xatolarim tahlili
             </button>
-            <button type="button" class="ai-chip-btn" data-prompt="Mening saqlangan savollarimdagi qoidalarni batafsil tushuntirib ber">
-              📌 Saqlanganlarim tahlili
-            </button>
           </div>
         </div>
 
         <!-- Chat Input Bar -->
         <div class="ai-input-bar">
           <div class="ai-input-wrap">
-            <textarea class="ai-text-input" id="ai-input-field" placeholder="YHQ yoki savol haqida so‘rang..." rows="1"></textarea>
-            <button type="button" class="ai-send-btn" id="btn-ai-send" aria-label="Yuborish">
+            <textarea class="ai-text-input" id="ai-input-field" data-i18n-placeholder="ai_input_placeholder" placeholder="YHQ yoki savol haqida so‘rang..." rows="1"></textarea>
+            <button type="button" class="ai-send-btn" id="btn-ai-send" data-i18n-title="ai_send_label" aria-label="Yuborish">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
             </button>
           </div>
@@ -934,9 +931,9 @@
   </nav>
 
   <!-- Application Scripts -->
-  <script src="/static/js/icons.js?v=3.6.6"></script>
-  <script src="/static/js/translations.js?v=3.6.6"></script>
-  <script src="/static/js/cheatsheet_data.js?v=3.6.6"></script>
-  <script src="/static/js/app.js?v=3.6.6"></script>
+  <script src="/static/js/icons.js?v=3.6.7"></script>
+  <script src="/static/js/translations.js?v=3.6.7"></script>
+  <script src="/static/js/cheatsheet_data.js?v=3.6.7"></script>
+  <script src="/static/js/app.js?v=3.6.7"></script>
 </body>
 </html>
