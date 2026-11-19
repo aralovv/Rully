@@ -12,11 +12,7 @@ from src.bot.config import WEB_APP_URL
 menu_router = Router(name="menu_router")
 
 @menu_router.message(Command("menu"))
-@menu_router.message(F.text.in_([
-    "🏠 Menyu", "🏠 Меню",
-    "🎛️ Bosh menyu", "🎛️ Бош меню", "🎛️ Главное меню",
-    "🎛️ Menyu", "🎛️ Меню"
-]))
+@menu_router.message(F.text.in_(["🏠 Menyu", "🏠 Меню"]))
 async def show_menu_cmd(message: Message, db: BotDatabase):
     user_id = message.from_user.id
     lang = db.get_user_language(user_id)
@@ -61,19 +57,19 @@ async def cb_settings(callback: CallbackQuery, db: BotDatabase):
 
     if lang == "uz_cyrl":
         text = (
-            "🗺️ <b>ТИЗИМ ТИЛИ ВА СОЗЛАМАЛАР</b>\n\n"
+            "⚙️ <b>СОЗЛАМАЛАР</b>\n\n"
             f"• Ҳозирги тил: <b>{curr_lang_name}</b>\n\n"
             "Интерфейс тилини ўзгартириш учун қуйидаги тугмалардан бирини босинг:"
         )
     elif lang == "ru":
         text = (
-            "🗺️ <b>ЯЗЫК ИНТЕРФЕЙСА И НАСТРОЙКИ</b>\n\n"
+            "⚙️ <b>НАСТРОЙКИ</b>\n\n"
             f"• Текущий язык: <b>{curr_lang_name}</b>\n\n"
             "Для смены языка интерфейса нажмите на одну из кнопок ниже:"
         )
     else:
         text = (
-            "🗺️ <b>TIZIM TILI VA SOZLAMALAR</b>\n\n"
+            "⚙️ <b>SOZLAMALAR</b>\n\n"
             f"• Hozirgi til: <b>{curr_lang_name}</b>\n\n"
             "Interfeys tilini o‘zgartirish uchun quyidagi tugmalardan birini bosing:"
         )

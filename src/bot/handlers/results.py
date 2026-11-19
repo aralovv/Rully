@@ -11,14 +11,6 @@ from src.bot.strings import get_str
 results_router = Router(name="results_router")
 
 @results_router.message(Command("results"))
-@results_router.message(F.text.in_([
-    "🪪 Haydovchilik darajasi (Indeks)",
-    "🪪 Ҳайдовчилик даражаси (Индекс)",
-    "🪪 Индекс готовности водителя",
-    "📊 Tayyorgarlik darajasi",
-    "📊 Тайёргарлик даражаси",
-    "📊 Индекс готовности"
-]))
 @results_router.callback_query(F.data == "menu:results")
 async def show_user_results(event: Message | CallbackQuery, db: BotDatabase):
     user_id = event.from_user.id
@@ -33,9 +25,9 @@ async def show_user_results(event: Message | CallbackQuery, db: BotDatabase):
 
     title = get_str("stats_title", lang)
     readiness_line = (
-        f"🪪 <b>Haqiqiy tayyorgarlik darajasi:</b> <b>{readiness}%</b>\n<i>(4 ta asosiy omil: Davlat imtihoni, aniqlik, qamrov va xatolar diagnostikasi)</i>\n" if lang == "uz_latn" else (
-            f"🪪 <b>Ҳақиқий тайёргарлик даражаси:</b> <b>{readiness}%</b>\n<i>(4 та асосий омил: Давлат имтиҳони, аниқлик, қамров ва хатолар диагностикаси)</i>\n" if lang == "uz_cyrl" else
-            f"🪪 <b>Реальный индекс готовности:</b> <b>{readiness}%</b>\n<i>(4 фактора: гос. экзамен, точность, охват базы и банк ошибок)</i>\n"
+        f"🎯 <b>Haqiqiy tayyorgarlik darajasi:</b> <b>{readiness}%</b>\n<i>(4 ta asosiy omil: Davlat imtihoni, aniqlik, qamrov va xatolar banki)</i>\n" if lang == "uz_latn" else (
+            f"🎯 <b>Ҳақиқий тайёргарлик даражаси:</b> <b>{readiness}%</b>\n<i>(4 та асосий омил: Давлат имтиҳони, аниқлик, қамров ва хатолар банки)</i>\n" if lang == "uz_cyrl" else
+            f"🎯 <b>Реальный индекс готовности:</b> <b>{readiness}%</b>\n<i>(4 фактора: гос. экзамен, точность, охват базы и банк ошибок)</i>\n"
         )
     )
 
@@ -56,9 +48,9 @@ async def show_user_results(event: Message | CallbackQuery, db: BotDatabase):
 
     if history:
         history_header = (
-            "⏱️ <b>So‘nggi imtihonlar:</b>" if lang == "uz_latn" else (
-                "⏱️ <b>Сўнгги имтиҳонлар:</b>" if lang == "uz_cyrl" else
-                "⏱️ <b>Последние экзамены:</b>"
+            "🕒 <b>So‘nggi imtihonlar:</b>" if lang == "uz_latn" else (
+                "🕒 <b>Сўнгги имтиҳонлар:</b>" if lang == "uz_cyrl" else
+                "🕒 <b>Последние экзамены:</b>"
             )
         )
         sec_unit = "son" if lang == "uz_latn" else ("сон" if lang == "uz_cyrl" else "сек")
@@ -71,8 +63,8 @@ async def show_user_results(event: Message | CallbackQuery, db: BotDatabase):
 
     msg_text = "\n".join(lines)
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🛞 RULLY'da batafsil tahlil" if lang == "uz_latn" else ("🛞 RULLY'да батафсил таҳлил" if lang == "uz_cyrl" else "🛞 Подробный анализ в RULLY"), web_app=WebAppInfo(url=f"{WEB_APP_URL}#profile"))],
-        [InlineKeyboardButton(text="🎛️ Bosh menyu" if lang == "uz_latn" else ("🎛️ Бош меню" if lang == "uz_cyrl" else "🎛️ Главное меню"), callback_data="menu:main")]
+        [InlineKeyboardButton(text="🚗 RULLY'da batafsil tahlil" if lang == "uz_latn" else ("🚗 RULLY'да батафсил таҳлил" if lang == "uz_cyrl" else "🚗 Подробный анализ в RULLY"), web_app=WebAppInfo(url=f"{WEB_APP_URL}#profile"))],
+        [InlineKeyboardButton(text="🏠 Bosh menyu" if lang == "uz_latn" else ("🏠 Бош меню" if lang == "uz_cyrl" else "🏠 Главное меню"), callback_data="menu:main")]
     ])
 
     if isinstance(event, CallbackQuery):

@@ -14,14 +14,7 @@ from src.bot.strings import get_str
 practice_router = Router(name="practice_router")
 
 # --- Quick Test ---
-@practice_router.message(F.text.in_([
-    "⏱️ Tezkor ekspress-test (10)",
-    "⏱️ Тезкор экспресс-тест (10)",
-    "⏱️ Экспресс-тест (10 вопросов)",
-    "⚡ Tezkor test",
-    "⚡ Тезкор тест",
-    "⚡ Быстрый тест (10)"
-]))
+@practice_router.message(F.text.in_(["⚡ Tezkor test", "⚡ Тезкор тест", "⚡ Быстрый тест (10)"]))
 @practice_router.callback_query(F.data == "menu:quick")
 async def start_quick_test(event: Message | CallbackQuery, bot: Bot,
                            product_engine: AvtotestProductEngine, db: BotDatabase):
@@ -58,11 +51,11 @@ async def show_categories(callback: CallbackQuery, product_engine: AvtotestProdu
     kb = get_categories_keyboard(categories, page=0, language=lang)
 
     if lang == "uz_cyrl":
-        text = "🚦 <b>ЙҲҚ МАВЗУЛАРИ БЎЙИЧА СИНОВ</b>\n\nКеракли бўлимни танланг:"
+        text = "🎯 <b>БОБ БЎЙИЧА МАШҚ</b>\n\nКеракли ЙҲҚ бўлимини танланг:"
     elif lang == "ru":
-        text = "🚦 <b>ТЕСТИРОВАНИЕ ПО ТЕМАМ ПДД</b>\n\nВыберите нужный раздел:"
+        text = "🎯 <b>ТРЕНИРОВКА ПО ТЕМАМ</b>\n\nВыберите нужный раздел ПДД:"
     else:
-        text = "🚦 <b>YHQ MAVZULARI BO‘YICHA SINOV</b>\n\nKerakli bo‘limni tanlang:"
+        text = "🎯 <b>BOB BO‘YICHA MASHQ</b>\n\nKerakli YHQ mavzusini tanlang:"
 
     await callback.message.edit_text(
         text=text,
@@ -81,11 +74,10 @@ async def paginate_categories(callback: CallbackQuery, product_engine: AvtotestP
     kb = get_categories_keyboard(categories, page=page, language=lang)
 
     if lang == "uz_cyrl":
-        text = "🚦 <b>ЙҲҚ МАВЗУЛАРИ БЎЙИЧА СИНОВ</b>\n\nКеракли бўлимни танланг:"
+        text = "🎯 <b>БОБ БЎЙИЧА МАШҚ</b>\n\nКеракли ЙҲҚ бўлимини танланг:"
     elif lang == "ru":
-        text = "🚦 <b>ТЕСТИРОВАНИЕ ПО ТЕМАМ ПДД</b>\n\nВыберите нужный раздел:"
+        text = "🎯 <b>ТРЕНИРОВКА ПО ТЕМАМ</b>\n\nВыберите нужный раздел ПДД:"
     else:
-        text = "🚦 <b>YHQ MAVZULARI BO‘YICHA SINOV</b>\n\nKerakli bo‘limni tanlang:"
         text = "🎯 <b>BOB BO‘YICHA MASHQ</b>\n\nKerakli YHQ mavzusini tanlang:"
 
     await callback.message.edit_text(

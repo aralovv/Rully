@@ -1,7 +1,7 @@
 """
 Native Telegram Keyboards for Avtotest Bot.
 Pure native Inline and Reply keyboards with full 3-language localization.
-No amateurish emojis; high-fidelity automotive terminal buttons.
+No Mini App or Web App buttons.
 """
 
 from typing import List, Dict, Any, Optional
@@ -20,15 +20,15 @@ def get_language_keyboard() -> InlineKeyboardMarkup:
 # 2. Main Menu Keyboard (RULLY App Direct Launcher + Help)
 def get_main_menu_keyboard(language: str = "uz_latn") -> InlineKeyboardMarkup:
     rully_btn = (
-        "🛞 RULLY ilovasi" if language == "uz_latn" else (
-            "🛞 RULLY иловаси" if language == "uz_cyrl" else
-            "🛞 Приложение RULLY"
+        "🚗 RULLY ilovasi" if language == "uz_latn" else (
+            "🚗 RULLY иловаси" if language == "uz_cyrl" else
+            "🚗 Приложение RULLY"
         )
     )
     help_btn = (
-        "🔰 Nizom va yordam" if language == "uz_latn" else (
-            "🔰 Низом ва ёрдам" if language == "uz_cyrl" else
-            "🔰 Регламент и помощь"
+        "ℹ️ Yordam" if language == "uz_latn" else (
+            "ℹ️ Ёрдам" if language == "uz_cyrl" else
+            "ℹ️ Помощь"
         )
     )
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -43,15 +43,15 @@ def get_main_menu_keyboard(language: str = "uz_latn") -> InlineKeyboardMarkup:
 # 3. Persistent Reply Keyboard
 def get_main_reply_keyboard(language: str = "uz_latn") -> ReplyKeyboardMarkup:
     rully_btn = (
-        "🛞 RULLY ilovasi" if language == "uz_latn" else (
-            "🛞 RULLY иловаси" if language == "uz_cyrl" else
-            "🛞 Приложение RULLY"
+        "🚗 RULLY ilovasi" if language == "uz_latn" else (
+            "🚗 RULLY иловаси" if language == "uz_cyrl" else
+            "🚗 Приложение RULLY"
         )
     )
     help_btn = (
-        "🔰 Nizom va yordam" if language == "uz_latn" else (
-            "🔰 Низом ва ёрдам" if language == "uz_cyrl" else
-            "🔰 Регламент и помощь"
+        "ℹ️ Yordam" if language == "uz_latn" else (
+            "ℹ️ Ёрдам" if language == "uz_cyrl" else
+            "ℹ️ Помощь"
         )
     )
     return ReplyKeyboardMarkup(keyboard=[
@@ -84,7 +84,7 @@ def get_custom_settings_keyboard(settings: Dict[str, Any], language: str = "uz_l
 
     # Row 2: Time Limit Options
     time_options = [
-        (0, "♾️"),
+        (0, "♾️" if language != "ru" else "♾️"),
         (10, "10m" if language == "uz_latn" else ("10д" if language == "uz_cyrl" else "10м")),
         (20, "20m" if language == "uz_latn" else ("20д" if language == "uz_cyrl" else "20м")),
         (30, "30m" if language == "uz_latn" else ("30д" if language == "uz_cyrl" else "30м")),
@@ -97,19 +97,19 @@ def get_custom_settings_keyboard(settings: Dict[str, Any], language: str = "uz_l
 
     # Row 3: Answer feedback toggle
     if language == "uz_latn":
-        ans_label = f"🎯 Javob: {'🟢 Darhol' if show_ans else '⚪ Yakunda'}"
+        ans_label = f"🎯 Javob: {'✅ Darhol' if show_ans else '❌ Faqat oxirida'}"
     elif language == "uz_cyrl":
-        ans_label = f"🎯 Жавоб: {'🟢 Дарҳол' if show_ans else '⚪ Якунда'}"
+        ans_label = f"🎯 Жавоб: {'✅ Дарҳол' if show_ans else '❌ Фақат якунда'}"
     else:
-        ans_label = f"🎯 Показ ответа: {'🟢 Сразу' if show_ans else '⚪ В конце'}"
+        ans_label = f"🎯 Показ ответа: {'✅ Сразу' if show_ans else '❌ Только в конце'}"
 
     # Row 4: Explanation toggle
     if language == "uz_latn":
-        expl_label = f"⚖️ Qonuniy asos: {'🟢 Ha' if show_expl else '⚪ Yo‘q'}"
+        expl_label = f"💡 Qonuniy izoh: {'✅ Ha' if show_expl else '❌ Yo‘q'}"
     elif language == "uz_cyrl":
-        expl_label = f"⚖️ Қонуний асос: {'🟢 Ҳа' if show_expl else '⚪ Йўқ'}"
+        expl_label = f"💡 Қонуний изоҳ: {'✅ Ҳа' if show_expl else '❌ Йўқ'}"
     else:
-        expl_label = f"⚖️ Норма ПДД: {'🟢 Да' if show_expl else '⚪ Нет'}"
+        expl_label = f"💡 Пояснение ПДД: {'✅ Да' if show_expl else '❌ Нет'}"
 
     # Row 5: Start Button
     start_label = get_str("settings_btn_start", language, count=curr_cnt)
@@ -129,23 +129,23 @@ def get_quiz_options_keyboard(options: List[Dict[str, Any]], session_id: str,
                               correct_key: Optional[str] = None,
                               language: str = "uz_latn") -> InlineKeyboardMarkup:
     """
-    Renders clean computer-terminal styled option buttons:
-    [ A ], [ B ], [ C ], [ D ]
-    And on feedback: [ ✅ A ], [ ❌ B ], etc.
+    Renders styled option buttons: [ 🅰️ A ], [ 🅱️ B ], [ 🅲 C ], [ 🅳 D ]
     """
+    emoji_map = {"A": "🅰️", "B": "🅱️", "C": "🅲", "D": "🅳", "E": "🅴"}
     buttons = []
     for opt in options:
         key = opt["key"]
+        icon = emoji_map.get(key, key)
         if selected_key:
             if key == correct_key:
-                label = f"[ ✅ {key} ]"
+                label = f"✅ {key}"
             elif key == selected_key:
-                label = f"[ ❌ {key} ]"
+                label = f"❌ {key}"
             else:
-                label = f"[ {key} ]"
+                label = f"{key}"
             cb_data = "quiz:noop"
         else:
-            label = f"[ {key} ]"
+            label = f"{icon} {key}"
             cb_data = f"ans:{session_id}:{key}"
 
         buttons.append(InlineKeyboardButton(text=label, callback_data=cb_data))
@@ -232,19 +232,19 @@ def get_categories_keyboard(categories: List[Dict[str, Any]], page: int = 0,
         cat_id = cat["category_id"]
         cat_name = cat["name"]
         q_count = cat["question_count"]
-        label = f"🚦 {cat_name} ({q_count})"
+        label = f"{cat_name} ({q_count})"
         rows.append([InlineKeyboardButton(text=label, callback_data=f"cat:select:{cat_id}")])
 
     # Pagination navigation row
     nav_row = []
     if page > 0:
-        nav_row.append(InlineKeyboardButton(text="◀️", callback_data=f"cat:page:{page - 1}"))
+        nav_row.append(InlineKeyboardButton(text="⬅️", callback_data=f"cat:page:{page - 1}"))
     
     total_pages = ((total_cats - 1) // page_size) + 1 if total_cats > 0 else 1
     nav_row.append(InlineKeyboardButton(text=f"{page + 1} / {total_pages}", callback_data="cat:noop"))
 
     if end_idx < total_cats:
-        nav_row.append(InlineKeyboardButton(text="▶️", callback_data=f"cat:page:{page + 1}"))
+        nav_row.append(InlineKeyboardButton(text="➡️", callback_data=f"cat:page:{page + 1}"))
 
     if nav_row:
         rows.append(nav_row)
@@ -256,13 +256,13 @@ def get_categories_keyboard(categories: List[Dict[str, Any]], page: int = 0,
 def get_admin_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="📈 Telemetriya va audit", callback_data="admin:health"),
-            InlineKeyboardButton(text="👥 Haydovchilar bazasi", callback_data="admin:users")
+            InlineKeyboardButton(text="📊 Tizim holati", callback_data="admin:health"),
+            InlineKeyboardButton(text="👥 Foydalanuvchilar", callback_data="admin:users")
         ],
         [
-            InlineKeyboardButton(text="📢 Eʼlon tarqatish (Broadcast)", callback_data="admin:broadcast")
+            InlineKeyboardButton(text="📢 Xabar yuborish (Broadcast)", callback_data="admin:broadcast")
         ],
         [
-            InlineKeyboardButton(text="🎛️ Bosh menyu", callback_data="menu:main")
+            InlineKeyboardButton(text="🏠 Bosh menyu", callback_data="menu:main")
         ]
     ])

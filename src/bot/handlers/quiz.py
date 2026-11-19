@@ -170,10 +170,10 @@ async def cb_submit_answer(callback: CallbackQuery, bot: Bot,
         if mistakes_count > 2:
             db.finish_session(session_id, status="FAILED_MISTAKES")
             alert_msg = {
-                "uz_latn": "🛑 Davlat imtihoni to‘xtatildi!\n2 tadan ortiq (3 ta) xatoga yo‘l qo‘yildi (VMQ 408 talabi).",
-                "uz_cyrl": "🛑 Давлат имтиҳони тўхтатилди!\n2 тадан ортиқ (3 та) хатога йўл қўйилди (ВМҚ 408 талаби).",
-                "ru": "🛑 Государственный экзамен остановлен!\nДопущено более 2 ошибок (требование ПКМ №408)."
-            }.get(lang, "🛑 Davlat imtihoni to‘xtatildi! 2 tadan ortiq xatoga yo‘l qo‘yildi.")
+                "uz_latn": "❌ Imtihon to‘xtatildi!\n2 tadan ortiq (3 ta) xatoga yo‘l qo‘yildi (DYHXX VMQ 408 qoidasi).",
+                "uz_cyrl": "❌ Имтиҳон тўхтатилди!\n2 тадан ортиқ (3 та) хатога йўл қўйилди (ДЙҲХХ ВМҚ 408 қоидаси).",
+                "ru": "❌ Экзамен остановлен!\nДопущено более 2 ошибок (правило ГСБДД ПКМ №408)."
+            }.get(lang, "❌ Imtihon to‘xtatildi! 2 tadan ortiq xatoga yo‘l qo‘yildi.")
             await callback.answer(alert_msg, show_alert=True)
             await render_session_results(bot, callback.message.chat.id, session_id, product_engine, db)
             return

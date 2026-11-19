@@ -27,15 +27,15 @@ async def cmd_start(message: Message, command: CommandObject, db: BotDatabase):
     # Deep linking support
     args = (command.args or "").strip().lower()
     if args == "amaliy":
-        amaliy_title = "🛞 <b>RULLY Amaliy Imtihon</b>" if lang == "uz_latn" else ("🛞 <b>RULLY Амалий Имтиҳон</b>" if lang == "uz_cyrl" else "🛞 <b>RULLY Практический Экзамен</b>")
+        amaliy_title = "🚗 <b>RULLY Amaliy Imtihon</b>" if lang == "uz_latn" else ("🚗 <b>RULLY Амалий Имтиҳон</b>" if lang == "uz_cyrl" else "🚗 <b>RULLY Практический Экзамен</b>")
         amaliy_text = (
-            "10 ta amaliy mashg‘ulot, avtodrom cheklisti va vaziyatli savollardan foydalanish uchun RULLY ilovasini oching!" if lang == "uz_latn" else (
-                "10 та амалий машғулот, автодром чеклисти ва вазиятли саволлардан фойдаланиш учун RULLY иловасини очинг!" if lang == "uz_cyrl" else
-                "Для доступа к 10 практическим упражнениям, чек-листу автодрома и разбору ситуаций откройте приложение RULLY!"
+            "10 ta o‘quv darsligi, avtodrom cheklisti va vaziyatli savollardan foydalanish uchun RULLY'ni oching!" if lang == "uz_latn" else (
+                "10 та ўқув дарслиги, автодром чеклисти ва вазиятли саволлардан фойдаланиш учун RULLY'ни очинг!" if lang == "uz_cyrl" else
+                "Для доступа к 10 обучающим модулям, чек-листу автодрома и дорожным ситуациям откройте RULLY!"
             )
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🚧 Avtodrom va amaliyotni ochish", web_app=WebAppInfo(url=f"{WEB_APP_URL}#amaliy"))]
+            [InlineKeyboardButton(text="🚀 Avtodrom va Amaliyotni ochish", web_app=WebAppInfo(url=f"{WEB_APP_URL}#amaliy"))]
         ])
         await message.answer(f"{amaliy_title}\n\n{amaliy_text}", parse_mode="HTML", reply_markup=kb)
         return
@@ -43,7 +43,7 @@ async def cmd_start(message: Message, command: CommandObject, db: BotDatabase):
     # Check if user has already selected a language (only ask once on first launch)
     if not db.has_user_selected_language(user_id):
         onboarding_text = (
-            "🛞 <b>RULLY</b>\n\n"
+            "🚗 <b>RULLY</b>\n\n"
             "Iltimos, interfeys tilini tanlang:\n"
             "Илтимос, интерфейс тилини танланг:\n"
             "Пожалуйста, выберите язык интерфейса:"
@@ -97,14 +97,14 @@ async def cb_select_language(callback: CallbackQuery, db: BotDatabase):
             reply_markup=get_main_menu_keyboard(selected_lang)
         )
 
-@start_router.message(F.text.in_(["🌐 Til", "🌐 Тил", "🌐 Язык", "🗺️ Til", "🗺️ Тил", "🗺️ Язык", "🗺️ Tizim tili", "🗺️ Тизим тили", "🗺️ Язык интерфейса"]))
+@start_router.message(F.text.in_(["🌐 Til", "🌐 Тил", "🌐 Язык"]))
 @start_router.message(Command("language"))
 async def cmd_language(message: Message, db: BotDatabase):
     lang = db.get_user_language(message.from_user.id)
     lang_prompt = (
-        "🗺️ <b>Interfeys tilini tanlang:</b>" if lang == "uz_latn" else (
-            "🗺️ <b>Интерфейс тилини танланг:</b>" if lang == "uz_cyrl" else
-            "🗺️ <b>Выберите язык интерфейса:</b>"
+        "🌐 <b>Interfeys tilini tanlang:</b>" if lang == "uz_latn" else (
+            "🌐 <b>Интерфейс тилини танланг:</b>" if lang == "uz_cyrl" else
+            "🌐 <b>Выберите язык интерфейса:</b>"
         )
     )
     await message.answer(
@@ -113,12 +113,7 @@ async def cmd_language(message: Message, db: BotDatabase):
         reply_markup=get_language_keyboard()
     )
 
-@start_router.message(F.text.in_([
-    "ℹ️ Yordam", "ℹ️ Ёрдам", "ℹ️ Помощь",
-    "🔰 Yordam", "🔰 Ёрдам", "🔰 Помощь",
-    "🔰 Nizom va yordam", "🔰 Низом ва ёрдам", "🔰 Регламент и помощь",
-    "🔰 Nizom va qoidalar", "🔰 Низом ва қоидалар", "🔰 Регламент и правила"
-]))
+@start_router.message(F.text.in_(["ℹ️ Yordam", "ℹ️ Ёрдам", "ℹ️ Помощь"]))
 @start_router.message(Command("help"))
 async def cmd_help(message: Message, db: BotDatabase):
     lang = db.get_user_language(message.from_user.id)
@@ -156,11 +151,10 @@ async def cmd_subscription(message: Message, db: BotDatabase):
             f"• <b>14 kunlik (2 hafta)</b> — 14 000 so‘m\n"
             f"• <b>30 kunlik (1 oy)</b> — 25 000 so‘m (⭐ Eng ommabop)\n\n"
             f"<b>PRO imkoniyatlari:</b>\n"
-            f"✅ Davlat nazariy imtihoni (20 savol / 25 daqiqa)\n"
-            f"✅ Xatolar ustida ishlash (Diagnostika)\n"
-            f"✅ AI Ustoz (24/7 shaxsiy intellektual instruktor)\n"
-            f"✅ To‘liq imtihon shpargalkasi va meʼyorlar\n"
-            f"✅ Aniq statistika va haydovchilik indeksi"
+            f"✅ Nazariy Imtihon (20 savol / 25 daqiqa)\n"
+            f"✅ Xatolar Banki bilan ishlash\n"
+            f"✅ To‘liq Imtihon Shpargalkasi\n"
+            f"✅ Aniq Statistika va Telemetriya"
         )
         btn_text = "💳 Obunani faollashtirish (Profil)"
     elif lang == "uz_cyrl":
@@ -174,11 +168,10 @@ async def cmd_subscription(message: Message, db: BotDatabase):
             f"• <b>14 кунлик (2 ҳафта)</b> — 14 000 сўм\n"
             f"• <b>30 кунлик (1 ой)</b> — 25 000 сўм (⭐ Энг оммабоп)\n\n"
             f"<b>PRO имкониятлари:</b>\n"
-            f"✅ Давлат назарий имтиҳони (20 савол / 25 дақиқа)\n"
-            f"✅ Хатолар устида ишлаш (Диагностика)\n"
-            f"✅ AI Устоз (24/7 шахсий интеллектуал инструктор)\n"
-            f"✅ Тўлиқ имтиҳон шпаргалкаси ва меъёрлар\n"
-            f"✅ Аниқ статистика ва ҳайдовчилик индекси"
+            f"✅ Назарий Имтиҳон (20 савол / 25 дақиқа)\n"
+            f"✅ Хатолар Банки билан ишлаш\n"
+            f"✅ Тўлиқ Имтиҳон Шпаргалкаси\n"
+            f"✅ Аниқ Статистика ва Телеметрия"
         )
         btn_text = "💳 Обунани фаоллаштириш (Профиль)"
     else:
@@ -192,11 +185,10 @@ async def cmd_subscription(message: Message, db: BotDatabase):
             f"• <b>14 дней (2 недели)</b> — 14 000 сум\n"
             f"• <b>30 дней (1 месяц)</b> — 25 000 сум (⭐ Хит продаж)\n\n"
             f"<b>Возможности PRO:</b>\n"
-            f"✅ Государственный экзамен (20 вопросов / 25 мин)\n"
-            f"✅ Диагностика и работа над ошибками\n"
-            f"✅ AI Инструктор (24/7 персональный разбор ситуаций)\n"
-            f"✅ Полная шпаргалка и нормативы ПДД\n"
-            f"✅ Подробная статистика и индекс готовности"
+            f"✅ Теоретический экзамен (20 вопросов / 25 мин)\n"
+            f"✅ Банк ошибок и отработка\n"
+            f"✅ Полная шпаргалка к экзамену\n"
+            f"✅ Подробная статистика и готовность"
         )
         btn_text = "💳 Активировать подписку (Профиль)"
 
