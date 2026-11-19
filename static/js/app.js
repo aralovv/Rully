@@ -57,6 +57,9 @@
     try {
       tg.ready();
       tg.expand();
+      if (tg.disableVerticalSwipes) {
+        tg.disableVerticalSwipes();
+      }
       tg.headerColor = '#070a13';
       tg.backgroundColor = '#070a13';
     } catch (e) {}
@@ -995,9 +998,12 @@
     // Toggle full-viewport chat layout for AI Ustoz
     const isAi = tabName === 'ai';
     document.body.classList.toggle('tab-ai-active', isAi);
+    window.scrollTo(0, 0);
+    document.body.scrollTop = 0;
+    document.documentElement.scrollTop = 0;
     if (!isAi) {
       document.body.classList.remove('keyboard-open');
-      document.documentElement.style.removeProperty('--ai-viewport-height');
+      document.documentElement.style.removeProperty('--ai-keyboard-offset');
     }
 
     document.querySelectorAll('.view-pane').forEach(el => el.classList.remove('active'));
@@ -2864,33 +2870,52 @@
       // Viewport & Keyboard Handling for Mobile (Telegram WebApp & Touch)
       const updateAiViewport = () => {
         if (state.activeTab !== 'ai') return;
+        window.scrollTo(0, 0);
+
         const vv = window.visualViewport;
-        const vh = vv ? vv.height : window.innerHeight;
         const winH = window.innerHeight;
-        const isKb = (winH - vh > 120) || (document.activeElement === aiInput);
+        const vh = vv ? vv.height : winH;
+        const kbOffset = Math.max(0, winH - vh);
+        const isKb = (kbOffset > 100) || (document.activeElement === aiInput);
+
         document.body.classList.toggle('keyboard-open', isKb);
-        if (isKb) {
-          document.documentElement.style.setProperty('--ai-viewport-height', `${vh}px`);
+        if (isKb && kbOffset > 100) {
+          document.documentElement.style.setProperty('--ai-keyboard-offset', `${kbOffset}px`);
         } else {
-          document.documentElement.style.removeProperty('--ai-viewport-height');
+          document.documentElement.style.removeProperty('--ai-keyboard-offset');
         }
       };
 
       aiInput.addEventListener('focus', () => {
         document.body.classList.add('keyboard-open');
+        window.scrollTo(0, 0);
         updateAiViewport();
-        setTimeout(() => scrollAiToBottom(true), 120);
-        setTimeout(() => scrollAiToBottom(true), 350);
+        setTimeout(() => {
+          window.scrollTo(0, 0);
+          scrollAiToBottom(true);
+        }, 100);
+        setTimeout(() => {
+          window.scrollTo(0, 0);
+          scrollAiToBottom(true);
+        }, 300);
       });
 
       aiInput.addEventListener('blur', () => {
+        document.body.classList.remove('keyboard-open');
+        document.documentElement.style.removeProperty('--ai-keyboard-offset');
+        window.scrollTo(0, 0);
+        document.body.scrollTop = 0;
+        document.documentElement.scrollTop = 0;
         setTimeout(() => {
-          if (document.activeElement !== aiInput) {
-            document.body.classList.remove('keyboard-open');
-            document.documentElement.style.removeProperty('--ai-viewport-height');
-            scrollAiToBottom(false);
-          }
-        }, 150);
+          window.scrollTo(0, 0);
+          scrollAiToBottom(false);
+        }, 100);
+      });
+
+      window.addEventListener('scroll', () => {
+        if (state.activeTab === 'ai' && (window.scrollX !== 0 || window.scrollY !== 0)) {
+          window.scrollTo(0, 0);
+        }
       });
 
       if (window.visualViewport) {
