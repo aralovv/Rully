@@ -275,7 +275,19 @@ const I18N = {
     badge_avtodrom: "Avtodrom",
     badge_shahar: "Shahar",
     badge_xavfsizlik: "Xavfsizlik",
-    badge_yakunlash: "Yakunlash"
+    badge_yakunlash: "Yakunlash",
+
+    // Theory Modules & Lessons
+    duration_mins: "daqiqa",
+    module_unit_label: "Mavzu",
+    theory_curriculum_heading: "Nazariy o‘quv dasturi",
+    theory_key_rules_heading: "Asosiy qoidalar va talablar:",
+    theory_exam_traps_heading: "Imtihondagi tuzoqlar va muhim eslatmalar:",
+    theory_ai_tutor_help: "Mavzuni tushunish qiyin bo‘ldimi? AI Ustozdan so‘rang",
+    btn_ask_ai_tutor: "AI dan so‘rash 💬",
+    btn_study_and_test: "Dars & Test",
+    badge_lesson_available: "Darslik",
+    start_module_quiz_btn: "Modul bo‘yicha test ishlash ({n} ta savol)"
   },
 
   uz_cyrl: {
@@ -549,7 +561,19 @@ const I18N = {
     badge_avtodrom: "Автодром",
     badge_shahar: "Шаҳар",
     badge_xavfsizlik: "Хавфсизлик",
-    badge_yakunlash: "Якунлаш"
+    badge_yakunlash: "Якунлаш",
+
+    // Theory Modules & Lessons
+    duration_mins: "дақиқа",
+    module_unit_label: "Мавзу",
+    theory_curriculum_heading: "Назарий ўқув дастури",
+    theory_key_rules_heading: "Асосий қоидалар ва талаблар:",
+    theory_exam_traps_heading: "Имтиҳондаги тузоқлар ва муҳим эслатмалар:",
+    theory_ai_tutor_help: "Мавзуни тушуниш қийин бўлдими? AI Устоздан сўранг",
+    btn_ask_ai_tutor: "AI дан сўраш 💬",
+    btn_study_and_test: "Дарс & Тест",
+    badge_lesson_available: "Дарслик",
+    start_module_quiz_btn: "Модул бўйича тест ишлаш ({n} та савол)"
   },
 
   ru: {
@@ -823,7 +847,19 @@ const I18N = {
     badge_avtodrom: "Автодром",
     badge_shahar: "Город",
     badge_xavfsizlik: "Безопасность",
-    badge_yakunlash: "Финал"
+    badge_yakunlash: "Финал",
+
+    // Theory Modules & Lessons
+    duration_mins: "мин",
+    module_unit_label: "Тема",
+    theory_curriculum_heading: "Учебный курс теории ПДД",
+    theory_key_rules_heading: "Основные правила и требования:",
+    theory_exam_traps_heading: "Ловушки на экзамене и частые ошибки:",
+    theory_ai_tutor_help: "Сложно понять тему? Спросите у AI Инструктора",
+    btn_ask_ai_tutor: "Спросить AI 💬",
+    btn_study_and_test: "Урок & Тест",
+    badge_lesson_available: "Урок",
+    start_module_quiz_btn: "Пройти тест по модулю ({n} вопр.)"
   }
 };
 

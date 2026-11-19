@@ -257,8 +257,10 @@ class GeminiService:
 
                 # Clean any leaked technical identifiers from final text
                 final_text = re.sub(r'\b(?:Canon(?:ical)?\s*(?:yhq)?[:\-]?\s*)?UZ-YHQ-[A-Z0-9]+\b', '', final_text, flags=re.IGNORECASE)
-                final_text = re.sub(r'\bCanon\s*yhq\b', 'savol', final_text, flags=re.IGNORECASE)
-                final_text = re.sub(r'\bCanon\b', 'Savol', final_text, flags=re.IGNORECASE)
+                q_word = "вопрос" if lang == "ru" else ("савол" if lang == "uz_cyrl" else "savol")
+                Q_word = "Вопрос" if lang == "ru" else ("Савол" if lang == "uz_cyrl" else "Savol")
+                final_text = re.sub(r'\bCanon\s*yhq\b', q_word, final_text, flags=re.IGNORECASE)
+                final_text = re.sub(r'\bCanon\b', Q_word, final_text, flags=re.IGNORECASE)
 
                 # Save assistant response
                 meta_json = json.dumps({"cards": len(question_cards)}) if question_cards else None

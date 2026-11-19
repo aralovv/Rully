@@ -56,5 +56,5 @@ def get_system_prompt(language: str = "uz_latn") -> str:
     if lang == "ru":
         return SYSTEM_PROMPT_RU
     elif lang in ("uz_cyrl", "cyrl"):
-        return SYSTEM_PROMPT_CYRL
+        return SYSTEM_PROMPT_UZ_CYRL
     return SYSTEM_PROMPT_UZ_LATN

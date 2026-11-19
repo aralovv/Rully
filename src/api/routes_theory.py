@@ -13,6 +13,7 @@ from src.api.deps import get_current_user, get_db
 from src.bot.database import BotDatabase
 from src.avtotest_product import AvtotestProductEngine, QuestionItem
 from src.bot.category_localization import localize_category
+from src.nazariya_curriculum import get_theory_curriculum, get_module_lesson
 
 router = APIRouter(prefix="/api", tags=["Theory & Exam"])
 engine = AvtotestProductEngine("master_database.sqlite")
@@ -53,7 +54,7 @@ def serialize_question(q: QuestionItem, is_bookmarked: bool = False, include_cor
         "is_bookmarked": is_bookmarked
     }
 
-# 1. Categories
+# 1. Categories & Theory Curriculum
 _categories_cache: Dict[str, Any] = {}
 _categories_cache_time: Dict[str, float] = {}
 
@@ -68,17 +69,67 @@ async def list_categories(
     
     now = time.time()
     last_cached = _categories_cache_time.get(selected_lang, 0.0)
-    if selected_lang in _categories_cache and (now - last_cached) < 600:
-        categories = _categories_cache[selected_lang]
+    if selected_lang in _categories_cache and (now - last_cached) < 300:
+        modules = _categories_cache[selected_lang]
     else:
-        categories = engine.get_categories(selected_lang)
-        _categories_cache[selected_lang] = categories
+        # Get live question counts from DB
+        conn = engine._get_connection()
+        c = conn.cursor()
+        c.execute("SELECT category_id, COUNT(*) as cnt FROM canonical_questions GROUP BY category_id")
+        counts = dict(c.fetchall())
+        conn.close()
+
+        modules = get_theory_curriculum(selected_lang)
+        for m in modules:
+            cnt = 0
+            for cid in m.get("category_ids", [m["category_id"]]):
+                if cid == 0:
+                    cnt += counts.get(None, 0) + counts.get(0, 0) + counts.get(39, 0) + counts.get(41, 0)
+                else:
+                    cnt += counts.get(cid, 0)
+            m["question_count"] = cnt
+            m["name"] = f"{m['order']}. {m['title']}"
+
+        _categories_cache[selected_lang] = modules
         _categories_cache_time[selected_lang] = now
 
     return {
         "language": selected_lang,
-        "count": len(categories),
-        "categories": categories
+        "count": len(modules),
+        "categories": modules
+    }
+
+@router.get("/categories/{cat_id}/lesson")
+async def get_category_lesson(
+    cat_id: int,
+    lang: Optional[str] = Query(None),
+    user: Dict[str, Any] = Depends(get_current_user)
+):
+    selected_lang = lang or user.get("language", "uz_latn")
+    if selected_lang not in ["uz_latn", "uz_cyrl", "ru"]:
+        selected_lang = "uz_latn"
+    
+    lesson = get_module_lesson(cat_id, selected_lang)
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+
+    conn = engine._get_connection()
+    c = conn.cursor()
+    c.execute("SELECT category_id, COUNT(*) as cnt FROM canonical_questions GROUP BY category_id")
+    counts = dict(c.fetchall())
+    conn.close()
+
+    cnt = 0
+    for cid in lesson.get("category_ids", [lesson["category_id"]]):
+        if cid == 0:
+            cnt += counts.get(None, 0) + counts.get(0, 0) + counts.get(39, 0) + counts.get(41, 0)
+        else:
+            cnt += counts.get(cid, 0)
+    lesson["question_count"] = cnt
+
+    return {
+        "ok": True,
+        "lesson": lesson
     }
 
 # 2. Get Single Question
