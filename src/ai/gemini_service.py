@@ -127,6 +127,10 @@ class GeminiService:
         }
 
         url = f"{GEMINI_API_ENDPOINT}?key={self.api_key}"
+        req_headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": self.api_key
+        }
         payload = {
             "system_instruction": system_instruction,
             "contents": contents,
@@ -140,7 +144,7 @@ class GeminiService:
         # 5. Call Gemini
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
-                resp = await client.post(url, json=payload)
+                resp = await client.post(url, json=payload, headers=req_headers)
                 if resp.status_code != 200:
                     logger.error(f"Gemini API error: {resp.status_code} {resp.text}")
                     return {
@@ -198,7 +202,7 @@ class GeminiService:
                             }
                         }
 
-                        second_resp = await client.post(url, json=second_payload)
+                        second_resp = await client.post(url, json=second_payload, headers=req_headers)
                         if second_resp.status_code == 200:
                             second_data = second_resp.json()
                             final_parts = second_data.get("candidates", [{}])[0].get("content", {}).get("parts", [])

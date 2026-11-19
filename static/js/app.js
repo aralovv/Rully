@@ -2978,7 +2978,7 @@
       btnAiSavedTutor.onclick = () => {
         closeSavedQuestionsModal();
         switchTab('ai');
-        sendAiMessage("Mening saqlangan savollarimdan 3 tasini tushuntirib ber va meni sinovdan o‘tkaz");
+        sendAiMessage("Mening saqlangan savollarimdagi qoidalarni batafsil tushuntirib ber");
       };
     }
   }
