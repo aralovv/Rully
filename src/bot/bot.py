@@ -22,26 +22,26 @@ async def setup_bot_commands(bot: Bot):
     # 1. Default / Uzbek Latin
     commands_uz_latn = [
         BotCommand(command="start", description="RULLY platformasini ishga tushirish"),
-        BotCommand(command="menu", description="Bosh menyuni ko‘rsatish"),
-        BotCommand(command="exam", description="Davlat imtihoni (20 ta savol)"),
-        BotCommand(command="test", description="Aralash test va sozlamalar"),
-        BotCommand(command="mistakes", description="Xatolar banki"),
-        BotCommand(command="results", description="Tayyorgarlik darajasi"),
-        BotCommand(command="language", description="Tilni o‘zgartirish / Сменить язык"),
-        BotCommand(command="help", description="Yordam va imtihon qoidalari")
+        BotCommand(command="menu", description="Boshqaruv panelini ochish"),
+        BotCommand(command="exam", description="Davlat nazariy imtihoni (20)"),
+        BotCommand(command="test", description="Moslashuvchan test va parametrlar"),
+        BotCommand(command="mistakes", description="Xatolar ustida ishlash"),
+        BotCommand(command="results", description="Haydovchilik tayyorgarlik indeksi"),
+        BotCommand(command="language", description="Tizim tili / Сменить язык"),
+        BotCommand(command="help", description="Nizom va imtihon qoidalari")
     ]
     await bot.set_my_commands(commands_uz_latn, scope=BotCommandScopeDefault(), language_code="uz")
 
     # 2. Russian
     commands_ru = [
-        BotCommand(command="start", description="Запустить платформу RULLY"),
-        BotCommand(command="menu", description="Главное меню"),
-        BotCommand(command="exam", description="Гос. экзамен (20 вопросов)"),
-        BotCommand(command="test", description="Настраиваемый тест"),
-        BotCommand(command="mistakes", description="Банк ошибок"),
-        BotCommand(command="results", description="Индекс готовности"),
-        BotCommand(command="language", description="Сменить язык"),
-        BotCommand(command="help", description="Помощь и правила")
+        BotCommand(command="start", description="Запуск платформы RULLY"),
+        BotCommand(command="menu", description="Панель управления"),
+        BotCommand(command="exam", description="Государственный экзамен (20)"),
+        BotCommand(command="test", description="Настраиваемый тренинг"),
+        BotCommand(command="mistakes", description="Диагностика ошибок"),
+        BotCommand(command="results", description="Индекс готовности водителя"),
+        BotCommand(command="language", description="Сменить язык интерфейса"),
+        BotCommand(command="help", description="Регламент и правила")
     ]
     await bot.set_my_commands(commands_ru, scope=BotCommandScopeDefault(), language_code="ru")
 
@@ -52,7 +52,7 @@ async def setup_bot_commands(bot: Bot):
     try:
         await bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(
-                text="🚗 RULLY",
+                text="🛞 RULLY",
                 web_app=WebAppInfo(url=WEB_APP_URL)
             )
         )

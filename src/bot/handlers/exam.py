@@ -12,6 +12,9 @@ exam_router = Router(name="exam_router")
 
 @exam_router.message(Command("exam"))
 @exam_router.message(F.text.in_([
+    "🏛️ Davlat nazariy imtihoni (20)",
+    "🏛️ Давлат назарий имтиҳони (20)",
+    "🏛️ Теоретический госэкзамен (20)",
     "🏆 Davlat imtihoni (20 ta savol)",
     "🏆 Давлат имтиҳони (20 та савол)",
     "🏆 Государственный экзамен (20 вопросов)",
@@ -28,25 +31,25 @@ async def start_exam_flow(event: Message | CallbackQuery, bot: Bot, db: BotDatab
         await event.answer()
 
     title = (
-        "🏆 <b>Nazariy imtihon</b>" if lang == "uz_latn" else (
-            "🏆 <b>Назарий имтиҳон</b>" if lang == "uz_cyrl" else
-            "🏆 <b>Теоретический экзамен</b>"
+        "🏛️ <b>Davlat nazariy imtihoni (VMQ 408)</b>" if lang == "uz_latn" else (
+            "🏛️ <b>Давлат назарий имтиҳони (ВМҚ 408)</b>" if lang == "uz_cyrl" else
+            "🏛️ <b>Государственный теоретический экзамен (ПКМ 408)</b>"
         )
     )
     desc = (
-        "Nazariy imtihon YHXBB kompyuter andozasida <b>RULLY</b> platformasida o‘tkaziladi:\n\n"
+        "Davlat nazariy imtihoni SBDD kompyuterlashtirilgan zal andozasida <b>RULLY</b> platformasida o‘tkaziladi:\n\n"
         "• Jami savollar: <b>20 ta</b>\n"
         "• Vaqt chegarasi: <b>25 daqiqa</b>\n"
         "• O‘tish talabi: <b>kamida 18 ta to‘g‘ri javob</b> (90%)\n"
         "• Kompyuter tizimi andozasi (F1-F4 tugmalar, izohsiz, tezkor savol katakchalari).\n\n"
         "Imtihonni boshlash uchun quyidagi tugmani bosing:" if lang == "uz_latn" else (
-            "Назарий имтиҳон ЙҲХББ компьютер андозасида <b>RULLY</b> платформасида ўтказилади:\n\n"
+            "Давлат назарий имтиҳони СБДД компьютерлаштирилган зал андозасида <b>RULLY</b> платформасида ўтказилади:\n\n"
             "• Жами саволлар: <b>20 та</b>\n"
             "• Вақт чегараси: <b>25 дақиқа</b>\n"
             "• Ўтиш талаби: <b>камида 18 та тўғри жавоб</b> (90%)\n"
             "• Компьютер тизими андозаси (F1-F4 тугмалар, изоҳсиз, тезкор савол катакчалари).\n\n"
             "Имтиҳонни бошлаш учун қуйидаги тугмани босинг:" if lang == "uz_cyrl" else
-            "Теоретический экзамен проводится по формату экзаменационных залов в <b>RULLY</b>:\n\n"
+            "Государственный экзамен проводится по стандарту компьютерных залов СБДД в <b>RULLY</b>:\n\n"
             "• Количество вопросов: <b>20</b>\n"
             "• Лимит времени: <b>25 минут</b>\n"
             "• Проходной балл: <b>не менее 18 правильных ответов</b> (90%)\n"
@@ -55,14 +58,14 @@ async def start_exam_flow(event: Message | CallbackQuery, bot: Bot, db: BotDatab
         )
     )
     btn_text = (
-        "🚀 Imtihonni boshlash (20 ta savol)" if lang == "uz_latn" else (
-            "🚀 Имтиҳонни бошлаш (20 та савол)" if lang == "uz_cyrl" else
-            "🚀 Начать экзамен (20 вопросов)"
+        "🚦 Imtihonni boshlash (20 ta savol)" if lang == "uz_latn" else (
+            "🚦 Имтиҳонни бошлаш (20 та савол)" if lang == "uz_cyrl" else
+            "🚦 Начать экзамен (20 вопросов)"
         )
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=btn_text, web_app=WebAppInfo(url=f"{WEB_APP_URL}#exam"))],
-        [InlineKeyboardButton(text="🏠 Bosh menyu" if lang == "uz_latn" else ("🏠 Бош меню" if lang == "uz_cyrl" else "🏠 Главное меню"), callback_data="menu:main")]
+        [InlineKeyboardButton(text="🎛️ Bosh menyu" if lang == "uz_latn" else ("🎛️ Бош меню" if lang == "uz_cyrl" else "🎛️ Главное меню"), callback_data="menu:main")]
     ])
 
     if isinstance(event, CallbackQuery):

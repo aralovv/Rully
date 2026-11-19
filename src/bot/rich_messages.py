@@ -2,6 +2,7 @@
 Telegram Rich Messages & Card Widget Formatting Layer.
 Provides high-fidelity visual Card Widgets, container frames, badges,
 expandable legal blockquotes, and 100% pure localized typography.
+Bespoke automotive exam formatting.
 """
 
 import html
@@ -16,10 +17,10 @@ def escape_html(text: Optional[str]) -> str:
 
 def build_progress_bar(current: int, total: int, length: int = 8) -> str:
     if total <= 0:
-        return "⬜" * length
+        return "⬛" * length
     filled = int(round((current / total) * length))
     filled = max(0, min(length, filled))
-    return "🟩" * filled + "⬜" * (length - filled)
+    return "🟩" * filled + "⬛" * (length - filled)
 
 def format_rich_question(session_type: str, current_index: int, total_questions: int,
                           category_name: str, question_text: str,
@@ -71,7 +72,7 @@ def format_rich_question(session_type: str, current_index: int, total_questions:
         lines.append(get_str("card_badge_category", language, category=escape_html(loc_cat)))
 
     lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    lines.append(f"❓ <b>{escape_html(question_text)}</b>")
+    lines.append(f"🛞 <b>{escape_html(question_text)}</b>")
     lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
     # Options presentation
@@ -84,13 +85,13 @@ def format_rich_question(session_type: str, current_index: int, total_questions:
             correct_key = feedback.get("correct_key")
             if opt_key == correct_key:
                 tag = f" {get_str('feedback_correct_tag', language)}"
-                prefix = "✅"
+                prefix = "🟢"
             elif opt_key == selected_key and selected_key != correct_key:
                 tag = f" {get_str('feedback_selected_wrong_tag', language)}"
-                prefix = "❌"
+                prefix = "🔴"
             else:
                 tag = ""
-                prefix = "▫️"
+                prefix = "⚪"
             lines.append(f"{prefix} <b>[{opt_key}]</b> {escape_html(opt_text)}{tag}")
         else:
             lines.append(f"<b>[{opt_key}]</b> {escape_html(opt_text)}")
@@ -168,9 +169,9 @@ def format_rich_result(total: int, correct: int, incorrect: int,
     # Category breakdown table (100% localized!)
     if category_breakdown:
         breakdown_titles = {
-            "uz_latn": ("📋 <b>Mavzular bo‘yicha tahlil:</b>", "Mavzu", "Natija"),
-            "uz_cyrl": ("📋 <b>Бўлимлар бўйича таҳлил:</b>", "Бўлим", "Натижа"),
-            "ru": ("📋 <b>Анализ по разделам:</b>", "Раздел", "Результат")
+            "uz_latn": ("🚦 <b>YHQ mavzulari bo‘yicha tahlil:</b>", "Mavzu", "Natija"),
+            "uz_cyrl": ("🚦 <b>ЙҲҚ мавзулари бўйича таҳлил:</b>", "Бўлим", "Натижа"),
+            "ru": ("🚦 <b>Анализ по темам ПДД:</b>", "Раздел", "Результат")
         }
         b_hdr, col_cat, col_res = breakdown_titles.get(language, breakdown_titles["uz_latn"])
         lines.append(b_hdr)

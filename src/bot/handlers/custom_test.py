@@ -72,6 +72,9 @@ def format_settings_widget_card(settings: Dict[str, Any], language: str = "uz_la
 @custom_test_router.message(Command("test"))
 @custom_test_router.message(Command("custom"))
 @custom_test_router.message(F.text.in_([
+    "🔀 Moslashuvchan test (Aralash)",
+    "🔀 Мослашувчан тест (Аралаш)",
+    "🔀 Настраиваемый тест (Микс)",
     "⚙️ Aralash test va mavzular",
     "⚙️ Аралаш тест ва мавзулар",
     "⚙️ Настраиваемый тест",
@@ -89,41 +92,41 @@ async def show_custom_test_launcher(event: Message | CallbackQuery, db: BotDatab
         await event.answer()
 
     title = (
-        "⚙️ <b>Aralash test va mavzular</b>" if lang == "uz_latn" else (
-            "⚙️ <b>Аралаш тест ва мавзулар</b>" if lang == "uz_cyrl" else
-            "⚙️ <b>Настраиваемый тест</b>"
+        "🔀 <b>Moslashuvchan mashg‘ulot</b>" if lang == "uz_latn" else (
+            "🔀 <b>Мослашувчан машғулот</b>" if lang == "uz_cyrl" else
+            "🔀 <b>Настраиваемый тренинг</b>"
         )
     )
     desc = (
         "<b>RULLY</b> platformasida test parametrlarini o‘zingizga moslang:\n\n"
         "• Savollar sonini tanlash (10 dan 122 tagacha)\n"
-        "• Telegram uslubidagi qulay vaqt chegarasi slayderi\n"
+        "• Qulay vaqt chegarasi va nazorat slayderi\n"
         "• Noto‘g‘ri javob berilganda to‘g‘risini ko‘rsatish sozlamasi\n"
-        "• Har bir savolga qonuniy asos va tushuntirish izohi.\n\n"
-        "Aralash testni boshlash uchun quyidagi tugmani bosing:" if lang == "uz_latn" else (
+        "• Har bir savolga huquqiy asos va ekspert tahlili.\n\n"
+        "Mashg‘ulotni boshlash uchun quyidagi tugmani bosing:" if lang == "uz_latn" else (
             "<b>RULLY</b> платформасида тест параметрларини ўзингизга мосланг:\n\n"
             "• Саволлар сонини танлаш (10 дан 122 тагача)\n"
-            "• Telegram услубидаги қулай вақт чегараси слайдери\n"
+            "• Қулай вақт чегараси ва назорат слайдери\n"
             "• Нотўғри жавоб берилганда тўғрисини кўрсатиш созламаси\n"
-            "• Ҳар бир саволга қонуний асос ва тушунтириш изоҳи.\n\n"
-            "Аралаш тестни бошлаш учун қуйидаги тугмани босинг:" if lang == "uz_cyrl" else
+            "• Ҳар бир саволга ҳуқуқий асос ва эксперт таҳлили.\n\n"
+            "Машғулотни бошлаш учун қуйидаги тугмани босинг:" if lang == "uz_cyrl" else
             "В приложении <b>RULLY</b> вы можете настроить параметры тестирования под себя:\n\n"
             "• Выбор количества вопросов (от 10 до 122)\n"
-            "• Удобный слайдер времени в стиле Telegram\n"
+            "• Удобный слайдер времени и контроль таймера\n"
             "• Настройка показа правильного ответа при ошибке\n"
-            "• Официальные статьи ПДД и подробные пояснения.\n\n"
-            "Для запуска настраиваемого теста нажмите кнопку ниже:"
+            "• Официальные статьи ПДД и детальный разбор.\n\n"
+            "Для запуска тренинга нажмите кнопку ниже:"
         )
     )
     btn_text = (
-        "🚀 Aralash testni ochish" if lang == "uz_latn" else (
-            "🚀 Аралаш тестни очиш" if lang == "uz_cyrl" else
-            "🚀 Открыть настраиваемый тест"
+        "🚦 Mashg‘ulotni boshlash" if lang == "uz_latn" else (
+            "🚦 Машғулотни бошлаш" if lang == "uz_cyrl" else
+            "🚦 Начать тренинг"
         )
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=btn_text, web_app=WebAppInfo(url=f"{WEB_APP_URL}#tests"))],
-        [InlineKeyboardButton(text="🏠 Bosh menyu" if lang == "uz_latn" else ("🏠 Бош меню" if lang == "uz_cyrl" else "🏠 Главное меню"), callback_data="menu:main")]
+        [InlineKeyboardButton(text="🎛️ Bosh menyu" if lang == "uz_latn" else ("🎛️ Бош меню" if lang == "uz_cyrl" else "🎛️ Главное меню"), callback_data="menu:main")]
     ])
     if isinstance(event, CallbackQuery):
         await event.message.answer(f"{title}\n\n{desc}", parse_mode="HTML", reply_markup=kb)

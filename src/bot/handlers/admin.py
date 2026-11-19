@@ -28,7 +28,7 @@ async def cmd_admin(message: Message, db: BotDatabase):
     stats = db.get_admin_stats()
 
     text = (
-        "🛡️ <b>AVTOTEST ADMIN DASHBOARD</b>\n"
+        "🛞 <b>RULLY ADMIN BOSHQARUV PANELI</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"• Jami foydalanuvchilar: <b>{stats['total_users']} ta</b>\n"
         f"• Tillar kesimida: <code>{stats['users_by_language']}</code>\n"
@@ -57,7 +57,7 @@ async def cb_admin_stats(callback: CallbackQuery, db: BotDatabase):
     await callback.answer()
     stats = db.get_admin_stats()
     text = (
-        "📊 <b>BATAFSIL TIZIM STATISTIKASI</b>\n"
+        "📈 <b>BATAFSIL TIZIM TELEMETRIYASI</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"• Ro‘yxatdan o‘tganlar: <b>{stats['total_users']}</b>\n"
         f"• Imtihonlar jami: <b>{stats['total_exams']}</b>\n"
@@ -84,7 +84,7 @@ async def cb_admin_health(callback: CallbackQuery, db: BotDatabase):
 
     status_icon = "🟢" if int_res == [('ok',)] and len(fk_res) == 0 else "🔴"
     text = (
-        f"🩺 <b>TIZIM VA MA’LUMOTLAR BAZASI SALOMATLIGI</b>\n"
+        f"🛠️ <b>TIZIM VA MA’LUMOTLAR BAZASI SALOMATLIGI</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"• SQLite Integrity Check: <b>{int_res[0][0]}</b>\n"
         f"• Foreign Key Violations: <b>{len(fk_res)} ta</b>\n"
