@@ -219,7 +219,7 @@ async def submit_answer(
         raise HTTPException(status_code=404, detail=str(e))
 
     # Record in session_answers (idempotent)
-    db.save_answer(
+    is_new = db.save_answer(
         session_id=req.session_id,
         canonical_id=req.canonical_id,
         selected_key=req.selected_key.upper(),
@@ -227,14 +227,15 @@ async def submit_answer(
         is_correct=feedback.is_correct
     )
 
-    # Track mistake pool
-    if not feedback.is_correct:
-        db.record_mistake(user_id, req.canonical_id)
-    else:
-        db.resolve_mistake(user_id, req.canonical_id)
+    if is_new:
+        # Track mistake pool only for fresh answers
+        if not feedback.is_correct:
+            db.record_mistake(user_id, req.canonical_id)
+        else:
+            db.resolve_mistake(user_id, req.canonical_id)
 
-    # Increment learning streak
-    streak = db.increment_streak_progress(user_id, 1)
+        # Increment learning streak
+        streak = db.increment_streak_progress(user_id, 1)
 
     # Check auto-termination on 3rd mistake in EXAM mode (Uzbekistan DYHXX VMQ 408: max 2 mistakes)
     is_exam_terminated = False

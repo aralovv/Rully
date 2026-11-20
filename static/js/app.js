@@ -669,13 +669,31 @@
   let paymentPollingTimer = null;
   let paymentCountdownTimer = null;
   let activeOrderData = null;
+  let isActivatingSubscription = false;
 
   async function activateUserSubscription(planId) {
+    if (isActivatingSubscription) return;
+    isActivatingSubscription = true;
+
     triggerHaptic('impact', 'medium');
     const selectedPlan = planId || state.selectedPlanId || 'pro_14';
-    
-    // Close the initial paywall preview modal
-    closePaywallModal();
+
+    // Visual button debounce locking
+    const btnModalActivate = document.getElementById('btn-modal-activate-sub');
+    const btnProfileSub = document.getElementById('btn-profile-sub');
+    const origModalText = btnModalActivate ? btnModalActivate.textContent : '';
+    const origProfileText = btnProfileSub ? btnProfileSub.textContent : '';
+
+    if (btnModalActivate) {
+      btnModalActivate.style.pointerEvents = 'none';
+      btnModalActivate.style.opacity = '0.7';
+      btnModalActivate.textContent = 'Yuklanmoqda...';
+    }
+    if (btnProfileSub) {
+      btnProfileSub.style.pointerEvents = 'none';
+      btnProfileSub.style.opacity = '0.7';
+      btnProfileSub.textContent = 'Yuklanmoqda...';
+    }
 
     try {
       // Call create order endpoint
@@ -688,6 +706,8 @@
         throw new Error(res.detail || "Buyurtma yaratib bo'lmadi");
       }
 
+      // Close paywall modal once invoice is prepared
+      closePaywallModal();
       openPaymentInvoiceModal(res.order);
     } catch (e) {
       console.error("Payment order creation failed:", e);
@@ -695,6 +715,18 @@
         window.Telegram.WebApp.showAlert(e.message || "To‘lov buyurtmasini yaratishda xatolik yuz berdi.");
       } else {
         alert(e.message || "To‘lov buyurtmasini yaratishda xatolik yuz berdi.");
+      }
+    } finally {
+      isActivatingSubscription = false;
+      if (btnModalActivate) {
+        btnModalActivate.style.pointerEvents = '';
+        btnModalActivate.style.opacity = '';
+        btnModalActivate.textContent = origModalText;
+      }
+      if (btnProfileSub) {
+        btnProfileSub.style.pointerEvents = '';
+        btnProfileSub.style.opacity = '';
+        btnProfileSub.textContent = origProfileText;
       }
     }
   }
@@ -1121,7 +1153,12 @@
   }
 
   // 11. Interactive Quiz Player & Exam Simulation Engine
+  let isStartingQuizSession = false;
+
   async function startQuizSession(sessionType, categoryId = null, totalQuestions = 20, options = {}) {
+    if (isStartingQuizSession) return;
+    isStartingQuizSession = true;
+
     triggerHaptic('impact', 'medium');
     try {
       // In Official State Exam mode: 20 questions, 25 minutes, no statutory explanations
@@ -1198,6 +1235,8 @@
       renderCurrentQuestion();
     } catch (e) {
       alert("Sinovni boshlashda xatolik: " + e.message);
+    } finally {
+      isStartingQuizSession = false;
     }
   }
 
@@ -1604,8 +1643,15 @@
   }
 
   async function submitAnswer(canonicalId, selectedKey) {
-    triggerHaptic('impact', 'medium');
+    if (state.quiz.isSubmitting) return;
+    if (state.quiz.answers && state.quiz.answers[canonicalId]) return;
     state.quiz.isSubmitting = true;
+
+    // Disable all option cards immediately to block double-taps
+    const optionCards = document.querySelectorAll('.quiz-option-card');
+    optionCards.forEach(c => c.style.pointerEvents = 'none');
+
+    triggerHaptic('impact', 'medium');
     try {
       const res = await apiFetch('/api/session/answer', {
         method: 'POST',
@@ -1704,7 +1750,10 @@
     }
   }
 
+  let isTogglingBookmark = false;
   async function toggleBookmark(canonicalId) {
+    if (isTogglingBookmark) return;
+    isTogglingBookmark = true;
     triggerHaptic('impact', 'light');
     try {
       const res = await apiFetch('/api/bookmarks/toggle', {
@@ -1721,6 +1770,8 @@
       updateSavedQuestionsCount();
     } catch (e) {
       console.error("Bookmark toggle failed", e);
+    } finally {
+      isTogglingBookmark = false;
     }
   }
 

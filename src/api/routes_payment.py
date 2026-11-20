@@ -7,6 +7,7 @@ Provides:
 """
 
 import asyncio
+import time
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
@@ -20,6 +21,9 @@ from src.payments.order_manager import (
 from src.security.telegram_notifier import send_payment_invoice_to_user, send_order_created_alert
 
 router = APIRouter(prefix="/api/payment", tags=["User Payment"])
+
+# Per-user debounce lock to eliminate concurrent rapid double-clicks on "Tarifni faollashtirish"
+_user_order_locks: Dict[int, float] = {}
 
 
 class CreateOrderRequest(BaseModel):
@@ -35,8 +39,23 @@ async def api_create_payment_order(
     Creates an automated payment order with unique payment suffix.
     If an unexpired order already exists for the same plan, reopens that exact order.
     Also sends payment invoice directly to user in Telegram bot chat.
+    Includes atomic debounce protection against rapid button double-clicks.
     """
     user_id = user["user_id"]
+    now = time.time()
+    last_click = _user_order_locks.get(user_id, 0.0)
+    if (now - last_click) < 2.5:
+        # Rapid double-click within 2.5 seconds:
+        # Idempotently return the user's active pending order
+        existing = get_user_active_order(user_id)
+        if existing:
+            return {
+                "ok": True,
+                "message": "Amaldagi to‘lov buyurtmasi ochildi.",
+                "order": existing
+            }
+
+    _user_order_locks[user_id] = now
     success, message, order = create_or_get_payment_order(user_id, req.plan_id.strip())
     if not success:
         raise HTTPException(status_code=400, detail=message)
