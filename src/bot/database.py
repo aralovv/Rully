@@ -374,6 +374,9 @@ class BotDatabase:
             c.execute("CREATE INDEX IF NOT EXISTS idx_checklist_user ON practical_checklist(user_id);")
             c.execute("CREATE INDEX IF NOT EXISTS idx_modules_user ON user_completed_modules(user_id);")
             c.execute("CREATE INDEX IF NOT EXISTS idx_subs_user ON user_subscriptions(user_id);")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_status ON user_sessions(user_id, status);")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_exam_results_user ON exam_results(user_id);")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_answers_session ON session_answers(session_id);")
 
             conn.commit()
 

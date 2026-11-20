@@ -13,6 +13,11 @@ import urllib.parse
 from typing import Dict, Any, Optional, Tuple, List
 from src.bot.config import BOT_TOKEN
 
+def is_production() -> bool:
+    """Returns True if running in a deployed live cloud environment (Render, Vercel, or production)."""
+    env = os.getenv("ENVIRONMENT", "").strip().lower()
+    return env in ["production", "prod", "standalone-cloud"] or bool(os.getenv("RENDER")) or bool(os.getenv("VERCEL"))
+
 def get_allowed_bot_tokens() -> List[str]:
     """
     Returns prioritized list of bot tokens to validate Telegram HMAC signatures.
@@ -34,8 +39,7 @@ def get_allowed_bot_tokens() -> List[str]:
             tokens.append(clean_rt)
 
     # In local testing/dev only: fallback to test tokens if no token set
-    is_prod = os.getenv("ENVIRONMENT", "").lower() == "production" or bool(os.getenv("VERCEL"))
-    if not is_prod:
+    if not is_production():
         known_tokens = [
             "8657532177:AAGsyMFpzuwPus9jOdFRNP8f65qa8E-4q8g",
             "5875526565:AAEwGdyseiyejQQkf67_WEkvKX0cz0EX94s"
@@ -79,8 +83,7 @@ def verify_telegram_init_data(init_data: str, bot_token: Optional[str] = None) -
 
     # Allow dev / testing bypass only in non-production environments
     if init_data.startswith("dev_user_") or init_data.startswith("test_user_"):
-        is_prod = os.getenv("ENVIRONMENT", "").lower() == "production" or bool(os.getenv("VERCEL"))
-        if is_prod:
+        if is_production():
             return False, None
         user_id_str = init_data.split("_")[-1]
         user_id = int(user_id_str) if user_id_str.isdigit() else 8809526955
@@ -106,9 +109,8 @@ def verify_telegram_init_data(init_data: str, bot_token: Optional[str] = None) -
         if auth_date_val and str(auth_date_val).isdigit():
             auth_timestamp = int(auth_date_val)
             now_ts = int(time.time())
-            is_prod = os.getenv("ENVIRONMENT", "").lower() == "production" or bool(os.getenv("VERCEL"))
             # Stale if older than 24h or more than 5 minutes in future (clock drift)
-            if is_prod and ((now_ts - auth_timestamp > 86400) or (auth_timestamp - now_ts > 300)):
+            if is_production() and ((now_ts - auth_timestamp > 86400) or (auth_timestamp - now_ts > 300)):
                 return False, None
 
         # Sort alphabetically and format as key=value separated by \n

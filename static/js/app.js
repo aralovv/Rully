@@ -646,6 +646,51 @@
     updateSubscriptionUI();
   }
 
+  // Native Telegram WebApp BackButton State Controller
+  function updateNativeBackButton() {
+    if (!window.Telegram?.WebApp?.BackButton) return;
+    const bb = window.Telegram.WebApp.BackButton;
+    const isInvoiceOpen = document.getElementById('payment-invoice-modal')?.classList.contains('active');
+    const isPaywallOpen = document.getElementById('subscription-paywall-modal')?.classList.contains('active');
+    const isQuizOpen = document.getElementById('quiz-overlay')?.classList.contains('active');
+    const isSettingsOpen = document.getElementById('custom-quiz-settings-sheet')?.classList.contains('active');
+
+    if (isInvoiceOpen || isPaywallOpen || isQuizOpen || isSettingsOpen) {
+      bb.show();
+    } else {
+      bb.hide();
+    }
+  }
+
+  function handleNativeBackClick() {
+    triggerHaptic('impact', 'light');
+    const invoiceModal = document.getElementById('payment-invoice-modal');
+    if (invoiceModal && invoiceModal.classList.contains('active')) {
+      closePaymentInvoiceModal();
+      return;
+    }
+
+    const paywallModal = document.getElementById('subscription-paywall-modal');
+    if (paywallModal && paywallModal.classList.contains('active')) {
+      closePaywallModal();
+      return;
+    }
+
+    const settingsSheet = document.getElementById('custom-quiz-settings-sheet');
+    if (settingsSheet && settingsSheet.classList.contains('active')) {
+      settingsSheet.classList.remove('active');
+      document.body.style.overflow = '';
+      updateNativeBackButton();
+      return;
+    }
+
+    const quizOverlay = document.getElementById('quiz-overlay');
+    if (quizOverlay && quizOverlay.classList.contains('active')) {
+      confirmQuitQuiz();
+      return;
+    }
+  }
+
   function openPaywallModal(feature = '') {
     triggerHaptic('notification', 'warning');
     const modal = document.getElementById('subscription-paywall-modal');
@@ -653,6 +698,7 @@
       modal.classList.add('active');
       document.body.style.overflow = 'hidden';
       updateSubscriptionUI();
+      updateNativeBackButton();
     }
   }
 
@@ -662,6 +708,7 @@
     if (modal) {
       modal.classList.remove('active');
       document.body.style.overflow = '';
+      updateNativeBackButton();
     }
   }
 
@@ -770,12 +817,14 @@
     // Open Modal
     modal.classList.add('active');
     document.body.style.overflow = 'hidden';
+    updateNativeBackButton();
   }
 
   function closePaymentInvoiceModal() {
     const modal = document.getElementById('payment-invoice-modal');
     if (modal) modal.classList.remove('active');
     document.body.style.overflow = '';
+    updateNativeBackButton();
 
     if (paymentPollingTimer) {
       clearInterval(paymentPollingTimer);
@@ -799,29 +848,30 @@
       timerEl.textContent = `${String(m).padStart(2, '0')}:${String(rem).padStart(2, '0')}`;
     }
 
-    let left = seconds;
-    updateDisplay(left);
-
-    paymentCountdownTimer = setInterval(() => {
-      left--;
-      if (left <= 0) {
+    // Precise wall-clock target deadline immune to mobile backgrounding/sleep drift
+    const targetEnd = Date.now() + (seconds * 1000);
+    function tickInvoice() {
+      const remaining = Math.max(0, Math.round((targetEnd - Date.now()) / 1000));
+      updateDisplay(remaining);
+      if (remaining <= 0) {
         clearInterval(paymentCountdownTimer);
         paymentCountdownTimer = null;
-        if (timerEl) timerEl.textContent = "00:00";
         if (paymentPollingTimer) {
           clearInterval(paymentPollingTimer);
           paymentPollingTimer = null;
         }
+        if (timerEl) timerEl.textContent = "00:00";
+        closePaymentInvoiceModal();
         if (window.Telegram?.WebApp?.showAlert) {
           window.Telegram.WebApp.showAlert("Invoys muddati tugadi (15 daqiqa). Yangi buyurtma yarating.");
         } else {
           alert("Invoys muddati tugadi (15 daqiqa). Yangi buyurtma yarating.");
         }
-        closePaymentInvoiceModal();
-      } else {
-        updateDisplay(left);
       }
-    }, 1000);
+    }
+
+    tickInvoice();
+    paymentCountdownTimer = setInterval(tickInvoice, 1000);
   }
 
   function startPaymentStatusPolling(orderId) {
@@ -1226,10 +1276,7 @@
         overlay.classList.remove('no-explanation');
       }
 
-      if (tg?.BackButton) {
-        tg.BackButton.show();
-        tg.BackButton.onClick(() => confirmQuitQuiz());
-      }
+      updateNativeBackButton();
 
       startCountdownTimer();
       renderCurrentQuestion();
@@ -1260,27 +1307,33 @@
       timerPill.classList.remove('danger');
     }
 
-    state.quiz.timerInterval = setInterval(() => {
-      state.quiz.timeRemaining--;
+    // Precise wall-clock deadline immune to mobile backgrounding/sleep drift
+    const quizDeadline = Date.now() + (state.quiz.timeRemaining * 1000);
+    function tickQuiz() {
+      const remaining = Math.max(0, Math.round((quizDeadline - Date.now()) / 1000));
+      state.quiz.timeRemaining = remaining;
 
-      const mins = Math.floor(state.quiz.timeRemaining / 60);
-      const secs = state.quiz.timeRemaining % 60;
+      const mins = Math.floor(remaining / 60);
+      const secs = remaining % 60;
       if (timerVal) {
         timerVal.textContent = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
       }
 
       // Warning pulse below 2 minutes
-      if (state.quiz.timeRemaining <= 120) {
+      if (remaining <= 120) {
         timerPill?.classList.add('danger');
       } else {
         timerPill?.classList.remove('danger');
       }
 
-      if (state.quiz.timeRemaining <= 0) {
+      if (remaining <= 0) {
         clearInterval(state.quiz.timerInterval);
         finishQuiz();
       }
-    }, 1000);
+    }
+
+    tickQuiz();
+    state.quiz.timerInterval = setInterval(tickQuiz, 1000);
   }
 
   // ==========================================================================
@@ -1790,7 +1843,7 @@
     overlay.classList.remove('no-explanation');
     const finishBtn = document.getElementById('btn-exam-finish');
     if (finishBtn) finishBtn.classList.remove('pulse-highlight');
-    if (tg?.BackButton) tg.BackButton.hide();
+    updateNativeBackButton();
   }
 
   async function finishQuiz(isAutoTerminated = false) {
@@ -2705,6 +2758,11 @@
 
   // 18. Master Event Listener Bindings
   function setupEventListeners() {
+    // Native Telegram BackButton Listener
+    if (window.Telegram?.WebApp?.BackButton) {
+      window.Telegram.WebApp.BackButton.onClick(handleNativeBackClick);
+    }
+
     // Navigation bar tabs
     document.querySelectorAll('.nav-bar-item').forEach(item => {
       item.addEventListener('click', () => {
@@ -3171,37 +3229,52 @@
       }, 2000);
     }
 
+    function safeCopy(text, btn) {
+      triggerHaptic('impact', 'light');
+      const cleanText = String(text || '').trim();
+      if (!cleanText) return;
+
+      const fallback = () => {
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = cleanText;
+          ta.style.position = 'fixed';
+          ta.style.top = '0';
+          ta.style.left = '0';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          markCopied(btn);
+        } catch (err) {
+          markCopied(btn);
+        }
+      };
+
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(cleanText)
+          .then(() => markCopied(btn))
+          .catch(fallback);
+      } else {
+        fallback();
+      }
+    }
+
     const btnCopyCard = document.getElementById('btn-copy-card');
     if (btnCopyCard) {
       btnCopyCard.onclick = () => {
-        triggerHaptic('impact', 'light');
         const textToCopy = (activeOrderData?.card_number_raw || document.getElementById('inv-card-number')?.textContent || '').replace(/\s+/g, '');
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(textToCopy).then(() => {
-            markCopied(btnCopyCard);
-          }).catch(() => {
-            markCopied(btnCopyCard);
-          });
-        } else {
-          markCopied(btnCopyCard);
-        }
+        safeCopy(textToCopy, btnCopyCard);
       };
     }
 
     const btnCopyAmount = document.getElementById('btn-copy-amount');
     if (btnCopyAmount) {
       btnCopyAmount.onclick = () => {
-        triggerHaptic('impact', 'light');
         const amountVal = activeOrderData?.final_amount_uzs || document.getElementById('inv-total-amount')?.textContent?.replace(/\s+/g, '');
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(String(amountVal)).then(() => {
-            markCopied(btnCopyAmount);
-          }).catch(() => {
-            markCopied(btnCopyAmount);
-          });
-        } else {
-          markCopied(btnCopyAmount);
-        }
+        safeCopy(amountVal, btnCopyAmount);
       };
     }
 

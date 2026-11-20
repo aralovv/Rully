@@ -6,7 +6,7 @@ import os
 import time
 from fastapi import Header, Query, HTTPException, Depends
 from typing import Optional, Dict, Any, Tuple
-from src.api.security import verify_telegram_init_data
+from src.api.security import verify_telegram_init_data, is_production
 from src.bot.database import BotDatabase
 
 def get_db() -> BotDatabase:
@@ -29,8 +29,7 @@ async def get_current_user(
 
     # Development fallback
     if not raw_data or str(raw_data).strip().lower() in ["null", "undefined", "none", ""]:
-        is_prod = os.getenv("ENVIRONMENT", "").lower() == "production" or bool(os.getenv("VERCEL"))
-        if is_prod:
+        if is_production():
             raise HTTPException(status_code=401, detail="Missing Telegram authentication data")
 
         # Default dev user for local testing and direct browser previews only
