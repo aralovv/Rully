@@ -61,19 +61,12 @@ async def send_telegram_message(bot_token: str, chat_id: int, text: str, parse_m
 
 async def broadcast_order_alert(text: str) -> bool:
     """
-    Broadcasts an order-related alert to the official 'Buyurtmalar Rully' group,
-    and also to the admin's private chat.
+    Broadcasts an order-related alert exclusively to the official 'Buyurtmalar Rully' group.
+    Admin personal account is excluded to keep it clean and reserved only for login OTP codes.
     """
-    success = False
     if ORDERS_GROUP_CHAT_ID:
-        ok = await send_telegram_message(MAIN_BOT_TOKEN, ORDERS_GROUP_CHAT_ID, text)
-        if ok:
-            success = True
-
-    if ADMIN_TELEGRAM_ID and ADMIN_TELEGRAM_ID != ORDERS_GROUP_CHAT_ID:
-        await send_telegram_message(MAIN_BOT_TOKEN, ADMIN_TELEGRAM_ID, text)
-
-    return success
+        return await send_telegram_message(MAIN_BOT_TOKEN, ORDERS_GROUP_CHAT_ID, text)
+    return False
 
 
 async def send_admin_otp(otp_code: str, admin_telegram_id: int = ADMIN_TELEGRAM_ID, ip_address: Optional[str] = None) -> bool:

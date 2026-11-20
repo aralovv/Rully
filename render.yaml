@@ -19,6 +19,8 @@ services:
         value: "1956239701"
       - key: ADMIN_TELEGRAM_ID
         value: "1956239701"
+      - key: ORDERS_GROUP_CHAT_ID
+        value: "-5464313435"
       - key: ADMIN_USERNAME
         value: Admin
       - key: HOST
