@@ -797,21 +797,21 @@
         uz_latn: [
           "💳 <b>Avtomatik to‘lov:</b> To‘lov tushishi bilan PRO obuna darhol avtomatik faollashadi.",
           "🎨 <b>Yangi qulay interfeys:</b> Zamonaviy dizayn va bo‘limlar bo‘ylab qulay harakatlanish.",
-          "🚗 <b>YHQ Davlat standarti:</b> 1 180 ta rasmiy test savollari va 59 ta tematik biletlar bazasi.",
+          "🚗 <b>YHQ Davlat standarti:</b> 1 295 ta rasmiy test savollari, 63 ta bilet va 43 ta tematik toifalar to‘liq bazasi.",
           "📊 <b>Xatolar ustida ishlash:</b> Xato qilingan savollarni alohida mashq qilish va natijalarni kuzatish.",
           "💡 <b>Imtihon shpargalkasi:</b> YHQ qoidalari bo‘yicha muhim eslatmalar va yo‘l belgilari."
         ],
         uz_cyrl: [
           "💳 <b>Автоматик тўлов:</b> Тўлов тушиши билан PRO обуна дарҳол автоматик фаоллашади.",
           "🎨 <b>Янги қулай интерфейс:</b> Замонавий дизайн ва бўлимлар бўйлаб қулай ҳаракатланиш.",
-          "🚗 <b>ЙҲҚ Давлат стандарти:</b> 1 180 та расмий тест саволлари ва 59 та тематик билетлар базаси.",
+          "🚗 <b>ЙҲҚ Давлат стандарти:</b> 1 295 та расмий тест саволлари, 63 та билет ва 43 та тематик бўлимлар тўлиқ базаси.",
           "📊 <b>Хатолар устида ишлаш:</b> Хато қилинган саволларни алоҳида машқ қилиш ва натижаларни кузатиш.",
           "💡 <b>Имтиҳон шпаргалкаси:</b> ЙҲҚ қоидалари бўйича муҳим эслатмалар ва йўл белгилари."
         ],
         ru: [
           "💳 <b>Автоматическая оплата:</b> Мгновенная активация PRO подписки после поступления оплаты.",
           "🎨 <b>Новый удобный интерфейс:</b> Современный темный дизайн и быстрое переключение разделов.",
-          "🚗 <b>Стандарт ПДД:</b> Полная база из 1 180 официальных вопросов и 59 билетов.",
+          "🚗 <b>Стандарт ПДД:</b> Полная база из 1 295 официальных вопросов, 63 билетов и 43 тематических категорий.",
           "📊 <b>Работа над ошибками:</b> Отдельная тренировка неверных ответов и отслеживание прогресса.",
           "💡 <b>Шпаргалка к экзамену:</b> Полезные подсказки по правилам и дорожным знакам."
         ]
@@ -849,7 +849,7 @@
       {
         icon: "🏛️",
         title: "1. Platforma haqida umumiy maʼlumot",
-        text: "<b>RULLY</b> — haydovchilik guvohnomasini olishga tayyorlanayotgan fuqarolar va avtomaktab o‘quvchilari uchun O‘zbekiston Respublikasi IIV Jamoat xavfsizligi departamenti Yo‘l harakati xavfsizligi xizmati (YHXX) davlat imtihonlari andozasi asosida yaratilgan zamonaviy intellektual tayyorgarlik platformasi. Tizim 1 180 ta rasmiy test savollari, 59 ta tematik biletlar, davlat nazariy imtihoni simulyatori, sun’iy intellekt (AI Ustoz) tahlillari va amaliy avtodrom ko‘nikmalarini o‘z ichiga oladi."
+        text: "<b>RULLY</b> — haydovchilik guvohnomasini olishga tayyorlanayotgan fuqarolar va avtomaktab o‘quvchilari uchun O‘zbekiston Respublikasi IIV Jamoat xavfsizligi departamenti Yo‘l harakati xavfsizligi xizmati (YHXX) davlat imtihonlari andozasi asosida yaratilgan zamonaviy intellektual tayyorgarlik platformasi. Tizim 1 295 ta rasmiy test savollari, 63 ta bilet, 43 ta tematik toifalar, davlat nazariy imtihoni simulyatori, sun’iy intellekt (AI Ustoz) tahlillari va amaliy avtodrom ko‘nikmalarini o‘z ichiga oladi."
       },
       {
         icon: "⚖️",
@@ -881,7 +881,7 @@
       {
         icon: "🏛️",
         title: "1. Платформа ҳақида умумий маълумот",
-        text: "<b>RULLY</b> — ҳайдовчилик гувоҳномасини олишга тайёрланаётган фуқаролар ва автомактаб ўқувчилари учун Ўзбекистон Республикаси ИИВ ЙҲХХ давлат имтиҳонлари андозаси асосида яратилган замонавий интеллектуал тайёргарлик платформаси. Тизим 1 180 та расмий тест саволлари, 59 та тематик билетлар, давлат назарий имтиҳони симулятори, сунъий интеллект (AI Устоз) таҳлиллари ва амалий автодром кўникмаларини ўз ичига олади."
+        text: "<b>RULLY</b> — ҳайдовчилик гувоҳномасини олишга тайёрланаётган фуқаролар ва автомактаб ўқувчилари учун Ўзбекистон Республикаси ИИВ ЙҲХХ давлат имтиҳонлари андозаси асосида яратилган замонавий интеллектуал тайёргарлик платформаси. Тизим 1 295 та расмий тест саволлари, 63 та билет, 43 та тематик бўлимлар, давлат назарий имтиҳони симулятори, сунъий интеллект (AI Устоз) таҳлиллари ва амалий автодром кўникмаларини ўз ичига олади."
       },
       {
         icon: "⚖️",
@@ -913,7 +913,7 @@
       {
         icon: "🏛️",
         title: "1. Общая информация о платформе",
-        text: "<b>RULLY</b> — это интеллектуальная интерактивная платформа для подготовки к теоретическому и практическому экзаменам на получение водительского удостоверения в соответствии со стандартами СБДД МВД Республики Узбекистан. Платформа включает 1 180 официальных вопросов, 59 билетов, симулятор экзамена, AI Наставника и модуль автодрома."
+        text: "<b>RULLY</b> — это интеллектуальная интерактивная платформа для подготовки к теоретическому и практическому экзаменам на получение водительского удостоверения в соответствии со стандартами СБДД МВД Республики Узбекистан. Платформа включает 1 295 официальных вопросов, 63 билета, 43 тематические категории, симулятор экзамена, AI Наставника и модуль автодрома."
       },
       {
         icon: "⚖️",
