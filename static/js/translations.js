@@ -198,6 +198,7 @@ const I18N = {
     changelog_modal_title: "Versiyalar Tarixi & O‘zgarishlar",
     changelog_modal_subtitle: "RULLY platformasining barcha versiyalari va yangiliklari",
     changelog_current_badge: "Joriy",
+    btn_modal_dismiss: "Tushunarli",
 
     // Subscription & PRO Tier
     sub_title: "Ta’rif va Obuna",
@@ -491,6 +492,7 @@ const I18N = {
     changelog_modal_title: "Версиялар Тарихи & Ўзгаришлар",
     changelog_modal_subtitle: "RULLY платформасининг барча версиялари ва янгиликлари",
     changelog_current_badge: "Жорий",
+    btn_modal_dismiss: "Тушунарли",
 
     // Subscription & PRO Tier
     sub_title: "Таъриф ва Обуна",
@@ -784,6 +786,7 @@ const I18N = {
     changelog_modal_title: "История Версий & Список Изменений",
     changelog_modal_subtitle: "Все версии и улучшения платформы RULLY",
     changelog_current_badge: "Текущая",
+    btn_modal_dismiss: "Понятно",
 
     // Subscription & PRO Tier
     sub_title: "Тариф и Подписка",

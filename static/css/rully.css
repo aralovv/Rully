@@ -5688,20 +5688,26 @@ body.tab-ai-active.keyboard-open .ai-input-bar {
   animation: cockpitSheetSlideUp 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.custom-modal-header {
-  padding: 18px 20px 14px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+.custom-modal-handle {
+  width: 44px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  margin: 12px auto 0 auto;
   flex-shrink: 0;
-  background: rgba(19, 23, 43, 0.85);
+}
+
+.custom-modal-header {
+  padding: 12px 20px 14px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: block;
+  flex-shrink: 0;
+  background: rgba(19, 23, 43, 0.95);
 }
 
 .custom-modal-meta {
-  flex: 1;
-  padding-right: 12px;
-  min-width: 0;
+  width: 100%;
+  padding-right: 0;
 }
 
 .custom-badge-tag {
@@ -5741,9 +5747,8 @@ body.tab-ai-active.keyboard-open .ai-input-bar {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  display: block;
+  box-sizing: border-box;
 }
 
 /* Rules Section Cards */
@@ -5752,6 +5757,7 @@ body.tab-ai-active.keyboard-open .ai-input-bar {
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 14px;
   padding: 16px 18px;
+  margin-bottom: 12px;
   transition: border-color 0.2s;
   word-break: break-word;
   overflow-wrap: break-word;
@@ -5799,8 +5805,8 @@ body.tab-ai-active.keyboard-open .ai-input-bar {
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 14px;
   padding: 18px;
+  margin-bottom: 14px;
   position: relative;
-  overflow: hidden;
   word-break: break-word;
   overflow-wrap: break-word;
 }
@@ -5883,6 +5889,11 @@ body.tab-ai-active.keyboard-open .ai-input-bar {
   overflow-wrap: break-word;
 }
 
+.changelog-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
 .changelog-bullet-dot {
   width: 5px;
   height: 5px;
@@ -5898,4 +5909,29 @@ body.tab-ai-active.keyboard-open .ai-input-bar {
 
 .changelog-ver-item b {
   color: #ffffff;
+}
+
+.custom-modal-footer-action {
+  text-align: center;
+  padding: 14px 0 24px 0;
+}
+
+.custom-modal-dismiss-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #f1f5f9;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 11px 34px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.custom-modal-dismiss-btn:active {
+  transform: scale(0.97);
+  background: rgba(255, 255, 255, 0.14);
 }

@@ -739,7 +739,11 @@
   const CHANGELOG_HISTORY = [
     {
       version: "v2.1",
-      date: "2026-yil, Noyabr",
+      date: {
+        uz_latn: "2026-yil, Noyabr",
+        uz_cyrl: "2026 йил, Ноябрь",
+        ru: "Ноябрь, 2026"
+      },
       isCurrent: true,
       title: {
         uz_latn: "Tezkorlik, Xavfsizlik va Qulaylik Yangilanishlari",
@@ -778,7 +782,11 @@
     },
     {
       version: "v2.0",
-      date: "2026-yil, Noyabr",
+      date: {
+        uz_latn: "2026-yil, Noyabr",
+        uz_cyrl: "2026 йил, Ноябрь",
+        ru: "Ноябрь, 2026"
+      },
       isCurrent: false,
       title: {
         uz_latn: "Avtomatik To‘lov va Yangi Mini App Dizayni",
@@ -811,7 +819,11 @@
     },
     {
       version: "v1.0",
-      date: "2026-yil, Dastlabki bosqich",
+      date: {
+        uz_latn: "2026-yil, Dastlabki bosqich",
+        uz_cyrl: "2026 йил, Дастлабки босқич",
+        ru: "2026, Начальный этап"
+      },
       isCurrent: false,
       title: {
         uz_latn: "Dastlabki Test Platformasi",
@@ -936,16 +948,27 @@
     if (!body) return;
     const lang = state.lang || 'uz_latn';
     const sections = PLATFORM_RULES_DATA[lang] || PLATFORM_RULES_DATA['uz_latn'];
+    const dismissText = t('btn_modal_dismiss') || (lang === 'ru' ? 'Понятно' : (lang === 'uz_cyrl' ? 'Тушунарли' : 'Tushunarli'));
 
-    body.innerHTML = sections.map(sec => `
-      <div class="rules-section-card">
-        <div class="rules-section-head">
-          <span class="rules-section-icon">${sec.icon}</span>
-          <h4 class="rules-section-title">${sec.title}</h4>
+    body.innerHTML = `
+      ${sections.map(sec => `
+        <div class="rules-section-card">
+          <div class="rules-section-head">
+            <span class="rules-section-icon">${sec.icon}</span>
+            <h4 class="rules-section-title">${sec.title}</h4>
+          </div>
+          <p class="rules-section-text">${sec.text}</p>
         </div>
-        <p class="rules-section-text">${sec.text}</p>
+      `).join('')}
+      <div class="custom-modal-footer-action">
+        <button type="button" class="custom-modal-dismiss-btn" id="btn-done-rules">${dismissText}</button>
       </div>
-    `).join('');
+    `;
+
+    const btnDone = document.getElementById('btn-done-rules');
+    if (btnDone) {
+      btnDone.addEventListener('click', closePlatformRulesModal);
+    }
   }
 
   function openPlatformRulesModal() {
@@ -973,33 +996,45 @@
     const body = document.getElementById('changelog-modal-body');
     if (!body) return;
     const lang = state.lang || 'uz_latn';
+    const dismissText = t('btn_modal_dismiss') || (lang === 'ru' ? 'Понятно' : (lang === 'uz_cyrl' ? 'Тушунарли' : 'Tushunarli'));
 
-    body.innerHTML = CHANGELOG_HISTORY.map(ver => {
-      const title = ver.title[lang] || ver.title['uz_latn'];
-      const changes = ver.changes[lang] || ver.changes['uz_latn'];
-      const currentBadge = ver.isCurrent ? `<span class="changelog-current-pill">${t('changelog_current_badge') || 'Joriy'}</span>` : '';
+    body.innerHTML = `
+      ${CHANGELOG_HISTORY.map(ver => {
+        const title = ver.title[lang] || ver.title['uz_latn'];
+        const date = (typeof ver.date === 'object' ? (ver.date[lang] || ver.date['uz_latn']) : ver.date);
+        const changes = ver.changes[lang] || ver.changes['uz_latn'];
+        const currentBadge = ver.isCurrent ? `<span class="changelog-current-pill">${t('changelog_current_badge') || (lang === 'ru' ? 'Текущая' : (lang === 'uz_cyrl' ? 'Жорий' : 'Joriy'))}</span>` : '';
 
-      return `
-        <div class="changelog-ver-card ${ver.isCurrent ? 'current' : ''}">
-          <div class="changelog-ver-header">
-            <div class="changelog-ver-badges">
-              <span class="changelog-ver-tag">${ver.version}</span>
-              ${currentBadge}
+        return `
+          <div class="changelog-ver-card ${ver.isCurrent ? 'current' : ''}">
+            <div class="changelog-ver-header">
+              <div class="changelog-ver-badges">
+                <span class="changelog-ver-tag">${ver.version}</span>
+                ${currentBadge}
+              </div>
+              <span class="changelog-ver-date">${date}</span>
             </div>
-            <span class="changelog-ver-date">${ver.date}</span>
+            <h4 class="changelog-ver-title">${title}</h4>
+            <ul class="changelog-ver-list">
+              ${changes.map(ch => `
+                <li class="changelog-ver-item">
+                  <span class="changelog-bullet-dot"></span>
+                  <div class="changelog-item-content">${ch}</div>
+                </li>
+              `).join('')}
+            </ul>
           </div>
-          <h4 class="changelog-ver-title">${title}</h4>
-          <ul class="changelog-ver-list">
-            ${changes.map(ch => `
-              <li class="changelog-ver-item">
-                <span class="changelog-bullet-dot"></span>
-                <div>${ch}</div>
-              </li>
-            `).join('')}
-          </ul>
-        </div>
-      `;
-    }).join('');
+        `;
+      }).join('')}
+      <div class="custom-modal-footer-action">
+        <button type="button" class="custom-modal-dismiss-btn" id="btn-done-changelog">${dismissText}</button>
+      </div>
+    `;
+
+    const btnDone = document.getElementById('btn-done-changelog');
+    if (btnDone) {
+      btnDone.addEventListener('click', closeVersionHistoryModal);
+    }
   }
 
   function openVersionHistoryModal() {
