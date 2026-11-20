@@ -742,37 +742,37 @@
       date: "2026-yil, Noyabr",
       isCurrent: true,
       title: {
-        uz_latn: "Tezkor In-Memory Dvigateli, Xavfsizlik va UX Yangilanishlari",
-        uz_cyrl: "Тезкор In-Memory Двигатели, Хавфсизлик ва UX Янгиланишлари",
-        ru: "Скоростной In-Memory Движок, Безопасность и UX Обновления"
+        uz_latn: "Tezkorlik, Xavfsizlik va Qulaylik Yangilanishlari",
+        uz_cyrl: "Тезкорлик, Хавфсизлик ва Қулайлик Янгиланишлари",
+        ru: "Обновления Скорости, Безопасности и Удобства"
       },
       changes: {
         uz_latn: [
-          "⚡ <b>0.0ms In-Memory Imtihon Dvigateli:</b> 1 180 ta test savollari server xotirasiga o‘tkazildi, test ochilishi 15-20 soniyadan 0.8 soniyagacha tezlashtirildi.",
-          "🔒 <b>Kuchaytirilgan Xavfsizlik:</b> Ishlab chiqarish muhitida Telegram HMAC autentifikatsiyasi to‘liq himoyalandi, soxta sarlavhalar bloklandi.",
-          "🛡️ <b>Takroriy Bosish Himoyasi (Debounce & Idempotency):</b> To‘lov va test boshlashda tugmalarni ketma-ket bosganda so‘rovlar takrorlanishi to‘xtatildi.",
-          "⏱️ <b>Aniq Devor Soati Taymerlari:</b> Telefon Payme/Click ilovasiga o‘tib qaytganda taymer muzlab qolish xatosi bartaraf etildi.",
-          "📱 <b>Telegram Native 'Ortga' Tugmasi:</b> Barcha modal oynalarni Telegramning o‘z 'Ortga' tugmasi bilan qulay yopish imkoniyati qo‘shildi.",
-          "📋 <b>Universal Karta Nusxalash:</b> Barcha mobil brauzerlarda to‘lov karta raqamini bir bosishda xatosiz nusxalash mexanizmi o‘rnatildi.",
-          "📜 <b>Platforma Qonun-Qoidalari:</b> Foydalanish shartlari, YHQ meʼyorlari va xavfsizlik kafolatlari bo‘limi kiritildi."
+          "⚡ <b>Tezkorlik oshirildi:</b> Testlar va imtihon mashg‘ulotlari endi bir zumda tez ochiladi.",
+          "🔒 <b>Xavfsizlik kuchaytirildi:</b> Foydalanuvchi hisobi va shaxsiy maʼlumotlari himoyasi mustahkamlandi.",
+          "🛡️ <b>Tugmalar barqarorligi:</b> Tugmalarni qayta-qayta bosganda qotish va takrorlanishlar bartaraf etildi.",
+          "⏱️ <b>To‘lov va test taymerlari:</b> Boshqa ilovaga o‘tib qaytganda ham vaqt to‘g‘ri va aniq hisoblanadi.",
+          "📱 <b>Telegram 'Ortga' tugmasi:</b> Barcha oynalarni Telegramning o‘z ortga tugmasi orqali qulay yopish imkoniyati qo‘shildi.",
+          "📋 <b>Karta raqamini nusxalash:</b> To‘lov sahifasida karta raqamini bir bosishda nusxalash yanada osonlashtirildi.",
+          "📜 <b>Platforma qoidalari:</b> Foydalanuvchilar uchun rasmiy shartlar va qoidalar bo‘limi kiritildi."
         ],
         uz_cyrl: [
-          "⚡ <b>0.0ms In-Memory Имтиҳон Двигатели:</b> 1 180 та тест саволлари хотирага юкланиб, тест очилиши 15-20 сониядан 0.8 сониягача тезлаштирилди.",
-          "🔒 <b>Кучайтирилган Хавфсизлик:</b> Ишлаб чиқариш муҳитида Telegram HMAC аутентификацияси тўлиқ ҳимояланди, сохта сарлавҳалар блокланди.",
-          "🛡️ <b>Такрорий Босиш Ҳимояси:</b> Тўлов ва тест бошлашда тугмаларни кетма-кет босганда сўровлар такрорланиши тўхтатилди.",
-          "⏱️ <b>Аниқ Девор Соати Таймерлари:</b> Телефон Payme/Click иловасига ўтиб қайтганда таймер музлаб қолиш хатоси бартараф этилди.",
-          "📱 <b>Telegram Native 'Ортга' Тугмаси:</b> Барча модал ойналарни Telegramнинг ўз 'Ортга' тугмаси билан қулай ёпиш имконияти қўшилди.",
-          "📋 <b>Универсал Карта Нусхалаш:</b> Барча мобил браузерларда тўлов карта рақамини бир босишда нусхалаш таъминланди.",
-          "📜 <b>Платформа Қонун-Қоидалари:</b> Фойдаланиш шартлари, ЙҲҚ меъёрлари ва хавфсизлик бўлими киритилди."
+          "⚡ <b>Тезкорлик оширилди:</b> Тестлар ва имтиҳон машғулотлари энди бир зумда тез очилади.",
+          "🔒 <b>Хавфсизлик кучайтирилди:</b> Фойдаланувчи ҳисоби ва шахсий маълумотлари ҳимояси мустаҳкамланди.",
+          "🛡️ <b>Тугмалар барқарорлиги:</b> Тугмаларни қайта-қайта босганда қотиш ва такрорланишлар бартараф этилди.",
+          "⏱️ <b>Тўлов ва тест таймерлари:</b> Бошқа иловага ўтиб қайтганда ҳам вақт тўғри ва аниқ ҳисобланади.",
+          "📱 <b>Telegram 'Ортга' тугмаси:</b> Барча ойналарни Telegramнинг ўз ортга тугмаси орқали қулай ёпиш имконияти қўшилди.",
+          "📋 <b>Карта рақамини нусхалаш:</b> Тўлов саҳифасида карта рақамини бир босишда нусхалаш янада осонлаштирилди.",
+          "📜 <b>Платформа қоидалари:</b> Фойдаланувчилар учун расмий шартлар ва қоидалар бўлими киритилди."
         ],
         ru: [
-          "⚡ <b>0.0ms In-Memory Экзаменационный Движок:</b> Все 1 180 вопросов переведены в память, запуск теста ускорен с 15-20с до 0.8с.",
-          "🔒 <b>Усиленная Безопасность:</b> Внедрена строгая валидация HMAC-подписи Telegram в продакшене, неавторизованные запросы блокируются (401).",
-          "🛡️ <b>Защита от Повторных Нажатий:</b> Внедрена защита от двойных кликов (debounce) и идемпотентность при создании счетов и оплате.",
-          "⏱️ <b>Точные Таймеры (Wall-Clock):</b> Устранено зависание таймера при переключении пользователя в приложения Payme/Click.",
-          "📱 <b>Нативная Кнопка 'Назад' Telegram:</b> Закрытие всех модальных окон через штатную кнопку 'Назад' Telegram WebApp.",
-          "📋 <b>Универсальное Копирование Карты:</b> Безотказное копирование номера карты и суммы на всех мобильных WebView.",
-          "📜 <b>Правила и О Платформе:</b> Добавлен официальный раздел правил сервиса и стандартов ПДД."
+          "⚡ <b>Увеличение скорости:</b> Тесты и экзаменационные модули теперь открываются мгновенно.",
+          "🔒 <b>Повышение безопасности:</b> Усилена защита учетных записей и пользовательских данных.",
+          "🛡️ <b>Стабильность кнопок:</b> Устранены случайные повторные нажатия и подвисания интерфейса.",
+          "⏱️ <b>Точные таймеры:</b> Время оплаты и тестирования рассчитывается точно даже при сворачивании приложения.",
+          "📱 <b>Кнопка 'Назад' Telegram:</b> Удобное закрытие любых окон с помощью штатной кнопки 'Назад'.",
+          "📋 <b>Копирование карты:</b> Быстрое и безошибочное копирование номера карты в один клик.",
+          "📜 <b>Правила платформы:</b> Добавлен официальный раздел с условиями и правилами сервиса."
         ]
       }
     },
@@ -781,31 +781,31 @@
       date: "2026-yil, Noyabr",
       isCurrent: false,
       title: {
-        uz_latn: "Avtomatlashgan To'lov Tizimi, Cockpit Mini App va YHQ Standartlari",
-        uz_cyrl: "Автоматлашган Тўлов Тизими, Cockpit Mini App ва ЙҲҚ Стандартлари",
-        ru: "Автоматизированная Оплата, Cockpit Mini App и Стандарты ПДД"
+        uz_latn: "Avtomatik To‘lov va Yangi Mini App Dizayni",
+        uz_cyrl: "Автоматик Тўлов ва Янги Mini App Дизайни",
+        ru: "Автоматическая Оплата и Новый Дизайн Mini App"
       },
       changes: {
         uz_latn: [
-          "💳 <b>Avtomatik To'lov Integratsiyasi:</b> Humocardbot va MTProto yordamida 24/7 kartaga pul tushishi bilan bir soniyada avtomatik PRO obunani yoqish.",
-          "🎨 <b>Yangi Mini App Cockpit Dizayni:</b> Zamonaviy to'liq dark-mode interfeys, ergonomik boshqaruv va moslashuvchan dizayn.",
-          "🚗 <b>1 180 ta YHQ Savollari va 59 ta Mavzuli Biletlar:</b> O‘zbekiston Respublikasi IIV Davlat standarti asosidagi to‘liq test bazasi.",
-          "📊 <b>Shaxsiy Natijalar va Xatolar Banki:</b> Xato qilingan savollarni alohida to‘plash va qayta mashq qilish tizimi.",
-          "💡 <b>Imtihon Shpargalkasi:</b> 1 295 ta savolning kalit so‘zlari, belgilari va statistik qonuniyatlari."
+          "💳 <b>Avtomatik to‘lov:</b> To‘lov tushishi bilan PRO obuna darhol avtomatik faollashadi.",
+          "🎨 <b>Yangi qulay interfeys:</b> Zamonaviy dizayn va bo‘limlar bo‘ylab qulay harakatlanish.",
+          "🚗 <b>YHQ Davlat standarti:</b> 1 180 ta rasmiy test savollari va 59 ta tematik biletlar bazasi.",
+          "📊 <b>Xatolar ustida ishlash:</b> Xato qilingan savollarni alohida mashq qilish va natijalarni kuzatish.",
+          "💡 <b>Imtihon shpargalkasi:</b> YHQ qoidalari bo‘yicha muhim eslatmalar va yo‘l belgilari."
         ],
         uz_cyrl: [
-          "💳 <b>Автоматик Тўлов Интеграцияси:</b> Humocardbot ва MTProto ёрдамида 24/7 тўловларни 1 сонияда автоматик фаоллаштириш.",
-          "🎨 <b>Янги Mini App Cockpit Дизайни:</b> Замонавий dark-mode интерфейс ва қулай бошқарув панели.",
-          "🚗 <b>1 180 та ЙҲҚ Саволлари ва 59 та Мавзули Билетлар:</b> Ўзбекистон Республикаси Давлат стандарти бўйича тест базаси.",
-          "📊 <b>Хатолар Банки ва Шахсий Статистика:</b> Хато қилинган саволларни алоҳида машқ қилиш имконияти.",
-          "💡 <b>Имтиҳон Шпаргалкаси:</b> Саволларнинг калит сўзлари ва мантиқий меъёрлари."
+          "💳 <b>Автоматик тўлов:</b> Тўлов тушиши билан PRO обуна дарҳол автоматик фаоллашади.",
+          "🎨 <b>Янги қулай интерфейс:</b> Замонавий дизайн ва бўлимлар бўйлаб қулай ҳаракатланиш.",
+          "🚗 <b>ЙҲҚ Давлат стандарти:</b> 1 180 та расмий тест саволлари ва 59 та тематик билетлар базаси.",
+          "📊 <b>Хатолар устида ишлаш:</b> Хато қилинган саволларни алоҳида машқ қилиш ва натижаларни кузатиш.",
+          "💡 <b>Имтиҳон шпаргалкаси:</b> ЙҲҚ қоидалари бўйича муҳим эслатмалар ва йўл белгилари."
         ],
         ru: [
-          "💳 <b>Автоматизированная Оплата:</b> Мгновенная активация PRO через Humocardbot и MTProto 24/7.",
-          "🎨 <b>Новый Дизайн Cockpit Mini App:</b> Современный темный интерфейс с быстрым переключением вкладок.",
-          "🚗 <b>1 180 Вопросов и 59 Тематических Билетов:</b> Полная база официальных вопросов ПДД Узбекистана.",
-          "📊 <b>Банк Ошибок и Статистика:</b> Персональная аналитика и проработка неверных ответов.",
-          "💡 <b>Шпаргалка к Экзамену:</b> Ключевые слова, шаблоны и правила к 1 295 вопросам."
+          "💳 <b>Автоматическая оплата:</b> Мгновенная активация PRO подписки после поступления оплаты.",
+          "🎨 <b>Новый удобный интерфейс:</b> Современный темный дизайн и быстрое переключение разделов.",
+          "🚗 <b>Стандарт ПДД:</b> Полная база из 1 180 официальных вопросов и 59 билетов.",
+          "📊 <b>Работа над ошибками:</b> Отдельная тренировка неверных ответов и отслеживание прогресса.",
+          "💡 <b>Шпаргалка к экзамену:</b> Полезные подсказки по правилам и дорожным знакам."
         ]
       }
     },
@@ -814,22 +814,19 @@
       date: "2026-yil, Dastlabki bosqich",
       isCurrent: false,
       title: {
-        uz_latn: "Telegram Bot va Dastlabki Test Tizimi",
-        uz_cyrl: "Telegram Бот ва Дастлабки Тест Тизими",
-        ru: "Telegram Бот и Первоначальная Система Тестирования"
+        uz_latn: "Dastlabki Test Platformasi",
+        uz_cyrl: "Дастлабки Тест Платформаси",
+        ru: "Первоначальная Платформа Тестирования"
       },
       changes: {
         uz_latn: [
-          "🤖 Dastlabki @rullybot Telegram boti ishga tushirildi.",
-          "📚 Asosiy YHQ biletlari va test topshirish funksiyalari yo‘lga qo‘yildi."
+          "🤖 <b>Platformaning ishga tushirilishi:</b> Dastlabki test tizimi va Telegram bot xizmati."
         ],
         uz_cyrl: [
-          "🤖 Дастлабки @rullybot Telegram боти ишга туширилди.",
-          "📚 Асосий ЙҲҚ билетлари ва тест топшириш функциялари йўлга қўйилди."
+          "🤖 <b>Платформанинг ишга туширилиши:</b> Дастлабки тест тизими ва Telegram бот хизмати."
         ],
         ru: [
-          "🤖 Запуск базового бота @rullybot в Telegram.",
-          "📚 Подключение базовых билетов ПДД и прохождения тестов."
+          "🤖 <b>Запуск сервиса:</b> Первоначальная система тестирования и Telegram бот."
         ]
       }
     }

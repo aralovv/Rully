@@ -5553,6 +5553,8 @@ body.tab-ai-active.keyboard-open .ai-input-bar {
   display: flex;
   align-items: center;
   gap: 14px;
+  min-width: 0;
+  flex: 1;
 }
 
 .rules-tile-icon {
@@ -5573,6 +5575,11 @@ body.tab-ai-active.keyboard-open .ai-input-bar {
   height: 20px;
 }
 
+.rules-tile-info {
+  min-width: 0;
+  flex: 1;
+}
+
 .rules-tile-title {
   font-size: 14.5px;
   font-weight: 700;
@@ -5583,7 +5590,9 @@ body.tab-ai-active.keyboard-open .ai-input-bar {
 .rules-tile-desc {
   font-size: 11.5px;
   color: var(--text-muted, #94a3b8);
-  line-height: 1.4;
+  line-height: 1.45;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .rules-tile-arrow {
@@ -5591,6 +5600,8 @@ body.tab-ai-active.keyboard-open .ai-input-bar {
   display: flex;
   align-items: center;
   transition: transform 0.2s ease;
+  flex-shrink: 0;
+  margin-left: 8px;
 }
 
 .profile-rules-tile:active .rules-tile-arrow {
@@ -5643,10 +5654,6 @@ body.tab-ai-active.keyboard-open .ai-input-bar {
   font-weight: 500;
 }
 
-.version-sparkle-icon {
-  font-size: 12px;
-}
-
 /* Modals Overlay & Sheet */
 .custom-modal-overlay {
   position: fixed;
@@ -5668,7 +5675,8 @@ body.tab-ai-active.keyboard-open .ai-input-bar {
 .custom-modal-sheet {
   width: 100%;
   max-width: 640px;
-  max-height: 88vh;
+  max-height: 90vh;
+  height: 85vh;
   background: linear-gradient(180deg, #13172b 0%, #090d1a 100%);
   border: 1.5px solid rgba(99, 102, 241, 0.3);
   border-bottom: none;
@@ -5693,6 +5701,7 @@ body.tab-ai-active.keyboard-open .ai-input-bar {
 .custom-modal-meta {
   flex: 1;
   padding-right: 12px;
+  min-width: 0;
 }
 
 .custom-badge-tag {
@@ -5715,17 +5724,20 @@ body.tab-ai-active.keyboard-open .ai-input-bar {
   color: #ffffff;
   margin: 0 0 4px 0;
   line-height: 1.3;
+  word-break: break-word;
 }
 
 .custom-modal-subtitle {
   font-size: 12px;
   color: var(--text-muted, #94a3b8);
   margin: 0;
-  line-height: 1.4;
+  line-height: 1.45;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .custom-modal-body {
-  padding: 16px 20px 32px 20px;
+  padding: 16px 20px calc(110px + env(safe-area-inset-bottom, 30px)) 20px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   flex: 1;
@@ -5741,6 +5753,8 @@ body.tab-ai-active.keyboard-open .ai-input-bar {
   border-radius: 14px;
   padding: 16px 18px;
   transition: border-color 0.2s;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .rules-section-card:hover {
@@ -5771,6 +5785,8 @@ body.tab-ai-active.keyboard-open .ai-input-bar {
   color: #cbd5e1;
   line-height: 1.6;
   margin: 0;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .rules-section-text b {
@@ -5785,6 +5801,8 @@ body.tab-ai-active.keyboard-open .ai-input-bar {
   padding: 18px;
   position: relative;
   overflow: hidden;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .changelog-ver-card.current {
@@ -5851,16 +5869,18 @@ body.tab-ai-active.keyboard-open .ai-input-bar {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 10px;
 }
 
 .changelog-ver-item {
-  font-size: 12px;
+  font-size: 12.5px;
   color: #cbd5e1;
-  line-height: 1.55;
+  line-height: 1.6;
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .changelog-bullet-dot {
