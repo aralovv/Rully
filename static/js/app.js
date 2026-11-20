@@ -1123,63 +1123,103 @@
       {
         icon: "🏛️",
         title: "1. Platforma haqida umumiy maʼlumot",
-        text: "<b>RULLY</b> — haydovchilik guvohnomasini olishga tayyorlanayotgan fuqarolar va avtomaktab o‘quvchilari uchun O‘zbekiston Respublikasi IIV Jamoat xavfsizligi departamenti Yo‘l harakati xavfsizligi xizmati (YHXX) davlat imtihonlari andozasi asosida yaratilgan zamonaviy intellektual tayyorgarlik platformasi. Tizim 1 295 ta rasmiy test savollari, 63 ta bilet, 43 ta tematik toifalar, davlat nazariy imtihoni simulyatori, sun’iy intellekt (AI Ustoz) tahlillari va amaliy avtodrom ko‘nikmalarini o‘z ichiga oladi."
+        text: "<b>RULLY</b> — haydovchilik guvohnomasini olishga tayyorlanayotgan fuqarolar va avtomaktab o‘quvchilari uchun O‘zbekiston Respublikasi IIV Jamoat xavfsizligi departamenti YHXX davlat imtihonlari andozasi asosida yaratilgan intellektual tayyorgarlik platformasi. Tizim 1 295 ta rasmiy test savollari, 63 ta bilet, 43 ta tematik toifalar, davlat imtihoni simulyatori, amaliy avtodrom ko‘nikmalari va AI Ustoz tahlillarini o‘z ichiga oladi."
       },
       {
-        icon: "⚖️",
-        title: "2. Foydalanish shartlari va mualliflik huquqi",
-        text: "Platformadagi barcha o‘quv materiallari, test savollari bazasi, qoidalar tahlillari va imtihon shpargalkalari faqat shaxsiy ta’lim va tayyorgarlik maqsadlarida taqdim etiladi. Tizim ma’lumotlarini ruxsatsiz avtomatlashtirilgan vositalar orqali ko‘chirib olish (scraping), tijorat maqsadlarida qayta tarqatish yoki uchinchi shaxslarga sotish qat’iyan taqiqlanadi va amaldagi qonunchilikka binoan javobgarlikka sabab bo‘ladi."
+        icon: "🎯",
+        title: "2. Tayyorgarlik darajasi va O‘tish ko‘rsatkichi farqi",
+        text: "• <b>Tayyorgarlik darajasi (Spidometr):</b> Bu sizning haqiqiy davlat imtihoniga umumiy tayyorlik ko‘rsatkichingiz. U 5 ta aqlli mezon (Imtihonlar dinamikasi 30%, Aniq bilim 25%, 1 295 ta savol qamrovi 25%, Xatolar banki gigiyenasi 10%, Muntazamlik va vaqt 10%) asosida yaxlit hisoblanadi.<br>• <b>O‘tish ko‘rsatkichi (Muvaffaqiyatli imtihonlar):</b> Bu siz topshirgan barcha imtihonlarning nechtasidan o‘tganingizni ko‘rsatuvchi sof statistik fakt (masalan: 12 ta imtihondan 1 tasidan o‘tgan bo‘lsangiz — 8.3%). Shu sababli bu ikki ko‘rsatkich bir xil bo‘lmaydi."
       },
       {
         icon: "🎓",
         title: "3. Davlat nazariy imtihoni meʼyorlari",
-        text: "Rasmiy nazariy imtihon 20 ta tasodifiy savoldan iborat bo‘lib, sinov uchun 25 daqiqa vaqt ajratiladi. Imtihondan muvaffaqiyatli o‘tish uchun nomzod kamida 18 ta savolga (90%) to‘g‘ri javob berishi lozim (maksimal 2 ta xatoga ruxsat etiladi). Nomzodlarga haqiqiy imtihondan oldin RULLY ilovasida 'Aralash test' va 'Xatolar banki' bo‘limlari orqali tayyorgarlik ko‘rish tavsiya qilinadi."
+        text: "Rasmiy nazariy imtihon 20 ta tasodifiy savoldan iborat bo‘lib, sinov uchun 25 daqiqa vaqt ajratiladi. Imtihondan muvaffaqiyatli o‘tish uchun nomzod kamida 18 ta savolga (90%) to‘g‘ri javob berishi lozim (maksimal 2 ta xatoga ruxsat etiladi, 3-xatoda imtihon darhol to‘xtatiladi)."
+      },
+      {
+        icon: "🛡️",
+        title: "4. Xatolar banki va Qayta ishlash qoidalari",
+        text: "Istalgan test yoki imtihonda noto‘g‘ri javob berilgan barcha savollar avtomatik tarzda <b>'Xatolar banki'</b>ga tushadi (o‘tkazib yuborilgan yoki javobsiz qolgan savollar xatolar bankiga qo‘shilmaydi). Savol faqat u qayta yechilib, to‘g‘ri javob belgilangandagina bankdan o‘chiriladi. Hal qilinmagan xatolar umumiy tayyorgarlik darajangizni pasaytiradi."
+      },
+      {
+        icon: "🚗",
+        title: "5. Amaliy imtihon (Avtodrom) va Jarima ballari",
+        text: "Amaliy haydash bo‘limida davlat avtodromining 6 ta asosiy mashqi (Estakada, Parallel to‘xtash, 90° burilish, 'Ilon izi', Garajga kirish, To‘xtash chizig‘i) video-ko‘rgazmali tahlil qilingan. Davlat standarti bo‘yicha har bir xato uchun 5 dan 25 gacha jarima bali beriladi. Jami jarima ballari 100 ga yetsa, nomzod imtihondan o‘ta olmagan hisoblanadi."
+      },
+      {
+        icon: "🤖",
+        title: "6. AI Ustoz imkoniyatlari",
+        text: "Sun’iy intellektga asoslangan <b>AI Ustoz</b> har bir savol bo‘yicha O‘zbekiston YHQ moddalariga havola bergan holda javobning tub mohiyatini sodda tilda tushuntirib beradi. PRO foydalanuvchilar har qanday chigal vaziyatni cheksiz tahlil qildirishlari mumkin."
+      },
+      {
+        icon: "🔥",
+        title: "7. Muntazamlik (Streak) va Xatcho‘plar",
+        text: "• <b>Kunlik seriya (Streak):</b> Har kuni kamida bitta test yechish orqali o‘qish zanjiri mustahkamlanadi. Agar 24 soat davomida test yechilmasa, seriya nolga tushadi.<br>• <b>Xatcho‘plar (Saqlangan savollar):</b> O‘zingiz uchun qiyin yoki muhim deb bilgan savollarni yulduzcha orqali saqlab, istalgan paytda maxsus bo‘limdan qayta takrorlashingiz mumkin."
       },
       {
         icon: "💎",
-        title: "4. Obuna (PRO) va To‘lovlar xavfsizligi",
-        text: "PRO tariflar foydalanuvchiga davlat imtihoni simulyatsiyasi, AI Ustoz bilan testlarni interaktiv tahlil qilish, xatolar banki va shpargalkalardan cheksiz foydalanish huquqini beradi. Barcha to‘lovlar xavfsiz bank kartalari orqali qabul qilinadi va Humocardbot / MTProto avtomatlashtirilgan tizimi orqali mablag‘ tushishi bilan 1 soniya ichida avtomatik tarzda hisobda faollashtiriladi. Har bir buyurtma uchun noyob identifikator va xavfsiz to‘lov summasi shakllantiriladi."
+        title: "8. Obuna (PRO) va To‘lovlar xavfsizligi",
+        text: "PRO tariflar davlat imtihoni simulyatsiyasi, AI Ustoz bilan cheksiz muloqot, xatolar banki va amaliy modul tahlillarini to‘liq ochadi. To‘lovlar rasmiy bank kartalari orqali qabul qilinadi va Humocardbot / MTProto avtomatlashtirilgan tizimi orqali to‘lov tushishi bilan 1 soniyada avtomatik faollashadi."
       },
       {
-        icon: "🔐",
-        title: "5. Maxfiylik va maʼlumotlar daxlsizligi",
-        text: "Foydalanuvchilarning shaxsiy ma’lumotlari (Telegram ID, foydalanuvchi nomi, imtihon natijalari) xavfsiz serverlarda shifrlangan holda saqlanadi va hech qachon uchinchi shaxslarga berilmaydi. Tizim Telegram WebApp xavfsizlik standartlariga to‘liq mos holda ishlaydi."
+        icon: "⚖️",
+        title: "9. Foydalanish shartlari va Maxfiylik",
+        text: "Barcha o‘quv materiallari faqat shaxsiy ta’lim maqsadida taqdim etiladi. Tizim ma’lumotlarini avtomatlashtirilgan vositalar orqali ko‘chirib olish yoki tijoriy maqsadda sotish qat’iyan taqiqlanadi. Foydalanuvchilarning shaxsiy ma’lumotlari shifrlangan va daxlsiz saqlanadi."
       },
       {
         icon: "📞",
-        title: "6. Texnik yordam va aloqa",
-        text: "Platformadan foydalanish, to‘lovlar yoki takliflar bo‘yicha savollar tug‘ilganda rasmiy <b>@rullybot</b> orqali ma’muriyat bilan bog‘lanishingiz mumkin. RULLY jamoasi har bir bo‘lajak haydovchiga imtihondan 100% muvaffaqiyatli o‘tishida omad tilaydi!"
+        title: "10. Texnik yordam va Bog‘lanish",
+        text: "Savollar, to‘lovlar yoki takliflar bo‘yicha rasmiy <b>@rullybot</b> orqali ma’muriyat bilan bog‘lanishingiz mumkin. RULLY har bir bo‘lajak haydovchiga davlat imtihonidan birinchi urinishda o‘tishida ishonchli yordamchidir!"
       }
     ],
     uz_cyrl: [
       {
         icon: "🏛️",
         title: "1. Платформа ҳақида умумий маълумот",
-        text: "<b>RULLY</b> — ҳайдовчилик гувоҳномасини олишга тайёрланаётган фуқаролар ва автомактаб ўқувчилари учун Ўзбекистон Республикаси ИИВ ЙҲХХ давлат имтиҳонлари андозаси асосида яратилган замонавий интеллектуал тайёргарлик платформаси. Тизим 1 295 та расмий тест саволлари, 63 та билет, 43 та тематик бўлимлар, давлат назарий имтиҳони симулятори, сунъий интеллект (AI Устоз) таҳлиллари ва амалий автодром кўникмаларини ўз ичига олади."
+        text: "<b>RULLY</b> — ҳайдовчилик гувоҳномасини олишга тайёрланаётган фуқаролар ва автомактаб ўқувчилари учун Ўзбекистон Республикаси ИИВ ЙҲХХ давлат имтиҳонлари андозаси асосида яратилган интеллектуал тайёргарлик платформаси. Тизим 1 295 та расмий тест саволлари, 63 та билет, 43 та тематик бўлимлар, давлат имтиҳони симулятори, амалий автодром кўникмалари ва AI Устоз таҳлилларини ўз ичига олади."
       },
       {
-        icon: "⚖️",
-        title: "2. Фойдаланиш шартлари ва муаллифлик ҳуқуқи",
-        text: "Платформадаги барча ўқув материаллари, тест саволлари базаси, қоидалар таҳлиллари ва имтиҳон шпаргалкалари фақат шахсий таълим ва тайёргарлик мақсадларида тақдим этилади. Тизим маълумотларини рухсатсиз нусхалаш, тижорат мақсадларида қайта тарқатиш ёки учинчи шахсларга сотиш қатъиян тақиқланади."
+        icon: "🎯",
+        title: "2. Тайёргарлик даражаси ва Ўтиш кўрсаткичи фарқи",
+        text: "• <b>Тайёргарлик даражаси (Спидометр):</b> Бу сизнинг ҳақиқий давлат имтиҳонига умумий тайёрлик кўрсаткичингиз. У 5 та ақлли мезон (Имтиҳонлар динамикаси 30%, Аниқ билим 25%, 1 295 та савол қамрови 25%, Хатолар банки гигиенаси 10%, Мунтазамлик ва вақт 10%) асосида яхлит ҳисобланади.<br>• <b>Ўтиш кўрсаткичи (Муваффақиятли имтиҳонлар):</b> Бу сиз топширган барча имтиҳонларнинг нечтасидан ўтганингизни кўрсатувчи соф статистик факт (масалан: 12 та имтиҳондан 1 тасидан ўтган бўлсангиз — 8.3%). Шу сабабли бу икки кўрсаткич бир хил бўлмайди."
       },
       {
         icon: "🎓",
         title: "3. Давлат назарий имтиҳони меъёрлари",
-        text: "Расмий назарий имтиҳон 20 та тасодифий саволдан иборат бўлиб, синов учун 25 дақиқа вақт ажратилади. Имтиҳондан муваффақиятли ўтиш учун камида 18 та саволга (90%) тўғри жавоб бериш шарт (кўпи билан 2 та хатога йўл қўйилади)."
+        text: "Расмий назарий имтиҳон 20 та тасодифий саволдан иборат бўлиб, синов учун 25 дақиқа вақт ажратилади. Имтиҳондан муваффақиятли ўтиш учун камида 18 та саволга (90%) тўғри жавоб бериш шарт (кўпи билан 2 та хатога йўл қўйилади, 3-хатода имтиҳон тўхтатилади)."
+      },
+      {
+        icon: "🛡️",
+        title: "4. Хатолар банки ва Қайта ишлаш қоидалари",
+        text: "Исталган тест ёки имтиҳонда нотўғри жавоб берилган барча саволлар автоматик тарзда <b>'Хатолар банки'</b>га тушади (жавобсиз қолган саволлар хатолар банкига қўшилмайди). Савол фақат у қайта ечилиб, тўғри жавоб белгилангандагина банкдан ўчирилади. Ҳал қилинмаган хатолар умумий тайёргарлик даражангизни пасайтиради."
+      },
+      {
+        icon: "🚗",
+        title: "5. Амалий имтиҳон (Автодром) ва Жарима баллари",
+        text: "Амалий ҳайдаш бўлимида давлат автодромининг 6 та асосий машқи (Эстакада, Параллел тўхташ, 90° бурилиш, 'Илон изи', Гаражга кириш, Тўхташ чизиғи) таҳлил қилинган. Ҳар бир хато учун 5 дан 25 гача жарима бали берилади. Жарима баллари 100 га етса, номзод имтиҳондан ўта олмаган ҳисобланади."
+      },
+      {
+        icon: "🤖",
+        title: "6. AI Устоз имкониятлари",
+        text: "Сунъий интеллектга асосланган <b>AI Устоз</b> ҳар бир савол бўйича ЙҲҚ моддаларига ҳавола берган ҳолда жавобнинг асл моҳиятини тушунтириб беради. PRO фойдаланувчилар ҳар қандай саволни чексиз таҳлил қилдиришлари мумкин."
+      },
+      {
+        icon: "🔥",
+        title: "7. Мунтазамлик (Streak) ва Хатчўплар",
+        text: "• <b>Кунлик серия (Streak):</b> Ҳар куни камида битта тест ечиш орқали ўқиш занжири мустаҳкамланади. Агар 24 соат давомида тест ечилмаса, серия нолга тушади.<br>• <b>Хатчўплар (Сақланган саволлар):</b> Мураккаб саволларни юлдузча орқали сақлаб, исталган пайтда қайта такрорлаш мумкин."
       },
       {
         icon: "💎",
-        title: "4. Обуна (PRO) ва Тўловлар хавфсизлиги",
-        text: "PRO тарифлар фойдаланувчига давлат имтиҳони симуляцияси, AI Устоз билан таҳлил, хатолар банки ва шпаргалкадан тўлиқ фойдаланиш имкониятини беради. Барча тўловлар хавфсиз тарзда қабул қилинади ва пул тушиши билан 1 сонияда автоматик фаоллаштирилади."
+        title: "8. Обуна (PRO) ва Тўловлар хавфсизлиги",
+        text: "PRO тарифлар давлат имтиҳони симуляцияси, AI Устоз билан таҳлил, хатолар банки ва автодром модулларини тўлиқ очади. Тўловлар хавфсиз қабул қилинади ва Humocardbot / MTProto тизими орқали 1 сонияда автоматик фаоллаштирилади."
       },
       {
-        icon: "🔐",
-        title: "5. Махфийлик ва маълумотлар дахлсизлиги",
-        text: "Фойдаланувчиларнинг шахсий маълумотлари хавфсиз серверларда шифрланган ҳолда сақланади ва учинчи шахсларга берилмайди."
+        icon: "⚖️",
+        title: "9. Фойдаланиш шартлари ва Махфийлик",
+        text: "Барча материаллар фақат шахсий таълим мақсадида тақдим этилади. Тизим маълумотларини кўчириб олиш ёки сотиш қатъиян тақиқланади. Шахсий маълумотлар шифрланган ҳолда сақланади."
       },
       {
         icon: "📞",
-        title: "6. Техник ёрдам ва алоқа",
+        title: "10. Техник ёрдам ва Боғланиш",
         text: "Саволлар, таклифлар ёки тўлов масалалари бўйича расмий <b>@rullybot</b> орқали маъмурият билан боғланишингиз мумкин."
       }
     ],
@@ -1187,32 +1227,52 @@
       {
         icon: "🏛️",
         title: "1. Общая информация о платформе",
-        text: "<b>RULLY</b> — это интеллектуальная интерактивная платформа для подготовки к теоретическому и практическому экзаменам на получение водительского удостоверения в соответствии со стандартами СБДД МВД Республики Узбекистан. Платформа включает 1 295 официальных вопросов, 63 билета, 43 тематические категории, симулятор экзамена, AI Наставника и модуль автодрома."
+        text: "<b>RULLY</b> — интеллектуальная интерактивная платформа для подготовки к экзаменам на получение водительского удостоверения по стандартам СБДД МВД Республики Узбекистан. Включает 1 295 официальных вопросов, 63 билета, 43 тематические категории, симулятор экзамена, модуль автодрома и аналитику от AI Наставника."
       },
       {
-        icon: "⚖️",
-        title: "2. Условия использования и авторские права",
-        text: "Все учебные материалы, тесты и подсказки предоставляются исключительно для личного обучения. Несанкционированный парсинг, тиражирование или перепродажа материалов платформы третьим лицам строго запрещены."
+        icon: "🎯",
+        title: "2. Разница между Уровнем готовности и Процентом сдачи",
+        text: "• <b>Уровень готовности (Спидометр):</b> Комплексная оценка готовности к госэкзамену по 5 критериям (Динамика экзаменов 30%, Точность знаний 25%, Охват 1 295 вопросов 25%, Гигиена банка ошибок 10%, Регулярность и темп 10%).<br>• <b>Процент сдачи (Успешные попытки):</b> Сухой исторический процент успешно сданных экзаменов от общего числа попыток (например: сдан 1 из 12 экзаменов = 8.3%). Поэтому эти две цифры различаются."
       },
       {
         icon: "🎓",
-        title: "3. Нормативы теоретического экзамена",
-        text: "Официальный экзамен состоит из 20 случайных вопросов, выделяемое время — 25 минут. Для успешной сдачи необходимо ответить верно минимум на 18 вопросов (допускается не более 2 ошибок)."
+        title: "3. Нормативы государственного теоретического экзамена",
+        text: "Официальный экзамен состоит из 20 случайных вопросов, выделяемое время — 25 минут. Для успешной сдачи необходимо ответить верно минимум на 18 вопросов (допускается не более 2 ошибок; при 3-й ошибке экзамен немедленно прекращается)."
+      },
+      {
+        icon: "🛡️",
+        title: "4. Банк ошибок и правила работы над ними",
+        text: "Все вопросы, на которые дан неверный ответ, автоматически попадают в <b>Банк ошибок</b> (пропущенные без ответа вопросы не добавляются). Вопрос удаляется из банка только после того, как вы решите его повторно и укажете правильный ответ. Нерешенные ошибки снижают общий уровень готовности."
+      },
+      {
+        icon: "🚗",
+        title: "5. Практический экзамен (Автодром) и Штрафные баллы",
+        text: "Раздел практики содержит детальный разбор 6 основных упражнений автодрома (Эстакада, Параллельная парковка, Разворот 90°, 'Змейка', Въезд в бокс, Стоп-линия). За ошибки начисляются от 5 до 25 штрафных баллов. При сумме 100 штрафных баллов кандидат считается не сдавшим."
+      },
+      {
+        icon: "🤖",
+        title: "6. Возможности AI Наставника",
+        text: "<b>AI Наставник</b> детально разъясняет суть каждого вопроса со ссылками на пункты ПДД Узбекистана простым и понятным языком. Пользователи тарифа PRO имеют безлимитный доступ к персональному разбору любых ситуаций."
+      },
+      {
+        icon: "🔥",
+        title: "7. Серия занятий (Streak) и Закладки",
+        text: "• <b>Ежедневная серия (Streak):</b> Поддерживается решением хотя бы одного теста каждый день. Если занятий нет более 24 часов, серия обнуляется.<br>• <b>Закладки:</b> Любые сложные вопросы можно сохранить в избранное и повторить в любое удобное время."
       },
       {
         icon: "💎",
-        title: "4. Подписка (PRO) и безопасность платежей",
-        text: "PRO тариф открывает полный доступ к симулятору экзамена, аналитике AI, банку ошибок и шпаргалкам. Оплата принимается через банковские карты с мгновенной автоматической верификацией через Humocardbot / MTProto за 1 секунду."
+        title: "8. Подписка (PRO) и безопасность платежей",
+        text: "PRO тариф открывает симулятор госэкзамена, безлимитный AI разбор, банк ошибок и видеоанализ автодрома. Оплата принимается через банковские карты с мгновенной автоматической активацией через Humocardbot / MTProto за 1 секунду."
       },
       {
-        icon: "🔐",
-        title: "5. Конфиденциальность данных",
-        text: "Персональные данные пользователей (Telegram ID, имя, история экзаменов) защищены шифрованием и не передаются третьим лицам."
+        icon: "⚖️",
+        title: "9. Условия использования и Конфиденциальность",
+        text: "Все материалы предоставляются исключительно для личного обучения. Парсинг, копирование или перепродажа строго запрещены. Персональные данные зашифрованы и надежно защищены."
       },
       {
         icon: "📞",
-        title: "6. Поддержка и обратная связь",
-        text: "По любым вопросам и предложениям обращайтесь в официальный бот поддержки <b>@rullybot</b>."
+        title: "10. Техническая поддержка и Обратная связь",
+        text: "По любым вопросам и предложениям обращайтесь в официальный бот поддержки <b>@rullybot</b>. Желаем успешной сдачи экзамена с первой попытки!"
       }
     ]
   };

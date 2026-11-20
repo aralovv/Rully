@@ -59,7 +59,7 @@ const I18N = {
     grade_not_ready: "🟠 Boshlang‘ich Bosqich (Tayyorgarlik kerak)",
 
     // Stats
-    stat_pass_rate: "O‘tish ehtimoli",
+    stat_pass_rate: "O‘tish ko‘rsatkichi",
     stat_tests_taken: "Topshirilgan",
     stat_accuracy: "Aniqlik darajasi",
     stat_bookmarks: "Saqlangan savollar",
@@ -377,7 +377,7 @@ const I18N = {
     grade_not_ready: "🟠 Бошланғич Босқич (Тайёргарлик керак)",
 
     // Stats
-    stat_pass_rate: "Ўтиш эҳтимоли",
+    stat_pass_rate: "Ўтиш кўрсаткичи",
     stat_tests_taken: "Топширилган",
     stat_accuracy: "Аниқлик даражаси",
     stat_bookmarks: "Сақланган саволлар",
@@ -695,7 +695,7 @@ const I18N = {
     grade_not_ready: "🟠 Начальный уровень (Требуется подготовка)",
 
     // Stats
-    stat_pass_rate: "Шанс сдачи",
+    stat_pass_rate: "Процент сдачи",
     stat_tests_taken: "Сдано тестов",
     stat_accuracy: "Точность ответов",
     stat_bookmarks: "В закладках",
