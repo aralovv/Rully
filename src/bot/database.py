@@ -6,7 +6,7 @@ import sqlite3
 import json
 import time
 from datetime import datetime, timedelta
-from typing import Optional, Dict, List, Any, Tuple
+from typing import Optional, Dict, List, Any, Tuple, Union
 from src.db_adapter import get_db_connection, is_turso_enabled
 
 # --- Subscription Plans Specification ---
@@ -35,67 +35,97 @@ def compute_driver_readiness(
     total_answered: int,
     accuracy: float,
     unique_questions: int,
-    unresolved_mistakes: int
-) -> float:
+    unresolved_mistakes: int,
+    categories_tested: int = None,
+    resolved_mistakes: int = 0,
+    current_streak: int = 0,
+    avg_exam_time_seconds: float = 0.0,
+    recent_pass_rate: float = None,
+    return_details: bool = False
+) -> Union[float, Dict[str, Any]]:
     """
-    Intelligent Multi-Pillar Exam Readiness Index (0.0 to 100.0%).
+    RULLY Intelligent 5-Pillar Exam Readiness Engine (0.0 to 100.0%).
     Calibrated specifically for the Uzbekistan State Driving Examination (DYHXX):
-    - Real requirements: 20 questions, 25 minutes, at least 18 correct (90%).
+    - Requirements: 20 questions, 25 minutes, at least 18 correct (90%).
     - Max 2 mistakes permitted; 3 mistakes = IMMEDIATE FAILURE.
 
-    Pillars:
-    1. Official State Exam Mastery & Consistency (35% weight):
+    5 Pillars:
+    1. Exam Mastery & Consistency (30% weight):
        Requires passing multiple full exams under timer pressure to eliminate lucky draws.
-    2. Knowledge Accuracy (25% weight):
-       Filters out 4-choice guessing baseline (35%). Scales from 35% (0 pts) to 92%+ (100 pts).
-    3. Syllabus Coverage (20% weight):
-       Broad exposure to question bank (benchmark: at least 160 unique questions).
-    4. Mistake Bank Hygiene (20% weight):
-       Unresolved mistakes are active failure points. Zero unresolved mistakes awards 100 pts,
-       while each uncorrected mistake subtracts 5 pts.
-
-    Statistical Confidence & Safeguard Gates:
-    - Confidence factor: scales with sqrt(total_answered / 100).
-    - 0 passed exams: Hard cap at 15.0% (never conquered real exam pressure).
-    - 1 passed exam: Hard cap at 45.0% (single pass may be a lucky draw).
-    - 2 passed exams: Hard cap at 70.0%.
-    - >= 10 unresolved mistakes: Hard cap at 60.0% (fatal risk on exam).
-    - < 60 total questions answered: Hard cap at 30.0% (insufficient empirical sample).
+    2. Knowledge Accuracy & Anti-Guessing (25% weight):
+       Filters out 4-choice guessing baseline (35%). Scales from 35% (0 pts) to 95%+ (100 pts).
+    3. Curriculum & Syllabus Coverage (25% weight):
+       Broad exposure across the 1,295 question bank and 43 official categories.
+    4. Mistake Bank Hygiene (10% weight):
+       Unresolved mistakes are active failure risks; resolved mistakes award bonuses.
+    5. Exam Pace & Practice Streak (10% weight):
+       Pace management (200-1100s per exam) and daily active learning consistency.
     """
     if total_answered == 0 and total_exams == 0:
-        return 0.0
+        details = {
+            "readiness_score": 0.0,
+            "grade": "NOT_READY",
+            "pillars": {
+                "exam_mastery": 0.0,
+                "accuracy": 0.0,
+                "coverage": 0.0,
+                "mistake_hygiene": 0.0,
+                "pace_and_streak": 0.0
+            }
+        }
+        return details if return_details else 0.0
 
-    # Pillar 1: Exam Passing Mastery & Consistency (35% weight)
+    # Pillar 1: Exam Passing Mastery & Consistency (30% weight)
     if passed_exams == 0:
-        pillar_exam = 0.0
+        p_exam = 0.0
     else:
-        # Consistency factor: 1 exam = 0.2, 3 exams = 0.6, 5+ exams = 1.0
-        consistency = min(1.0, passed_exams / 5.0)
-        pillar_exam = min(100.0, pass_rate * (0.40 + 0.60 * consistency))
+        rec_pass = recent_pass_rate if recent_pass_rate is not None else pass_rate
+        consistency = min(1.0, passed_exams / 4.0)
+        p_exam = min(100.0, (0.40 * pass_rate + 0.60 * rec_pass) * (0.35 + 0.65 * consistency))
 
     # Pillar 2: Knowledge Accuracy above 35% baseline (25% weight)
     if total_answered < 10 or accuracy <= 35.0:
-        pillar_accuracy = 0.0
+        p_acc = 0.0
     else:
-        # 35% accuracy yields 0 pts; 92% yields 100 pts
-        pillar_accuracy = min(100.0, max(0.0, ((accuracy - 35.0) / 57.0) * 100.0))
+        p_acc = min(100.0, max(0.0, ((accuracy - 35.0) / 57.0) * 100.0))
 
-    # Pillar 3: Curriculum / Syllabus Coverage (20% weight)
-    pillar_coverage = min(100.0, (unique_questions / 160.0) * 100.0)
+    # Pillar 3: Curriculum / Syllabus Coverage (25% weight)
+    if categories_tested is None or categories_tested <= 0:
+        categories_tested = min(43, max(1, int(unique_questions / 8)))
 
-    # Pillar 4: Mistake Bank Health (20% weight)
+    q_score = min(100.0, (unique_questions / 160.0) * 100.0)
+    cat_score = min(100.0, (categories_tested / 20.0) * 100.0)
+    p_cov = 0.60 * q_score + 0.40 * cat_score
+
+    # Pillar 4: Mistake Bank Hygiene (10% weight)
     if total_answered < 5:
-        pillar_mistakes = 0.0
+        p_mistakes = 50.0
     elif unresolved_mistakes == 0:
-        pillar_mistakes = 100.0
+        p_mistakes = 100.0
     else:
-        pillar_mistakes = max(0.0, 100.0 - (unresolved_mistakes * 5.0))
+        penalty = unresolved_mistakes * 5.0
+        total_m = resolved_mistakes + unresolved_mistakes
+        res_bonus = (resolved_mistakes / total_m * 20.0) if total_m > 0 else 0.0
+        p_mistakes = max(0.0, min(100.0, 100.0 - penalty + res_bonus))
+
+    # Pillar 5: Exam Pace & Practice Regularity (10% weight)
+    s_score = min(100.0, max(30.0, current_streak * 25.0)) if current_streak > 0 else (100.0 if passed_exams >= 4 else (0.0 if total_exams > 0 and passed_exams == 0 else 50.0))
+    if avg_exam_time_seconds <= 0:
+        t_score = 100.0 if passed_exams >= 4 else (0.0 if total_exams > 0 and passed_exams == 0 else 50.0)
+    elif 200 <= avg_exam_time_seconds <= 1100:
+        t_score = 100.0
+    elif avg_exam_time_seconds < 200:
+        t_score = 30.0
+    else:
+        t_score = max(30.0, 100.0 - ((avg_exam_time_seconds - 1100) / 400.0) * 50.0)
+    p_pace = 0.50 * s_score + 0.50 * t_score
 
     raw_score = (
-        (0.35 * pillar_exam) +
-        (0.25 * pillar_accuracy) +
-        (0.20 * pillar_coverage) +
-        (0.20 * pillar_mistakes)
+        0.30 * p_exam +
+        0.25 * p_acc +
+        0.25 * p_cov +
+        0.10 * p_mistakes +
+        0.10 * p_pace
     )
 
     # Statistical Confidence Multiplier for low volume (< 100 questions)
@@ -109,17 +139,41 @@ def compute_driver_readiness(
     elif passed_exams == 1:
         final_score = min(raw_score, 45.0)
     elif passed_exams == 2:
-        final_score = min(raw_score, 70.0)
+        final_score = min(raw_score, 68.0)
     else:
         final_score = raw_score
 
-    if unresolved_mistakes >= 10:
+    if unresolved_mistakes >= 15 or accuracy <= 30.0:
+        final_score = min(final_score, 8.0)
+    elif unresolved_mistakes >= 10:
         final_score = min(final_score, 60.0)
 
     if total_answered < 60:
         final_score = min(final_score, 30.0)
 
-    return round(max(0.0, min(100.0, final_score)), 1)
+    final_score = round(max(0.0, min(100.0, final_score)), 1)
+
+    if final_score >= 85.0:
+        grade = "EXCELLENT"
+    elif final_score >= 75.0:
+        grade = "EXAM_READY"
+    elif final_score >= 45.0:
+        grade = "IN_PROGRESS"
+    else:
+        grade = "NOT_READY"
+
+    details = {
+        "readiness_score": final_score,
+        "grade": grade,
+        "pillars": {
+            "exam_mastery": round(p_exam, 1),
+            "accuracy": round(p_acc, 1),
+            "coverage": round(p_cov, 1),
+            "mistake_hygiene": round(p_mistakes, 1),
+            "pace_and_streak": round(p_pace, 1)
+        }
+    }
+    return details if return_details else final_score
 
 
 class BotDatabase:
@@ -794,30 +848,70 @@ class BotDatabase:
             total_ans = ans_row[0] or 0
             correct_ans = ans_row[1] or 0
 
-            # Active mistakes count
-            c.execute("SELECT COUNT(*) FROM user_mistakes WHERE user_id = ? AND is_resolved = 0", (user_id,))
-            mistakes_cnt = c.fetchone()[0]
-
-            # Unique canonical questions tested
+            # Active & resolved mistakes count
             c.execute("""
-            SELECT COUNT(DISTINCT sa.canonical_id)
+            SELECT 
+                SUM(CASE WHEN is_resolved = 0 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN is_resolved = 1 THEN 1 ELSE 0 END)
+            FROM user_mistakes WHERE user_id = ?
+            """, (user_id,))
+            m_row = c.fetchone()
+            mistakes_cnt = (m_row[0] or 0) if m_row else 0
+            resolved_cnt = (m_row[1] or 0) if m_row else 0
+
+            # Unique canonical questions tested & categories tested
+            c.execute("""
+            SELECT 
+                COUNT(DISTINCT sa.canonical_id),
+                COUNT(DISTINCT cq.category_id)
             FROM session_answers sa
             JOIN user_sessions us ON sa.session_id = us.session_id
+            LEFT JOIN canonical_questions cq ON sa.canonical_id = cq.canonical_id
             WHERE us.user_id = ?
             """, (user_id,))
-            unique_qs = c.fetchone()[0] or 0
+            u_row = c.fetchone()
+            unique_qs = (u_row[0] or 0) if u_row else 0
+            categories_tested = (u_row[1] or 0) if u_row else 0
+
+            # Learning streak
+            c.execute("SELECT current_streak FROM learning_streak WHERE user_id = ?", (user_id,))
+            st_row = c.fetchone()
+            current_streak = st_row[0] if st_row else 0
+
+            # Recent exam history (last 5)
+            c.execute("""
+            SELECT passed, time_taken_seconds
+            FROM exam_results
+            WHERE user_id = ?
+            ORDER BY id DESC
+            LIMIT 5
+            """, (user_id,))
+            recent_exams = c.fetchall()
+            if recent_exams:
+                recent_pass_rate = round(sum(r[0] for r in recent_exams) / len(recent_exams) * 100.0, 1)
+                valid_times = [r[1] for r in recent_exams if r[1] and r[1] > 0]
+                avg_exam_time = sum(valid_times) / len(valid_times) if valid_times else 0.0
+            else:
+                recent_pass_rate = None
+                avg_exam_time = 0.0
 
             pass_rate = round((passed_exams / total_exams * 100), 1) if total_exams > 0 else 0.0
             accuracy = round((correct_ans / total_ans * 100), 1) if total_ans > 0 else 0.0
 
-            readiness = compute_driver_readiness(
+            readiness_info = compute_driver_readiness(
                 total_exams=total_exams,
                 passed_exams=passed_exams,
                 pass_rate=pass_rate,
                 total_answered=total_ans,
                 accuracy=accuracy,
                 unique_questions=unique_qs,
-                unresolved_mistakes=mistakes_cnt
+                unresolved_mistakes=mistakes_cnt,
+                categories_tested=categories_tested,
+                resolved_mistakes=resolved_cnt,
+                current_streak=current_streak,
+                avg_exam_time_seconds=avg_exam_time,
+                recent_pass_rate=recent_pass_rate,
+                return_details=True
             )
 
             return {
@@ -828,8 +922,14 @@ class BotDatabase:
                 "correct_answers": correct_ans,
                 "accuracy": accuracy,
                 "unresolved_mistakes": mistakes_cnt,
+                "resolved_mistakes": resolved_cnt,
                 "unique_questions_tested": unique_qs,
-                "readiness_score": readiness
+                "categories_tested": categories_tested,
+                "streak": current_streak,
+                "avg_exam_time_seconds": round(avg_exam_time, 1),
+                "readiness_score": readiness_info["readiness_score"],
+                "readiness_grade": readiness_info["grade"],
+                "readiness_pillars": readiness_info["pillars"]
             }
 
     # --- Admin Analytics ---

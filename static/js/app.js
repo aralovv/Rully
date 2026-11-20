@@ -407,12 +407,10 @@
     }
   }
 
-  // 7. Cockpit Readiness Score Calculation & Arc Meter
-  function computeReadinessScore(stats) {
-    if (!stats) return 0;
-    if (typeof stats.readiness_score === 'number') {
-      return Math.round(stats.readiness_score);
-    }
+  // 7. Cockpit Smart 5-Pillar Readiness Telemetry & Diagnostics
+  function computeReadinessDetails(stats) {
+    if (!stats) return { score: 0, grade: 'NOT_READY', pillars: { exam_mastery: 0, accuracy: 0, coverage: 0, mistake_hygiene: 0, pace_and_streak: 0 } };
+
     const totalExams = stats.total_exams || 0;
     const passedExams = stats.passed_exams || 0;
     const passRate = stats.pass_rate || 0;
@@ -420,14 +418,20 @@
     const accuracy = stats.accuracy || 0;
     const uniqueQs = stats.unique_questions_tested || 0;
     const mistakes = stats.unresolved_mistakes || 0;
+    const resolved = stats.resolved_mistakes || 0;
+    const categoriesTested = stats.categories_tested || Math.min(43, Math.max(1, Math.floor(uniqueQs / 8)));
+    const streak = stats.streak || (state.streak?.current_streak || 0);
+    const avgTime = stats.avg_exam_time_seconds || 0;
 
-    if (totalAns === 0 && totalExams === 0) return 0;
+    if (totalAns === 0 && totalExams === 0) {
+      return { score: 0, grade: 'NOT_READY', pillars: { exam_mastery: 0, accuracy: 0, coverage: 0, mistake_hygiene: 0, pace_and_streak: 0 } };
+    }
 
-    // Pillar 1: Exam Passing Mastery & Consistency (35% weight)
+    // Pillar 1: Exam Mastery & Consistency (30% weight)
     let pExam = 0;
     if (passedExams > 0) {
-      const consistency = Math.min(1.0, passedExams / 5.0);
-      pExam = Math.min(100, passRate * (0.40 + 0.60 * consistency));
+      const consistency = Math.min(1.0, passedExams / 4.0);
+      pExam = Math.min(100, passRate * (0.35 + 0.65 * consistency));
     }
 
     // Pillar 2: Knowledge Accuracy above 35% baseline (25% weight)
@@ -436,34 +440,57 @@
       pAcc = Math.min(100, Math.max(0, ((accuracy - 35) / 57) * 100));
     }
 
-    // Pillar 3: Curriculum / Syllabus Coverage (20% weight)
-    const pCov = Math.min(100, (uniqueQs / 160) * 100);
+    // Pillar 3: Curriculum / Syllabus Coverage (25% weight)
+    const qScore = Math.min(100, (uniqueQs / 160) * 100);
+    const catScore = Math.min(100, (categoriesTested / 20) * 100);
+    const pCov = (0.60 * qScore) + (0.40 * catScore);
 
-    // Pillar 4: Mistake Bank Health (20% weight)
-    let pMistakes = 0;
+    // Pillar 4: Mistake Bank Hygiene (10% weight)
+    let pMistakes = 50;
     if (totalAns >= 5) {
-      pMistakes = mistakes === 0 ? 100 : Math.max(0, 100 - (mistakes * 5));
+      if (mistakes === 0) {
+        pMistakes = 100;
+      } else {
+        const penalty = mistakes * 5.0;
+        const totalM = resolved + mistakes;
+        const resBonus = totalM > 0 ? (resolved / totalM * 20.0) : 0;
+        pMistakes = Math.max(0, Math.min(100, 100 - penalty + resBonus));
+      }
     }
 
-    let raw = (0.35 * pExam) + (0.25 * pAcc) + (0.20 * pCov) + (0.20 * pMistakes);
+    // Pillar 5: Exam Pace & Practice Regularity (10% weight)
+    const sScore = streak > 0 ? Math.min(100, Math.max(30, streak * 25)) : (passedExams >= 4 ? 100 : (totalExams > 0 && passedExams === 0 ? 0 : 50));
+    let tScore = 50;
+    if (avgTime <= 0) {
+      tScore = passedExams >= 4 ? 100 : (totalExams > 0 && passedExams === 0 ? 0 : 50);
+    } else if (avgTime >= 200 && avgTime <= 1100) {
+      tScore = 100;
+    } else if (avgTime < 200) {
+      tScore = 30;
+    } else {
+      tScore = Math.max(30, 100 - ((avgTime - 1100) / 400) * 50);
+    }
+    const pPace = (0.50 * sScore) + (0.50 * tScore);
 
-    // Statistical Confidence Multiplier for low volume (< 100 questions)
+    let raw = (0.30 * pExam) + (0.25 * pAcc) + (0.25 * pCov) + (0.10 * pMistakes) + (0.10 * pPace);
+
     if (totalAns < 100) {
       const confMultiplier = Math.min(1.0, Math.max(0.2, Math.sqrt(totalAns / 100)));
       raw = raw * confMultiplier;
     }
 
-    // Intelligent Safeguard Gates
     let finalScore = raw;
     if (passedExams === 0) {
       finalScore = Math.min(finalScore, 15);
     } else if (passedExams === 1) {
       finalScore = Math.min(finalScore, 45);
     } else if (passedExams === 2) {
-      finalScore = Math.min(finalScore, 70);
+      finalScore = Math.min(finalScore, 68);
     }
 
-    if (mistakes >= 10) {
+    if (mistakes >= 15 || accuracy <= 30) {
+      finalScore = Math.min(finalScore, 8);
+    } else if (mistakes >= 10) {
       finalScore = Math.min(finalScore, 60);
     }
 
@@ -471,32 +498,86 @@
       finalScore = Math.min(finalScore, 30);
     }
 
-    return Math.round(Math.min(100, Math.max(0, finalScore)));
+    const score = Math.round(Math.min(100, Math.max(0, finalScore)));
+
+    let grade = 'NOT_READY';
+    if (score >= 85) grade = 'EXCELLENT';
+    else if (score >= 75) grade = 'EXAM_READY';
+    else if (score >= 45) grade = 'IN_PROGRESS';
+
+    const pillars = {
+      exam_mastery: Math.round(pExam),
+      accuracy: Math.round(pAcc),
+      coverage: Math.round(pCov),
+      mistake_hygiene: Math.round(pMistakes),
+      pace_and_streak: Math.round(pPace)
+    };
+
+    return { score, grade, pillars };
+  }
+
+  function computeReadinessScore(stats) {
+    if (!stats) return 0;
+    if (typeof stats.readiness_score === 'number') {
+      return Math.round(stats.readiness_score);
+    }
+    return computeReadinessDetails(stats).score;
+  }
+
+  function setPillarDotStatus(itemId, val) {
+    const el = document.getElementById(itemId);
+    if (!el) return;
+    const dot = el.querySelector('.pillar-mini-dot');
+    if (!dot) return;
+    dot.className = 'pillar-mini-dot ' + (val >= 75 ? 'ready' : (val >= 45 ? 'progress' : 'warn'));
   }
 
   function updateReadinessClusterUI() {
     const s = state.stats?.stats || {};
-    const score = computeReadinessScore(s);
-    state.readinessScore = score;
+    const details = computeReadinessDetails(s);
+    state.readinessScore = details.score;
+    state.readinessPillars = details.pillars;
+    state.readinessGrade = details.grade;
 
     // Numerical readout
     const scoreValEl = document.getElementById('stat-readiness-pct');
-    if (scoreValEl) scoreValEl.textContent = `${score}%`;
+    if (scoreValEl) scoreValEl.textContent = `${details.score}%`;
 
     // SVG Arc Dashoffset (Arc length: ~172.8)
     const arcFill = document.getElementById('speedometer-arc-fill');
     if (arcFill) {
       const maxOffset = 172.8;
-      const offset = maxOffset - (maxOffset * score / 100);
+      const offset = maxOffset - (maxOffset * details.score / 100);
       arcFill.style.strokeDashoffset = `${offset}`;
     }
+
+    // Mini Pillars Strip in Cockpit
+    const examValEl = document.getElementById('pillar-mini-exam-val');
+    if (examValEl) examValEl.textContent = `${details.pillars.exam_mastery}%`;
+    const accValEl = document.getElementById('pillar-mini-acc-val');
+    if (accValEl) accValEl.textContent = `${details.pillars.accuracy}%`;
+    const covValEl = document.getElementById('pillar-mini-cov-val');
+    if (covValEl) covValEl.textContent = `${details.pillars.coverage}%`;
+    const errValEl = document.getElementById('pillar-mini-err-val');
+    if (errValEl) errValEl.textContent = `${details.pillars.mistake_hygiene}%`;
+    const streakValEl = document.getElementById('pillar-mini-streak-val');
+    if (streakValEl) {
+      const streakDays = s.streak || state.streak?.current_streak || 0;
+      streakValEl.textContent = `${streakDays}k`;
+    }
+
+    setPillarDotStatus('pillar-mini-exam', details.pillars.exam_mastery);
+    setPillarDotStatus('pillar-mini-acc', details.pillars.accuracy);
+    setPillarDotStatus('pillar-mini-cov', details.pillars.coverage);
+    setPillarDotStatus('pillar-mini-err', details.pillars.mistake_hygiene);
+    setPillarDotStatus('pillar-mini-streak', details.pillars.pace_and_streak);
 
     // Contextual Description
     const descEl = document.getElementById('readiness-description');
     if (descEl) {
-      if (score >= 80) {
+      if (details.score >= 80) {
         descEl.textContent = t('readiness_subtext_ready');
-      } else if (score >= 40) {
+      } else if (details.score >= 40) {
         descEl.textContent = t('readiness_subtext_progress');
       } else {
         descEl.textContent = t('readiness_subtext_start');
@@ -506,16 +587,202 @@
     const badgeEl = document.getElementById('telemetry-readiness-badge');
     const statusTxtEl = document.getElementById('telemetry-readiness-status');
     if (badgeEl && statusTxtEl) {
-      if (score >= 80) {
+      if (details.score >= 80) {
         badgeEl.className = 'telemetry-status-badge ready';
         statusTxtEl.textContent = t('status_ready');
-      } else if (score >= 40) {
+      } else if (details.score >= 40) {
         badgeEl.className = 'telemetry-status-badge in_progress';
         statusTxtEl.textContent = t('status_in_progress');
       } else {
         badgeEl.className = 'telemetry-status-badge not_ready';
         statusTxtEl.textContent = t('status_not_ready');
       }
+    }
+  }
+
+  function renderReadinessDiagnosticModal() {
+    const body = document.getElementById('readiness-modal-body');
+    if (!body) return;
+    const lang = state.lang || 'uz_latn';
+    const s = state.stats?.stats || {};
+    const details = computeReadinessDetails(s);
+
+    const gradeLabels = {
+      EXCELLENT: t('grade_excellent') || '👑 Imtihonga To‘liq Tayyor (Aʼlo)',
+      EXAM_READY: t('grade_ready') || '🟢 O‘tish Ehtimoli Yuqori (Yaxshi)',
+      IN_PROGRESS: t('grade_progress') || '🟡 O‘rganish Jarayonida (Mashq zarur)',
+      NOT_READY: t('grade_not_ready') || '🟠 Boshlang‘ich Bosqich (Tayyorgarlik kerak)'
+    };
+    const gradeClass = details.grade.toLowerCase();
+
+    // AI Actionable Advice Calculation
+    let adviceText = '';
+    const totalExams = s.total_exams || 0;
+    const passedExams = s.passed_exams || 0;
+    const mistakes = s.unresolved_mistakes || 0;
+    const uniqueQs = s.unique_questions_tested || 0;
+    const accuracy = s.accuracy || 0;
+
+    if (passedExams === 0) {
+      adviceText = (lang === 'ru' 
+        ? "<b>Совет AI:</b> Вы еще не сдали ни одного полного симулятора экзамена (20 вопросов, 25 минут). Пройдите минимум 2-3 экзамена без ошибок для закрепления навыка!"
+        : (lang === 'uz_cyrl'
+          ? "<b>AI Тавсияси:</b> Сиз ҳали бирорта ҳам 20 талик давлат имтиҳони симуляциясини муваффақиятли топширмадингиз. Натижани кўтариш учун камида 2-3 та тўлиқ имтиҳон топширинг!"
+          : "<b>AI Tavsiyasi:</b> Siz hali birorta ham 20 talik davlat imtihoni simulyatsiyasini muvaffaqiyatli topshirmadingiz. Natijani ko‘tarish uchun kamida 2-3 ta to‘liq imtihon topshiring!"));
+    } else if (mistakes >= 5) {
+      adviceText = (lang === 'ru'
+        ? `<b>Совет AI:</b> В банке ошибок накопилось <b>${mistakes} нерешенных вопросов</b>. Закройте их в разделе 'Банк ошибок', чтобы исключить случайный провал на госэкзамене!`
+        : (lang === 'uz_cyrl'
+          ? `<b>AI Тавсияси:</b> Хатолар банкида <b>${mistakes} та ҳал қилинмаган савол</b> мавжуд. Уларни қайта ишлаб тўғриланг, бу балингизни кескин оширади!`
+          : `<b>AI Tavsiyasi:</b> Xatolar bankida <b>${mistakes} ta hal qilinmagan savol</b> mavjud. Ularni qayta ishlab to‘g‘rilang, bu balingizni keskin oshiradi!`));
+    } else if (uniqueQs < 300) {
+      adviceText = (lang === 'ru'
+        ? `<b>Совет AI:</b> Вы изучили <b>${uniqueQs} из 1 295 вопросов</b> базы. Рекомендуется пройти темы ПДД и режим 'Смешанный тест' для расширения кругозора!`
+        : (lang === 'uz_cyrl'
+          ? `<b>AI Тавсияси:</b> Сиз 1 295 та саволдан <b>${uniqueQs} тасини</b> кўриб чиқдингиз. Қамровни кенгайтириш учун мавзули тестлар ва 'Аралаш тест'ни ечинг!`
+          : `<b>AI Tavsiyasi:</b> Siz 1 295 ta savoldan <b>${uniqueQs} tasini</b> ko‘rib chiqdingiz. Qamrovni kengaytirish uchun mavzuli testlar va 'Aralash test'ni yeching!`));
+    } else if (accuracy < 85) {
+      adviceText = (lang === 'ru'
+        ? `<b>Совет AI:</b> Точность ответов составляет <b>${accuracy}%</b>. На реальном экзамене допускается всего 2 ошибки (90%+). Читайте вопросы внимательнее и не спешите!`
+        : (lang === 'uz_cyrl'
+          ? `<b>AI Тавсияси:</b> Жавоблар аниқлиги <b>${accuracy}%</b>ни ташкил этмоқда. Ҳақиқий имтиҳонда фақат 2 та хатога йўл қўйилади (90%+). Саволларни диққат билан ўқинг!`
+          : `<b>AI Tavsiyasi:</b> Javoblar aniqligi <b>${accuracy}%</b>ni tashkil etmoqda. Haqiqiy imtihonda faqat 2 ta xatoga yo‘l qo‘yiladi (90%+). Savollarni diqqat bilan o‘qing!`));
+    } else {
+      adviceText = (lang === 'ru'
+        ? "<b>Совет AI:</b> Отличный результат! Ваши показатели полностью соответствуют государственным нормативам. Вы готовы к успешной сдаче официального экзамена СБДД!"
+        : (lang === 'uz_cyrl'
+          ? "<b>AI Тавсияси:</b> Аъло натижа! Сизнинг кўрсаткичларингиз давлат имтиҳони талабларига тўлиқ жавоб беради. Сиз расмий синовдан ўтишга тайёрсиз!"
+          : "<b>AI Tavsiyasi:</b> Aʼlo natija! Sizning ko‘rsatkichlaringiz davlat imtihoni talablariga to‘liq javob beradi. Siz rasmiy sinovdan o‘tishga tayyorsiz!"));
+    }
+
+    const dismissText = t('btn_modal_dismiss') || (lang === 'ru' ? 'Понятно' : (lang === 'uz_cyrl' ? 'Тушунарли' : 'Tushunarli'));
+
+    body.innerHTML = `
+      <div class="diag-score-hero">
+        <div class="diag-score-num">${details.score}%</div>
+        <div class="diag-grade-badge ${gradeClass}">
+          ${gradeLabels[details.grade] || gradeLabels.NOT_READY}
+        </div>
+        <div class="diag-advice-box">
+          ${adviceText}
+        </div>
+      </div>
+
+      <!-- 5 PILLARS CARDS -->
+      <!-- Pillar 1: Exam Mastery -->
+      <div class="diag-pillar-card">
+        <div class="diag-pillar-header">
+          <div class="diag-pillar-title-wrap">
+            <span>🎯</span>
+            <h4 class="diag-pillar-title">${t('pillar_exam_title')}</h4>
+            <span class="diag-pillar-weight">30%</span>
+          </div>
+          <span class="diag-pillar-val">${details.pillars.exam_mastery}%</span>
+        </div>
+        <div class="diag-pillar-progress-track">
+          <div class="diag-pillar-progress-fill" style="width: ${details.pillars.exam_mastery}%;"></div>
+        </div>
+        <p class="diag-pillar-desc">${t('pillar_exam_desc')}</p>
+        <span class="diag-pillar-metric-tag">${s.passed_exams || 0} / ${s.total_exams || 0} ta imtihon o‘tildi (${s.pass_rate || 0}%)</span>
+      </div>
+
+      <!-- Pillar 2: Accuracy -->
+      <div class="diag-pillar-card">
+        <div class="diag-pillar-header">
+          <div class="diag-pillar-title-wrap">
+            <span>🧠</span>
+            <h4 class="diag-pillar-title">${t('pillar_acc_title')}</h4>
+            <span class="diag-pillar-weight">25%</span>
+          </div>
+          <span class="diag-pillar-val">${details.pillars.accuracy}%</span>
+        </div>
+        <div class="diag-pillar-progress-track">
+          <div class="diag-pillar-progress-fill" style="width: ${details.pillars.accuracy}%;"></div>
+        </div>
+        <p class="diag-pillar-desc">${t('pillar_acc_desc')}</p>
+        <span class="diag-pillar-metric-tag">${s.correct_answers || 0} / ${s.total_questions_answered || 0} ta to‘g‘ri javob (${s.accuracy || 0}%)</span>
+      </div>
+
+      <!-- Pillar 3: Coverage -->
+      <div class="diag-pillar-card">
+        <div class="diag-pillar-header">
+          <div class="diag-pillar-title-wrap">
+            <span>📚</span>
+            <h4 class="diag-pillar-title">${t('pillar_cov_title')}</h4>
+            <span class="diag-pillar-weight">25%</span>
+          </div>
+          <span class="diag-pillar-val">${details.pillars.coverage}%</span>
+        </div>
+        <div class="diag-pillar-progress-track">
+          <div class="diag-pillar-progress-fill" style="width: ${details.pillars.coverage}%;"></div>
+        </div>
+        <p class="diag-pillar-desc">${t('pillar_cov_desc')}</p>
+        <span class="diag-pillar-metric-tag">${s.unique_questions_tested || 0} / 1 295 savol • ${s.categories_tested || 0} / 43 mavzu</span>
+      </div>
+
+      <!-- Pillar 4: Mistakes -->
+      <div class="diag-pillar-card">
+        <div class="diag-pillar-header">
+          <div class="diag-pillar-title-wrap">
+            <span>🛡️</span>
+            <h4 class="diag-pillar-title">${t('pillar_err_title')}</h4>
+            <span class="diag-pillar-weight">10%</span>
+          </div>
+          <span class="diag-pillar-val">${details.pillars.mistake_hygiene}%</span>
+        </div>
+        <div class="diag-pillar-progress-track">
+          <div class="diag-pillar-progress-fill" style="width: ${details.pillars.mistake_hygiene}%;"></div>
+        </div>
+        <p class="diag-pillar-desc">${t('pillar_err_desc')}</p>
+        <span class="diag-pillar-metric-tag">${s.unresolved_mistakes || 0} ta faol xato • ${s.resolved_mistakes || 0} ta tuzatilgan</span>
+      </div>
+
+      <!-- Pillar 5: Pace & Streak -->
+      <div class="diag-pillar-card">
+        <div class="diag-pillar-header">
+          <div class="diag-pillar-title-wrap">
+            <span>🔥</span>
+            <h4 class="diag-pillar-title">${t('pillar_streak_title')}</h4>
+            <span class="diag-pillar-weight">10%</span>
+          </div>
+          <span class="diag-pillar-val">${details.pillars.pace_and_streak}%</span>
+        </div>
+        <div class="diag-pillar-progress-track">
+          <div class="diag-pillar-progress-fill" style="width: ${details.pillars.pace_and_streak}%;"></div>
+        </div>
+        <p class="diag-pillar-desc">${t('pillar_streak_desc')}</p>
+        <span class="diag-pillar-metric-tag">${s.streak || state.streak?.current_streak || 0} kunlik seriya • o‘rtacha vaqt: ${s.avg_exam_time_seconds ? Math.round(s.avg_exam_time_seconds / 60) + ' daqiqa' : 'Mavjud emas'}</span>
+      </div>
+
+      <div class="custom-modal-footer-action">
+        <button type="button" class="custom-modal-dismiss-btn" id="btn-done-readiness">${dismissText}</button>
+      </div>
+    `;
+
+    const btnDone = document.getElementById('btn-done-readiness');
+    if (btnDone) {
+      btnDone.addEventListener('click', closeReadinessDiagnosticModal);
+    }
+  }
+
+  function openReadinessDiagnosticModal() {
+    triggerHaptic('impact', 'light');
+    renderReadinessDiagnosticModal();
+    const modal = document.getElementById('readiness-diagnostic-modal');
+    if (modal) {
+      modal.classList.add('active');
+      document.body.style.overflow = 'hidden';
+      updateNativeBackButton();
+    }
+  }
+
+  function closeReadinessDiagnosticModal() {
+    triggerHaptic('impact', 'light');
+    const modal = document.getElementById('readiness-diagnostic-modal');
+    if (modal) {
+      modal.classList.remove('active');
+      document.body.style.overflow = '';
+      updateNativeBackButton();
     }
   }
 
@@ -662,8 +929,9 @@
     const isSettingsOpen = document.getElementById('custom-quiz-settings-sheet')?.classList.contains('active');
     const isRulesOpen = document.getElementById('platform-rules-modal')?.classList.contains('active');
     const isChangelogOpen = document.getElementById('version-history-modal')?.classList.contains('active');
+    const isReadinessOpen = document.getElementById('readiness-diagnostic-modal')?.classList.contains('active');
 
-    if (isInvoiceOpen || isPaywallOpen || isQuizOpen || isSettingsOpen || isRulesOpen || isChangelogOpen) {
+    if (isInvoiceOpen || isPaywallOpen || isQuizOpen || isSettingsOpen || isRulesOpen || isChangelogOpen || isReadinessOpen) {
       bb.show();
     } else {
       bb.hide();
@@ -672,6 +940,12 @@
 
   function handleNativeBackClick() {
     triggerHaptic('impact', 'light');
+    const readinessModal = document.getElementById('readiness-diagnostic-modal');
+    if (readinessModal && readinessModal.classList.contains('active')) {
+      closeReadinessDiagnosticModal();
+      return;
+    }
+
     const invoiceModal = document.getElementById('payment-invoice-modal');
     if (invoiceModal && invoiceModal.classList.contains('active')) {
       closePaymentInvoiceModal();
@@ -3791,6 +4065,23 @@
     if (changelogOverlay) {
       changelogOverlay.addEventListener('click', (e) => {
         if (e.target === changelogOverlay) closeVersionHistoryModal();
+      });
+    }
+
+    // Readiness 5-Pillar Diagnostic Modal Listeners
+    const btnOpenReadiness = document.getElementById('btn-open-readiness-modal');
+    if (btnOpenReadiness) {
+      btnOpenReadiness.addEventListener('click', openReadinessDiagnosticModal);
+    }
+    const speedometerCluster = document.querySelector('.speedometer-visual-wrap');
+    if (speedometerCluster) {
+      speedometerCluster.style.cursor = 'pointer';
+      speedometerCluster.addEventListener('click', openReadinessDiagnosticModal);
+    }
+    const readinessOverlay = document.getElementById('readiness-diagnostic-modal');
+    if (readinessOverlay) {
+      readinessOverlay.addEventListener('click', (e) => {
+        if (e.target === readinessOverlay) closeReadinessDiagnosticModal();
       });
     }
   }
