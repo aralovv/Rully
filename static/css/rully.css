@@ -316,6 +316,7 @@ body {
   position: relative;
   overflow: hidden;
   box-shadow: var(--shadow-card);
+  transition: box-shadow 0.4s ease, border-color 0.4s ease;
 }
 
 .cockpit-cluster-card::before {
@@ -326,6 +327,11 @@ body {
   right: 0;
   height: 2px;
   background: linear-gradient(90deg, transparent, var(--dial-cyan), var(--apex-emerald), transparent);
+}
+
+.cockpit-cluster-card.ignition-sweep-active {
+  box-shadow: 0 0 35px rgba(16, 185, 129, 0.28), 0 12px 32px rgba(0, 0, 0, 0.6);
+  border-color: rgba(16, 185, 129, 0.4);
 }
 
 .cluster-header {
@@ -380,53 +386,118 @@ body {
   border: 1px solid rgba(245, 158, 11, 0.35);
 }
 
-/* Speedometer Arc Meter Layout */
+/* Speedometer Cluster Meter Layout */
 .speedometer-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 14px;
-  gap: 14px;
+  margin-bottom: 16px;
+  gap: 16px;
   min-width: 0;
 }
 
 .speedometer-visual-wrap {
   position: relative;
-  width: 124px;
-  height: 80px;
+  width: 156px;
+  height: 156px;
   flex-shrink: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
+  border-radius: 50%;
+  cursor: pointer;
+  user-select: none;
+  background: radial-gradient(circle, #0c1424 0%, #030712 100%);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.7), 0 0 24px rgba(16, 185, 129, 0.12);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s;
 }
 
-.arc-svg {
+.speedometer-visual-wrap:hover {
+  transform: scale(1.02);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.8), 0 0 30px rgba(16, 185, 129, 0.22);
+}
+
+.speedometer-visual-wrap:active {
+  transform: scale(0.98);
+}
+
+.speedometer-3d-picture {
   position: absolute;
   top: 0;
   left: 0;
-  width: 124px;
-  height: 80px;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+  display: block;
+}
+
+.speedometer-3d-bg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+  pointer-events: none;
+  filter: contrast(1.05) brightness(1.02);
+}
+
+.speedometer-needle-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+  overflow: visible;
+}
+
+#speedometer-needle-group {
+  transform-origin: 100px 100px;
+  will-change: transform;
+}
+
+/* Center Digital OLED Display Hub */
+.speedometer-center-pod {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 45% 40%, #10192e 0%, #070d1a 65%, #020617 100%);
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.95), 0 0 16px rgba(0, 0, 0, 0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+  pointer-events: none;
+  padding: 2px;
+  box-sizing: border-box;
 }
 
 .speedometer-center-val {
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 900;
-  color: var(--text-high);
+  color: #ffffff;
   font-variant-numeric: tabular-nums;
   line-height: 1;
   letter-spacing: -0.5px;
-  z-index: 2;
-  margin-bottom: 2px;
+  text-shadow: 0 0 14px rgba(16, 185, 129, 0.65), 0 2px 4px rgba(0, 0, 0, 0.9);
 }
 
 .speedometer-lbl {
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 800;
-  color: var(--text-muted);
+  color: #94a3b8;
   text-transform: uppercase;
-  letter-spacing: 0.6px;
-  z-index: 2;
+  letter-spacing: 0.8px;
+  margin-top: 3px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }
 
 .readiness-details-col {
@@ -523,10 +594,10 @@ body {
 }
 
 .telemetry-stat-card {
-  background: var(--bg-surface-1);
-  border: 1px solid var(--border-hairline);
+  background: linear-gradient(180deg, rgba(16, 24, 44, 0.85) 0%, rgba(8, 14, 28, 0.95) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-sm);
-  padding: 9px 6px;
+  padding: 10px 6px;
   text-align: center;
   position: relative;
   overflow: hidden;
@@ -534,34 +605,64 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 64px;
+  min-height: 68px;
   min-width: 0;
   box-sizing: border-box;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(8px);
+  transition: transform 0.2s, border-color 0.2s;
+}
+
+.telemetry-stat-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 15%;
+  right: 15%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);
+}
+
+.telemetry-stat-card:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  transform: translateY(-1px);
 }
 
 .stat-metric-val {
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 900;
   color: var(--text-high);
   font-variant-numeric: tabular-nums;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   line-height: 1;
+  letter-spacing: -0.3px;
+  transition: transform 0.2s;
 }
 
-.stat-metric-val.emerald { color: var(--apex-emerald); }
-.stat-metric-val.cyan { color: var(--dial-cyan); }
-.stat-metric-val.amber { color: var(--amber-track); }
+.stat-metric-val.emerald {
+  color: var(--apex-emerald);
+  text-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+}
+.stat-metric-val.cyan {
+  color: var(--dial-cyan);
+  text-shadow: 0 0 10px rgba(14, 165, 233, 0.4);
+}
+.stat-metric-val.amber {
+  color: var(--amber-track);
+  text-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
+}
 
 .stat-metric-lbl {
-  font-size: 10.5px;
+  font-size: 10px;
   color: var(--text-muted);
-  font-weight: 600;
-  line-height: 1.2;
+  font-weight: 700;
+  line-height: 1.25;
   min-height: 22px;
   display: flex;
   align-items: center;
   justify-content: center;
   text-align: center;
+  letter-spacing: 0.2px;
 }
 
 /* Section Title & Tactical Grid */
@@ -2443,6 +2544,21 @@ body {
     flex-direction: column;
     text-align: center;
     gap: 12px;
+  }
+  .speedometer-visual-wrap {
+    width: 146px;
+    height: 146px;
+    margin: 0 auto;
+  }
+  .speedometer-center-pod {
+    width: 70px;
+    height: 70px;
+  }
+  .speedometer-center-val {
+    font-size: 22px;
+  }
+  .speedometer-lbl {
+    font-size: 7.5px;
   }
   .readiness-details-col {
     align-items: center;

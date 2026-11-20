@@ -105,20 +105,49 @@
         <!-- Cockpit Readiness Speedometer Cluster -->
         <div class="cockpit-cluster-card">
           <div class="speedometer-row">
-            <div class="speedometer-visual-wrap">
-              <svg class="arc-svg" viewBox="0 0 140 90">
-                <path d="M 15 80 A 55 55 0 0 1 125 80" fill="none" stroke="rgba(255, 255, 255, 0.08)" stroke-width="8" stroke-linecap="round"/>
-                <path id="speedometer-arc-fill" d="M 15 80 A 55 55 0 0 1 125 80" fill="none" stroke="url(#arc-gradient)" stroke-width="8" stroke-linecap="round" stroke-dasharray="172.8" stroke-dashoffset="172.8" style="transition: stroke-dashoffset 0.8s cubic-bezier(0.16, 1, 0.3, 1);"/>
+            <!-- 3D Instrument Speedometer Dial -->
+            <div class="speedometer-visual-wrap" id="speedometer-cluster-wrap" title="Diagnostika maʼlumotlari">
+              <!-- 3D Dial Face Real Asset -->
+              <picture class="speedometer-3d-picture">
+                <source srcset="/static/images/speedometer_3d_dial.webp" type="image/webp">
+                <img src="/static/images/speedometer_3d_dial.jpg" alt="Speedometer Dial" class="speedometer-3d-bg" width="160" height="160" loading="eager">
+              </picture>
+
+              <!-- Dynamic SVG Laser Needle Layer -->
+              <svg class="speedometer-needle-svg" viewBox="0 0 200 200" aria-hidden="true">
                 <defs>
-                  <linearGradient id="arc-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" stop-color="#0ea5e9"/>
-                    <stop offset="60%" stop-color="#10b981"/>
-                    <stop offset="100%" stop-color="#34d399"/>
+                  <linearGradient id="needle-blade-grad" x1="0%" y1="100%" x2="0%" y2="0%">
+                    <stop offset="0%" stop-color="#0284c7" stop-opacity="0.9"/>
+                    <stop offset="35%" stop-color="#00f5ff" stop-opacity="1"/>
+                    <stop offset="85%" stop-color="#10b981" stop-opacity="1"/>
+                    <stop offset="100%" stop-color="#34d399" stop-opacity="1"/>
                   </linearGradient>
+                  <filter id="needle-laser-glow" x="-50%" y="-50%" width="200%" height="200%">
+                    <feGaussianBlur in="SourceGraphic" stdDeviation="2.2" result="blur"/>
+                    <feMerge>
+                      <feMergeNode in="blur"/>
+                      <feMergeNode in="blur"/>
+                      <feMergeNode in="SourceGraphic"/>
+                    </feMerge>
+                  </filter>
                 </defs>
+
+                <!-- Rotating Needle Blade (Pivot at 100, 100) -->
+                <g id="speedometer-needle-group" style="transform-origin: 100px 100px; transform: rotate(-135deg);">
+                  <!-- Tapered Luminous Laser Blade -->
+                  <polygon points="98,102 98.8,24 100,18 101.2,24 102,102" fill="url(#needle-blade-grad)" filter="url(#needle-laser-glow)"/>
+                  <!-- Core Highlight Line -->
+                  <line x1="100" y1="20" x2="100" y2="98" stroke="#ffffff" stroke-width="1.2" stroke-linecap="round" opacity="0.95"/>
+                  <!-- Counterweight Tail -->
+                  <polygon points="98.5,98 99,112 101,112 101.5,98" fill="#0284c7" opacity="0.6"/>
+                </g>
               </svg>
-              <div class="speedometer-center-val" id="stat-readiness-pct">0%</div>
-              <div class="speedometer-lbl" data-i18n="speedometer_lbl">Tayyorgarlik</div>
+
+              <!-- Center Digital OLED Pod -->
+              <div class="speedometer-center-pod">
+                <div class="speedometer-center-val" id="stat-readiness-pct">0%</div>
+                <div class="speedometer-lbl" data-i18n="speedometer_lbl">Tayyorgarlik</div>
+              </div>
             </div>
 
             <div class="readiness-details-col">
