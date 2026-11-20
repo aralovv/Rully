@@ -1158,7 +1158,7 @@
       {
         icon: "💎",
         title: "8. Obuna (PRO) va To‘lovlar xavfsizligi",
-        text: "PRO tariflar davlat imtihoni simulyatsiyasi, AI Ustoz bilan cheksiz muloqot, xatolar banki va amaliy modul tahlillarini to‘liq ochadi. To‘lovlar rasmiy bank kartalari orqali qabul qilinadi va Humocardbot / MTProto avtomatlashtirilgan tizimi orqali to‘lov tushishi bilan 1 soniyada avtomatik faollashadi."
+        text: "PRO tariflar davlat imtihoni simulyatsiyasi, AI Ustoz bilan cheksiz muloqot, xatolar banki va amaliy modul tahlillarini to‘liq ochadi. Barcha to‘lovlar rasmiy bank kartalari orqali xavfsiz qabul qilinadi va to‘lov tushishi bilan bir necha soniyada obuna hisobingizda avtomatik ravishda faollashtiriladi."
       },
       {
         icon: "⚖️",
@@ -1210,7 +1210,7 @@
       {
         icon: "💎",
         title: "8. Обуна (PRO) ва Тўловлар хавфсизлиги",
-        text: "PRO тарифлар давлат имтиҳони симуляцияси, AI Устоз билан таҳлил, хатолар банки ва автодром модулларини тўлиқ очади. Тўловлар хавфсиз қабул қилинади ва Humocardbot / MTProto тизими орқали 1 сонияда автоматик фаоллаштирилади."
+        text: "PRO тарифлар давлат имтиҳони симуляцияси, AI Устоз билан таҳлил, хатолар банки ва автодром модулларини тўлиқ очади. Барча тўловлар расмий банк карталари орқали хавфсиз қабул қилинади ва тўлов тушиши билан бир неча сонияда обуна автоматик фаоллаштирилади."
       },
       {
         icon: "⚖️",
@@ -1262,7 +1262,7 @@
       {
         icon: "💎",
         title: "8. Подписка (PRO) и безопасность платежей",
-        text: "PRO тариф открывает симулятор госэкзамена, безлимитный AI разбор, банк ошибок и видеоанализ автодрома. Оплата принимается через банковские карты с мгновенной автоматической активацией через Humocardbot / MTProto за 1 секунду."
+        text: "PRO тариф открывает полный доступ к симулятору госэкзамена, безлимитному AI разбору, банку ошибок и видеоанализу автодрома. Оплата принимается через официальные банковские карты с мгновенной автоматической активацией подписки в течение нескольких секунд."
       },
       {
         icon: "⚖️",
