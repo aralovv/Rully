@@ -215,6 +215,45 @@ body {
   white-space: nowrap;
 }
 
+.cockpit-channel-btn {
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-hairline);
+  color: #38bdf8;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.cockpit-channel-btn:hover {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.cockpit-channel-btn:active {
+  background: var(--bg-surface-3);
+  transform: scale(0.92);
+  border-color: #38bdf8;
+}
+
+.cockpit-channel-btn .r-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cockpit-channel-btn svg {
+  width: 17px;
+  height: 17px;
+}
+
 .cockpit-lang-pill {
   background: var(--bg-surface-2);
   border: 1px solid var(--border-hairline);
@@ -2391,6 +2430,10 @@ body {
   .streak-gauge-badge {
     padding: 4px 8px;
     font-size: 11px;
+  }
+  .cockpit-channel-btn {
+    width: 30px;
+    height: 30px;
   }
   .cockpit-lang-pill {
     padding: 4px 8px;

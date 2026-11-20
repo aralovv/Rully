@@ -359,6 +359,7 @@
 
     const slotMap = {
       'streak-icon-slot': 'flame',
+      'channel-icon-slot': 'telegram',
       'lang-icon-slot': 'globe',
       'cluster-gauge-icon': 'gauge',
       'badge-status-icon': 'sparkles',
@@ -1168,7 +1169,7 @@
       {
         icon: "📞",
         title: "10. Texnik yordam va Bog‘lanish",
-        text: "Savollar, to‘lovlar yoki takliflar bo‘yicha rasmiy <b>@rullybot</b> orqali ma’muriyat bilan bog‘lanishingiz mumkin. RULLY har bir bo‘lajak haydovchiga davlat imtihonidan birinchi urinishda o‘tishida ishonchli yordamchidir!"
+        text: "Savollar, to‘lovlar yoki takliflar bo‘yicha rasmiy <b><a href=\"https://t.me/rully_admin\" target=\"_blank\" style=\"color: #38bdf8; text-decoration: none;\">@rully_admin</a></b> orqali ma’muriyat bilan bog‘lanishingiz mumkin. RULLY har bir bo‘lajak haydovchiga davlat imtihonidan birinchi urinishda o‘tishida ishonchli yordamchidir!"
       }
     ],
     uz_cyrl: [
@@ -1220,7 +1221,7 @@
       {
         icon: "📞",
         title: "10. Техник ёрдам ва Боғланиш",
-        text: "Саволлар, таклифлар ёки тўлов масалалари бўйича расмий <b>@rullybot</b> орқали маъмурият билан боғланишингиз мумкин."
+        text: "Саволлар, таклифлар ёки тўлов масалалари бўйича расмий <b><a href=\"https://t.me/rully_admin\" target=\"_blank\" style=\"color: #38bdf8; text-decoration: none;\">@rully_admin</a></b> орқали маъмурият билан боғланишингиз мумкин."
       }
     ],
     ru: [
@@ -1272,7 +1273,7 @@
       {
         icon: "📞",
         title: "10. Техническая поддержка и Обратная связь",
-        text: "По любым вопросам и предложениям обращайтесь в официальный бот поддержки <b>@rullybot</b>. Желаем успешной сдачи экзамена с первой попытки!"
+        text: "По любым вопросам и предложениям обращайтесь к администратору <b><a href=\"https://t.me/rully_admin\" target=\"_blank\" style=\"color: #38bdf8; text-decoration: none;\">@rully_admin</a></b>. Желаем успешной сдачи экзамена с первой попытки!"
       }
     ]
   };
@@ -3455,6 +3456,24 @@
         switchTab(tab);
       });
     });
+
+    // Top Bar Channel Button Action (@rully_avtotest)
+    const headerChannelBtn = document.getElementById('header-channel-btn');
+    if (headerChannelBtn) {
+      headerChannelBtn.onclick = () => {
+        triggerHaptic('impact', 'medium');
+        const channelUrl = 'https://t.me/rully_avtotest';
+        if (window.Telegram?.WebApp?.openTelegramLink) {
+          try {
+            window.Telegram.WebApp.openTelegramLink(channelUrl);
+            return;
+          } catch (e) {
+            console.warn('openTelegramLink error:', e);
+          }
+        }
+        window.open(channelUrl, '_blank');
+      };
+    }
 
     // Header Quick Language Action
     const headerLangBtn = document.getElementById('header-lang-btn');

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
   <title>RULLY — O‘zbekiston Haydovchilik Imtihoni</title>
-  <link rel="stylesheet" href="/static/css/rully.css?v=2.2.0">
+  <link rel="stylesheet" href="/static/css/rully.css?v=2.2.1">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script>
     (function () {
@@ -84,6 +84,9 @@
       </div>
     </div>
     <div class="header-telemetry-controls">
+      <button class="cockpit-channel-btn" id="header-channel-btn" aria-label="Telegram Kanal: @rully_avtotest" title="@rully_avtotest">
+        <span class="r-icon sm" id="channel-icon-slot"></span>
+      </button>
       <button class="cockpit-lang-pill" id="header-lang-btn" aria-label="Tilni tanlash">
         <span class="r-icon sm" id="lang-icon-slot"></span>
         <span id="header-lang-label">UZ</span>
@@ -1096,9 +1099,9 @@
   </nav>
 
   <!-- Application Scripts -->
-  <script src="/static/js/icons.js?v=2.2.0"></script>
-  <script src="/static/js/translations.js?v=2.2.0"></script>
-  <script src="/static/js/cheatsheet_data.js?v=2.2.0"></script>
-  <script src="/static/js/app.js?v=2.2.0"></script>
+  <script src="/static/js/icons.js?v=2.2.1"></script>
+  <script src="/static/js/translations.js?v=2.2.1"></script>
+  <script src="/static/js/cheatsheet_data.js?v=2.2.1"></script>
+  <script src="/static/js/app.js?v=2.2.1"></script>
 </body>
 </html>
