@@ -533,129 +533,23 @@
     dot.className = 'pillar-mini-dot ' + (val >= 75 ? 'ready' : (val >= 45 ? 'progress' : 'warn'));
   }
 
-  function getSpeedometerAngle(percent) {
-    const clamped = Math.max(0, Math.min(100, Number(percent) || 0));
-    // 0% -> -135deg (7 o'clock)
-    // 50% -> 0deg (12 o'clock)
-    // 100% -> +135deg (5 o'clock)
-    return -135 + (clamped / 100) * 270;
-  }
-
-  function setSpeedometerNeedle(percent, animate = true) {
-    const needleGroup = document.getElementById('speedometer-needle-group');
-    if (!needleGroup) return;
-    const angle = getSpeedometerAngle(percent);
-    if (animate) {
-      needleGroup.style.transition = 'transform 0.8s cubic-bezier(0.16, 1, 0.3, 1)';
-    } else {
-      needleGroup.style.transition = 'none';
-    }
-    needleGroup.style.transform = `rotate(${angle}deg)`;
-  }
-
-  function runSpeedometerIgnitionSweep(targetScore, passRate, totalExams, accuracy) {
-    const needleGroup = document.getElementById('speedometer-needle-group');
-    const readinessEl = document.getElementById('stat-readiness-pct');
-    const passRateEl = document.getElementById('stat-pass-rate-val');
-    const testsEl = document.getElementById('stat-tests-val');
-    const accuracyEl = document.getElementById('stat-accuracy-val');
-    const clusterCard = document.querySelector('.cockpit-cluster-card');
-
-    const score = Math.max(0, Math.min(100, Math.round(Number(targetScore) || 0)));
-    const pass = Math.max(0, Math.min(100, Math.round(Number(passRate) || 0)));
-    const exams = Math.max(0, Math.round(Number(totalExams) || 0));
-    const acc = Math.max(0, Math.min(100, Math.round(Number(accuracy) || 0)));
-
-    const finalAngle = getSpeedometerAngle(score);
-
-    // If reduced motion is requested by user OS
-    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      if (needleGroup) needleGroup.style.transform = `rotate(${finalAngle}deg)`;
-      if (readinessEl) readinessEl.textContent = `${score}%`;
-      if (passRateEl) passRateEl.textContent = `${pass}%`;
-      if (testsEl) testsEl.textContent = `${exams}`;
-      if (accuracyEl) accuracyEl.textContent = `${acc}%`;
-      return;
-    }
-
-    if (clusterCard) {
-      clusterCard.classList.add('ignition-sweep-active');
-      setTimeout(() => clusterCard.classList.remove('ignition-sweep-active'), 1350);
-    }
-
-    if (needleGroup) {
-      // Step 1: Reset to gauge zero (-135deg) instantly
-      needleGroup.style.transition = 'none';
-      needleGroup.style.transform = 'rotate(-135deg)';
-      void needleGroup.offsetWidth; // force layout reflow
-
-      // Step 2: Ignition Power-On Sweep to redline max (+135deg)
-      requestAnimationFrame(() => {
-        needleGroup.style.transition = 'transform 0.42s cubic-bezier(0.2, 0.95, 0.35, 1)';
-        needleGroup.style.transform = 'rotate(135deg)';
-
-        // Step 3: Damped spring fallback to actual readiness metric
-        setTimeout(() => {
-          needleGroup.style.transition = 'transform 0.75s cubic-bezier(0.16, 1, 0.3, 1)';
-          needleGroup.style.transform = `rotate(${finalAngle}deg)`;
-        }, 440);
-      });
-    }
-
-    // Roll-up count animation for all 4 digital cockpit indicators
-    const duration = 1100;
-    const startTime = performance.now();
-
-    function stepRollup(currentTime) {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(1, elapsed / duration);
-      // Ease-out cubic curve: 1 - (1 - t)^3
-      const ease = 1 - Math.pow(1 - progress, 3);
-
-      if (readinessEl) readinessEl.textContent = `${Math.round(score * ease)}%`;
-      if (passRateEl) passRateEl.textContent = `${Math.round(pass * ease)}%`;
-      if (testsEl) testsEl.textContent = `${Math.round(exams * ease)}`;
-      if (accuracyEl) accuracyEl.textContent = `${Math.round(acc * ease)}%`;
-
-      if (progress < 1) {
-        requestAnimationFrame(stepRollup);
-      } else {
-        if (readinessEl) readinessEl.textContent = `${score}%`;
-        if (passRateEl) passRateEl.textContent = `${pass}%`;
-        if (testsEl) testsEl.textContent = `${exams}`;
-        if (accuracyEl) accuracyEl.textContent = `${acc}%`;
-      }
-    }
-
-    requestAnimationFrame(stepRollup);
-  }
-
-  function updateReadinessClusterUI(triggerIgnition = false) {
+  function updateReadinessClusterUI() {
     const s = state.stats?.stats || {};
     const details = computeReadinessDetails(s);
     state.readinessScore = details.score;
     state.readinessPillars = details.pillars;
     state.readinessGrade = details.grade;
 
-    if (triggerIgnition) {
-      runSpeedometerIgnitionSweep(
-        details.score,
-        s.pass_rate || 0,
-        s.total_exams || 0,
-        s.accuracy || 0
-      );
-    } else {
-      // Numerical readout
-      const scoreValEl = document.getElementById('stat-readiness-pct');
-      if (scoreValEl) scoreValEl.textContent = `${details.score}%`;
-      setSpeedometerNeedle(details.score, true);
+    // Numerical readout
+    const scoreValEl = document.getElementById('stat-readiness-pct');
+    if (scoreValEl) scoreValEl.textContent = `${details.score}%`;
 
-      const passRateEl = document.getElementById('stat-pass-rate-val');
-      if (passRateEl) passRateEl.textContent = `${s.pass_rate || 0}%`;
-      const testsEl = document.getElementById('stat-tests-val');
-      if (testsEl) testsEl.textContent = `${s.total_exams || 0}`;
-      const accuracyEl = document.getElementById('stat-accuracy-val');
-      if (accuracyEl) accuracyEl.textContent = `${s.accuracy || 0}%`;
+    // SVG Arc Dashoffset (Arc length: ~172.8)
+    const arcFill = document.getElementById('speedometer-arc-fill');
+    if (arcFill) {
+      const maxOffset = 172.8;
+      const offset = maxOffset - (maxOffset * details.score / 100);
+      arcFill.style.strokeDashoffset = `${offset}`;
     }
 
     // Contextual Description
@@ -1845,7 +1739,7 @@
     }
   }
 
-  async function loadTelemetryData(triggerIgnition = true) {
+  async function loadTelemetryData() {
     try {
       const data = await apiFetch('/api/user/me');
       state.stats = data;
@@ -1853,13 +1747,18 @@
         state.subscription = data.subscription;
       }
       updateSubscriptionUI();
+      const s = data.stats || {};
+
+      document.getElementById('stat-pass-rate-val').textContent = `${s.pass_rate || 0}%`;
+      document.getElementById('stat-tests-val').textContent = s.total_exams || 0;
+      document.getElementById('stat-accuracy-val').textContent = `${s.accuracy || 0}%`;
 
       const streakEl = document.getElementById('user-streak-text');
       if (data.streak && streakEl) {
         streakEl.textContent = `${data.streak.current_streak} kun`;
       }
 
-      updateReadinessClusterUI(triggerIgnition);
+      updateReadinessClusterUI();
     } catch (e) {
       console.error("Telemetry fetch failed", e);
     }
@@ -1942,9 +1841,7 @@
     if (targetNav) targetNav.classList.add('active');
 
     // Section specific loaders
-    if (tabName === 'home') {
-      updateReadinessClusterUI(true);
-    } else if (tabName === 'amaliy') {
+    if (tabName === 'amaliy') {
       loadPracticalModules();
     } else if (tabName === 'profile') {
       renderProfileSettings();
