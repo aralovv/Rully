@@ -285,7 +285,7 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "rully-miniapp-api",
-        "version": "2.0.0",
+        "version": "2.1.0",
         "environment": "vercel" if IS_VERCEL else "standalone-cloud",
         "canonical_db": "master_database.sqlite",
         "turso_configured": bool(os.getenv("TURSO_DATABASE_URL")),

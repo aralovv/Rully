@@ -184,6 +184,12 @@
     // Refresh dynamic telemetry descriptors
     updateReadinessClusterUI();
     updateSubscriptionUI();
+    if (typeof renderPlatformRulesModal === 'function' && document.getElementById('platform-rules-modal')?.classList.contains('active')) {
+      renderPlatformRulesModal();
+    }
+    if (typeof renderVersionHistoryModal === 'function' && document.getElementById('version-history-modal')?.classList.contains('active')) {
+      renderVersionHistoryModal();
+    }
     renderCheatsheetContent();
     renderAiChips();
     if (typeof updateSavedQuestionsCount === 'function') {
@@ -654,8 +660,10 @@
     const isPaywallOpen = document.getElementById('subscription-paywall-modal')?.classList.contains('active');
     const isQuizOpen = document.getElementById('quiz-overlay')?.classList.contains('active');
     const isSettingsOpen = document.getElementById('custom-quiz-settings-sheet')?.classList.contains('active');
+    const isRulesOpen = document.getElementById('platform-rules-modal')?.classList.contains('active');
+    const isChangelogOpen = document.getElementById('version-history-modal')?.classList.contains('active');
 
-    if (isInvoiceOpen || isPaywallOpen || isQuizOpen || isSettingsOpen) {
+    if (isInvoiceOpen || isPaywallOpen || isQuizOpen || isSettingsOpen || isRulesOpen || isChangelogOpen) {
       bb.show();
     } else {
       bb.hide();
@@ -673,6 +681,18 @@
     const paywallModal = document.getElementById('subscription-paywall-modal');
     if (paywallModal && paywallModal.classList.contains('active')) {
       closePaywallModal();
+      return;
+    }
+
+    const rulesModal = document.getElementById('platform-rules-modal');
+    if (rulesModal && rulesModal.classList.contains('active')) {
+      closePlatformRulesModal();
+      return;
+    }
+
+    const changelogModal = document.getElementById('version-history-modal');
+    if (changelogModal && changelogModal.classList.contains('active')) {
+      closeVersionHistoryModal();
       return;
     }
 
@@ -705,6 +725,300 @@
   function closePaywallModal() {
     triggerHaptic('impact', 'light');
     const modal = document.getElementById('subscription-paywall-modal');
+    if (modal) {
+      modal.classList.remove('active');
+      document.body.style.overflow = '';
+      updateNativeBackButton();
+    }
+  }
+
+  // =========================================================================
+  // PLATFORM RULES & VERSION HISTORY CHANGELOG CONTROLLER (v2.1)
+  // =========================================================================
+
+  const CHANGELOG_HISTORY = [
+    {
+      version: "v2.1",
+      date: "2026-yil, Noyabr",
+      isCurrent: true,
+      title: {
+        uz_latn: "Tezkor In-Memory Dvigateli, Xavfsizlik va UX Yangilanishlari",
+        uz_cyrl: "Тезкор In-Memory Двигатели, Хавфсизлик ва UX Янгиланишлари",
+        ru: "Скоростной In-Memory Движок, Безопасность и UX Обновления"
+      },
+      changes: {
+        uz_latn: [
+          "⚡ <b>0.0ms In-Memory Imtihon Dvigateli:</b> 1 180 ta test savollari server xotirasiga o‘tkazildi, test ochilishi 15-20 soniyadan 0.8 soniyagacha tezlashtirildi.",
+          "🔒 <b>Kuchaytirilgan Xavfsizlik:</b> Ishlab chiqarish muhitida Telegram HMAC autentifikatsiyasi to‘liq himoyalandi, soxta sarlavhalar bloklandi.",
+          "🛡️ <b>Takroriy Bosish Himoyasi (Debounce & Idempotency):</b> To‘lov va test boshlashda tugmalarni ketma-ket bosganda so‘rovlar takrorlanishi to‘xtatildi.",
+          "⏱️ <b>Aniq Devor Soati Taymerlari:</b> Telefon Payme/Click ilovasiga o‘tib qaytganda taymer muzlab qolish xatosi bartaraf etildi.",
+          "📱 <b>Telegram Native 'Ortga' Tugmasi:</b> Barcha modal oynalarni Telegramning o‘z 'Ortga' tugmasi bilan qulay yopish imkoniyati qo‘shildi.",
+          "📋 <b>Universal Karta Nusxalash:</b> Barcha mobil brauzerlarda to‘lov karta raqamini bir bosishda xatosiz nusxalash mexanizmi o‘rnatildi.",
+          "📜 <b>Platforma Qonun-Qoidalari:</b> Foydalanish shartlari, YHQ meʼyorlari va xavfsizlik kafolatlari bo‘limi kiritildi."
+        ],
+        uz_cyrl: [
+          "⚡ <b>0.0ms In-Memory Имтиҳон Двигатели:</b> 1 180 та тест саволлари хотирага юкланиб, тест очилиши 15-20 сониядан 0.8 сониягача тезлаштирилди.",
+          "🔒 <b>Кучайтирилган Хавфсизлик:</b> Ишлаб чиқариш муҳитида Telegram HMAC аутентификацияси тўлиқ ҳимояланди, сохта сарлавҳалар блокланди.",
+          "🛡️ <b>Такрорий Босиш Ҳимояси:</b> Тўлов ва тест бошлашда тугмаларни кетма-кет босганда сўровлар такрорланиши тўхтатилди.",
+          "⏱️ <b>Аниқ Девор Соати Таймерлари:</b> Телефон Payme/Click иловасига ўтиб қайтганда таймер музлаб қолиш хатоси бартараф этилди.",
+          "📱 <b>Telegram Native 'Ортга' Тугмаси:</b> Барча модал ойналарни Telegramнинг ўз 'Ортга' тугмаси билан қулай ёпиш имконияти қўшилди.",
+          "📋 <b>Универсал Карта Нусхалаш:</b> Барча мобил браузерларда тўлов карта рақамини бир босишда нусхалаш таъминланди.",
+          "📜 <b>Платформа Қонун-Қоидалари:</b> Фойдаланиш шартлари, ЙҲҚ меъёрлари ва хавфсизлик бўлими киритилди."
+        ],
+        ru: [
+          "⚡ <b>0.0ms In-Memory Экзаменационный Движок:</b> Все 1 180 вопросов переведены в память, запуск теста ускорен с 15-20с до 0.8с.",
+          "🔒 <b>Усиленная Безопасность:</b> Внедрена строгая валидация HMAC-подписи Telegram в продакшене, неавторизованные запросы блокируются (401).",
+          "🛡️ <b>Защита от Повторных Нажатий:</b> Внедрена защита от двойных кликов (debounce) и идемпотентность при создании счетов и оплате.",
+          "⏱️ <b>Точные Таймеры (Wall-Clock):</b> Устранено зависание таймера при переключении пользователя в приложения Payme/Click.",
+          "📱 <b>Нативная Кнопка 'Назад' Telegram:</b> Закрытие всех модальных окон через штатную кнопку 'Назад' Telegram WebApp.",
+          "📋 <b>Универсальное Копирование Карты:</b> Безотказное копирование номера карты и суммы на всех мобильных WebView.",
+          "📜 <b>Правила и О Платформе:</b> Добавлен официальный раздел правил сервиса и стандартов ПДД."
+        ]
+      }
+    },
+    {
+      version: "v2.0",
+      date: "2026-yil, Noyabr",
+      isCurrent: false,
+      title: {
+        uz_latn: "Avtomatlashgan To'lov Tizimi, Cockpit Mini App va YHQ Standartlari",
+        uz_cyrl: "Автоматлашган Тўлов Тизими, Cockpit Mini App ва ЙҲҚ Стандартлари",
+        ru: "Автоматизированная Оплата, Cockpit Mini App и Стандарты ПДД"
+      },
+      changes: {
+        uz_latn: [
+          "💳 <b>Avtomatik To'lov Integratsiyasi:</b> Humocardbot va MTProto yordamida 24/7 kartaga pul tushishi bilan bir soniyada avtomatik PRO obunani yoqish.",
+          "🎨 <b>Yangi Mini App Cockpit Dizayni:</b> Zamonaviy to'liq dark-mode interfeys, ergonomik boshqaruv va moslashuvchan dizayn.",
+          "🚗 <b>1 180 ta YHQ Savollari va 59 ta Mavzuli Biletlar:</b> O‘zbekiston Respublikasi IIV Davlat standarti asosidagi to‘liq test bazasi.",
+          "📊 <b>Shaxsiy Natijalar va Xatolar Banki:</b> Xato qilingan savollarni alohida to‘plash va qayta mashq qilish tizimi.",
+          "💡 <b>Imtihon Shpargalkasi:</b> 1 295 ta savolning kalit so‘zlari, belgilari va statistik qonuniyatlari."
+        ],
+        uz_cyrl: [
+          "💳 <b>Автоматик Тўлов Интеграцияси:</b> Humocardbot ва MTProto ёрдамида 24/7 тўловларни 1 сонияда автоматик фаоллаштириш.",
+          "🎨 <b>Янги Mini App Cockpit Дизайни:</b> Замонавий dark-mode интерфейс ва қулай бошқарув панели.",
+          "🚗 <b>1 180 та ЙҲҚ Саволлари ва 59 та Мавзули Билетлар:</b> Ўзбекистон Республикаси Давлат стандарти бўйича тест базаси.",
+          "📊 <b>Хатолар Банки ва Шахсий Статистика:</b> Хато қилинган саволларни алоҳида машқ қилиш имконияти.",
+          "💡 <b>Имтиҳон Шпаргалкаси:</b> Саволларнинг калит сўзлари ва мантиқий меъёрлари."
+        ],
+        ru: [
+          "💳 <b>Автоматизированная Оплата:</b> Мгновенная активация PRO через Humocardbot и MTProto 24/7.",
+          "🎨 <b>Новый Дизайн Cockpit Mini App:</b> Современный темный интерфейс с быстрым переключением вкладок.",
+          "🚗 <b>1 180 Вопросов и 59 Тематических Билетов:</b> Полная база официальных вопросов ПДД Узбекистана.",
+          "📊 <b>Банк Ошибок и Статистика:</b> Персональная аналитика и проработка неверных ответов.",
+          "💡 <b>Шпаргалка к Экзамену:</b> Ключевые слова, шаблоны и правила к 1 295 вопросам."
+        ]
+      }
+    },
+    {
+      version: "v1.0",
+      date: "2026-yil, Dastlabki bosqich",
+      isCurrent: false,
+      title: {
+        uz_latn: "Telegram Bot va Dastlabki Test Tizimi",
+        uz_cyrl: "Telegram Бот ва Дастлабки Тест Тизими",
+        ru: "Telegram Бот и Первоначальная Система Тестирования"
+      },
+      changes: {
+        uz_latn: [
+          "🤖 Dastlabki @rullybot Telegram boti ishga tushirildi.",
+          "📚 Asosiy YHQ biletlari va test topshirish funksiyalari yo‘lga qo‘yildi."
+        ],
+        uz_cyrl: [
+          "🤖 Дастлабки @rullybot Telegram боти ишга туширилди.",
+          "📚 Асосий ЙҲҚ билетлари ва тест топшириш функциялари йўлга қўйилди."
+        ],
+        ru: [
+          "🤖 Запуск базового бота @rullybot в Telegram.",
+          "📚 Подключение базовых билетов ПДД и прохождения тестов."
+        ]
+      }
+    }
+  ];
+
+  const PLATFORM_RULES_DATA = {
+    uz_latn: [
+      {
+        icon: "🏛️",
+        title: "1. Platforma haqida umumiy maʼlumot",
+        text: "<b>RULLY</b> — haydovchilik guvohnomasini olishga tayyorlanayotgan fuqarolar va avtomaktab o‘quvchilari uchun O‘zbekiston Respublikasi IIV Jamoat xavfsizligi departamenti Yo‘l harakati xavfsizligi xizmati (YHXX) davlat imtihonlari andozasi asosida yaratilgan zamonaviy intellektual tayyorgarlik platformasi. Tizim 1 180 ta rasmiy test savollari, 59 ta tematik biletlar, davlat nazariy imtihoni simulyatori, sun’iy intellekt (AI Ustoz) tahlillari va amaliy avtodrom ko‘nikmalarini o‘z ichiga oladi."
+      },
+      {
+        icon: "⚖️",
+        title: "2. Foydalanish shartlari va mualliflik huquqi",
+        text: "Platformadagi barcha o‘quv materiallari, test savollari bazasi, qoidalar tahlillari va imtihon shpargalkalari faqat shaxsiy ta’lim va tayyorgarlik maqsadlarida taqdim etiladi. Tizim ma’lumotlarini ruxsatsiz avtomatlashtirilgan vositalar orqali ko‘chirib olish (scraping), tijorat maqsadlarida qayta tarqatish yoki uchinchi shaxslarga sotish qat’iyan taqiqlanadi va amaldagi qonunchilikka binoan javobgarlikka sabab bo‘ladi."
+      },
+      {
+        icon: "🎓",
+        title: "3. Davlat nazariy imtihoni meʼyorlari",
+        text: "Rasmiy nazariy imtihon 20 ta tasodifiy savoldan iborat bo‘lib, sinov uchun 25 daqiqa vaqt ajratiladi. Imtihondan muvaffaqiyatli o‘tish uchun nomzod kamida 18 ta savolga (90%) to‘g‘ri javob berishi lozim (maksimal 2 ta xatoga ruxsat etiladi). Nomzodlarga haqiqiy imtihondan oldin RULLY ilovasida 'Aralash test' va 'Xatolar banki' bo‘limlari orqali tayyorgarlik ko‘rish tavsiya qilinadi."
+      },
+      {
+        icon: "💎",
+        title: "4. Obuna (PRO) va To‘lovlar xavfsizligi",
+        text: "PRO tariflar foydalanuvchiga davlat imtihoni simulyatsiyasi, AI Ustoz bilan testlarni interaktiv tahlil qilish, xatolar banki va shpargalkalardan cheksiz foydalanish huquqini beradi. Barcha to‘lovlar xavfsiz bank kartalari orqali qabul qilinadi va Humocardbot / MTProto avtomatlashtirilgan tizimi orqali mablag‘ tushishi bilan 1 soniya ichida avtomatik tarzda hisobda faollashtiriladi. Har bir buyurtma uchun noyob identifikator va xavfsiz to‘lov summasi shakllantiriladi."
+      },
+      {
+        icon: "🔐",
+        title: "5. Maxfiylik va maʼlumotlar daxlsizligi",
+        text: "Foydalanuvchilarning shaxsiy ma’lumotlari (Telegram ID, foydalanuvchi nomi, imtihon natijalari) xavfsiz serverlarda shifrlangan holda saqlanadi va hech qachon uchinchi shaxslarga berilmaydi. Tizim Telegram WebApp xavfsizlik standartlariga to‘liq mos holda ishlaydi."
+      },
+      {
+        icon: "📞",
+        title: "6. Texnik yordam va aloqa",
+        text: "Platformadan foydalanish, to‘lovlar yoki takliflar bo‘yicha savollar tug‘ilganda rasmiy <b>@rullybot</b> orqali ma’muriyat bilan bog‘lanishingiz mumkin. RULLY jamoasi har bir bo‘lajak haydovchiga imtihondan 100% muvaffaqiyatli o‘tishida omad tilaydi!"
+      }
+    ],
+    uz_cyrl: [
+      {
+        icon: "🏛️",
+        title: "1. Платформа ҳақида умумий маълумот",
+        text: "<b>RULLY</b> — ҳайдовчилик гувоҳномасини олишга тайёрланаётган фуқаролар ва автомактаб ўқувчилари учун Ўзбекистон Республикаси ИИВ ЙҲХХ давлат имтиҳонлари андозаси асосида яратилган замонавий интеллектуал тайёргарлик платформаси. Тизим 1 180 та расмий тест саволлари, 59 та тематик билетлар, давлат назарий имтиҳони симулятори, сунъий интеллект (AI Устоз) таҳлиллари ва амалий автодром кўникмаларини ўз ичига олади."
+      },
+      {
+        icon: "⚖️",
+        title: "2. Фойдаланиш шартлари ва муаллифлик ҳуқуқи",
+        text: "Платформадаги барча ўқув материаллари, тест саволлари базаси, қоидалар таҳлиллари ва имтиҳон шпаргалкалари фақат шахсий таълим ва тайёргарлик мақсадларида тақдим этилади. Тизим маълумотларини рухсатсиз нусхалаш, тижорат мақсадларида қайта тарқатиш ёки учинчи шахсларга сотиш қатъиян тақиқланади."
+      },
+      {
+        icon: "🎓",
+        title: "3. Давлат назарий имтиҳони меъёрлари",
+        text: "Расмий назарий имтиҳон 20 та тасодифий саволдан иборат бўлиб, синов учун 25 дақиқа вақт ажратилади. Имтиҳондан муваффақиятли ўтиш учун камида 18 та саволга (90%) тўғри жавоб бериш шарт (кўпи билан 2 та хатога йўл қўйилади)."
+      },
+      {
+        icon: "💎",
+        title: "4. Обуна (PRO) ва Тўловлар хавфсизлиги",
+        text: "PRO тарифлар фойдаланувчига давлат имтиҳони симуляцияси, AI Устоз билан таҳлил, хатолар банки ва шпаргалкадан тўлиқ фойдаланиш имкониятини беради. Барча тўловлар хавфсиз тарзда қабул қилинади ва пул тушиши билан 1 сонияда автоматик фаоллаштирилади."
+      },
+      {
+        icon: "🔐",
+        title: "5. Махфийлик ва маълумотлар дахлсизлиги",
+        text: "Фойдаланувчиларнинг шахсий маълумотлари хавфсиз серверларда шифрланган ҳолда сақланади ва учинчи шахсларга берилмайди."
+      },
+      {
+        icon: "📞",
+        title: "6. Техник ёрдам ва алоқа",
+        text: "Саволлар, таклифлар ёки тўлов масалалари бўйича расмий <b>@rullybot</b> орқали маъмурият билан боғланишингиз мумкин."
+      }
+    ],
+    ru: [
+      {
+        icon: "🏛️",
+        title: "1. Общая информация о платформе",
+        text: "<b>RULLY</b> — это интеллектуальная интерактивная платформа для подготовки к теоретическому и практическому экзаменам на получение водительского удостоверения в соответствии со стандартами СБДД МВД Республики Узбекистан. Платформа включает 1 180 официальных вопросов, 59 билетов, симулятор экзамена, AI Наставника и модуль автодрома."
+      },
+      {
+        icon: "⚖️",
+        title: "2. Условия использования и авторские права",
+        text: "Все учебные материалы, тесты и подсказки предоставляются исключительно для личного обучения. Несанкционированный парсинг, тиражирование или перепродажа материалов платформы третьим лицам строго запрещены."
+      },
+      {
+        icon: "🎓",
+        title: "3. Нормативы теоретического экзамена",
+        text: "Официальный экзамен состоит из 20 случайных вопросов, выделяемое время — 25 минут. Для успешной сдачи необходимо ответить верно минимум на 18 вопросов (допускается не более 2 ошибок)."
+      },
+      {
+        icon: "💎",
+        title: "4. Подписка (PRO) и безопасность платежей",
+        text: "PRO тариф открывает полный доступ к симулятору экзамена, аналитике AI, банку ошибок и шпаргалкам. Оплата принимается через банковские карты с мгновенной автоматической верификацией через Humocardbot / MTProto за 1 секунду."
+      },
+      {
+        icon: "🔐",
+        title: "5. Конфиденциальность данных",
+        text: "Персональные данные пользователей (Telegram ID, имя, история экзаменов) защищены шифрованием и не передаются третьим лицам."
+      },
+      {
+        icon: "📞",
+        title: "6. Поддержка и обратная связь",
+        text: "По любым вопросам и предложениям обращайтесь в официальный бот поддержки <b>@rullybot</b>."
+      }
+    ]
+  };
+
+  function renderPlatformRulesModal() {
+    const body = document.getElementById('rules-modal-body');
+    if (!body) return;
+    const lang = state.lang || 'uz_latn';
+    const sections = PLATFORM_RULES_DATA[lang] || PLATFORM_RULES_DATA['uz_latn'];
+
+    body.innerHTML = sections.map(sec => `
+      <div class="rules-section-card">
+        <div class="rules-section-head">
+          <span class="rules-section-icon">${sec.icon}</span>
+          <h4 class="rules-section-title">${sec.title}</h4>
+        </div>
+        <p class="rules-section-text">${sec.text}</p>
+      </div>
+    `).join('');
+  }
+
+  function openPlatformRulesModal() {
+    triggerHaptic('impact', 'light');
+    renderPlatformRulesModal();
+    const modal = document.getElementById('platform-rules-modal');
+    if (modal) {
+      modal.classList.add('active');
+      document.body.style.overflow = 'hidden';
+      updateNativeBackButton();
+    }
+  }
+
+  function closePlatformRulesModal() {
+    triggerHaptic('impact', 'light');
+    const modal = document.getElementById('platform-rules-modal');
+    if (modal) {
+      modal.classList.remove('active');
+      document.body.style.overflow = '';
+      updateNativeBackButton();
+    }
+  }
+
+  function renderVersionHistoryModal() {
+    const body = document.getElementById('changelog-modal-body');
+    if (!body) return;
+    const lang = state.lang || 'uz_latn';
+
+    body.innerHTML = CHANGELOG_HISTORY.map(ver => {
+      const title = ver.title[lang] || ver.title['uz_latn'];
+      const changes = ver.changes[lang] || ver.changes['uz_latn'];
+      const currentBadge = ver.isCurrent ? `<span class="changelog-current-pill">${t('changelog_current_badge') || 'Joriy'}</span>` : '';
+
+      return `
+        <div class="changelog-ver-card ${ver.isCurrent ? 'current' : ''}">
+          <div class="changelog-ver-header">
+            <div class="changelog-ver-badges">
+              <span class="changelog-ver-tag">${ver.version}</span>
+              ${currentBadge}
+            </div>
+            <span class="changelog-ver-date">${ver.date}</span>
+          </div>
+          <h4 class="changelog-ver-title">${title}</h4>
+          <ul class="changelog-ver-list">
+            ${changes.map(ch => `
+              <li class="changelog-ver-item">
+                <span class="changelog-bullet-dot"></span>
+                <div>${ch}</div>
+              </li>
+            `).join('')}
+          </ul>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function openVersionHistoryModal() {
+    triggerHaptic('impact', 'light');
+    renderVersionHistoryModal();
+    const modal = document.getElementById('version-history-modal');
+    if (modal) {
+      modal.classList.add('active');
+      document.body.style.overflow = 'hidden';
+      updateNativeBackButton();
+    }
+  }
+
+  function closeVersionHistoryModal() {
+    triggerHaptic('impact', 'light');
+    const modal = document.getElementById('version-history-modal');
     if (modal) {
       modal.classList.remove('active');
       document.body.style.overflow = '';
@@ -3414,6 +3728,38 @@
         switchTab('ai');
         sendAiMessage(t('btn_ai_saved_tutor_prompt'));
       };
+    }
+
+    // Platform Rules & About Modal Listeners
+    const btnOpenRules = document.getElementById('btn-open-rules');
+    if (btnOpenRules) {
+      btnOpenRules.addEventListener('click', openPlatformRulesModal);
+    }
+    const btnCloseRules = document.getElementById('btn-close-rules-modal');
+    if (btnCloseRules) {
+      btnCloseRules.addEventListener('click', closePlatformRulesModal);
+    }
+    const rulesOverlay = document.getElementById('platform-rules-modal');
+    if (rulesOverlay) {
+      rulesOverlay.addEventListener('click', (e) => {
+        if (e.target === rulesOverlay) closePlatformRulesModal();
+      });
+    }
+
+    // Version Changelog Modal Listeners
+    const btnOpenChangelog = document.getElementById('btn-open-changelog');
+    if (btnOpenChangelog) {
+      btnOpenChangelog.addEventListener('click', openVersionHistoryModal);
+    }
+    const btnCloseChangelog = document.getElementById('btn-close-changelog-modal');
+    if (btnCloseChangelog) {
+      btnCloseChangelog.addEventListener('click', closeVersionHistoryModal);
+    }
+    const changelogOverlay = document.getElementById('version-history-modal');
+    if (changelogOverlay) {
+      changelogOverlay.addEventListener('click', (e) => {
+        if (e.target === changelogOverlay) closeVersionHistoryModal();
+      });
     }
   }
 

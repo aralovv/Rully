@@ -50,7 +50,7 @@ def test_api_health():
     data = res.json()
     assert data["status"] == "healthy"
     assert data["service"] == "rully-miniapp-api"
-    assert data["version"] == "2.0.0"
+    assert data["version"] == "2.1.0"
 
 # 3. Authentication & User Profile
 def test_auth_telegram_endpoint():
