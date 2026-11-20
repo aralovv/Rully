@@ -28,6 +28,114 @@ SUBSCRIPTION_PLANS = {
 }
 
 
+
+def compute_driver_accuracy(
+    total_answered: int,
+    correct_answers: int,
+    unique_questions: int = 0,
+    unique_correct: int = 0,
+    recent_total: int = 0,
+    recent_correct: int = 0,
+    categories_tested: int = 0,
+    unresolved_mistakes: int = 0,
+    return_details: bool = False
+) -> Union[float, Dict[str, Any]]:
+    """
+    RULLY Multi-Criteria Driver Accuracy Engine (0.0 to 100.0%).
+    
+    Evaluates real driving knowledge precision against 5 intelligent criteria:
+    1. Net Knowledge Accuracy above 25% Random Guessing Threshold (40% weight):
+       Normalizes raw accuracy (R - 25.0) / 70.0 to filter out lucky random clicks.
+    2. Recency Accuracy & Learning Dynamics (30% weight):
+       Evaluates the most recent 40 questions to reward learning curve improvements.
+    3. Distinct Question Mastery (20% weight):
+       Unique correct questions / unique questions tested, preventing repetition cheating.
+    4. Cross-Category Breadth (10% weight):
+       Consistent accuracy across diverse YHQ traffic categories.
+    5. Bayesian Statistical Confidence:
+       Scales with sample size to prevent a 1-question beginner from getting a fake 100% accuracy.
+    """
+    if total_answered <= 0 or correct_answers <= 0:
+        if return_details:
+            return {
+                "accuracy": 0.0,
+                "raw_accuracy": 0.0,
+                "net_knowledge_score": 0.0,
+                "recent_accuracy": 0.0,
+                "distinct_accuracy": 0.0,
+                "confidence_factor": 0.0
+            }
+        return 0.0
+
+    raw_acc = min(100.0, max(0.0, (correct_answers / total_answered) * 100.0))
+
+    # 1. Net Knowledge Accuracy above 25% guessing baseline (40% weight)
+    if raw_acc <= 25.0:
+        net_acc = 0.0
+    else:
+        # Scale 25% -> 95%+ to 0.0 -> 100.0%
+        net_acc = min(100.0, max(0.0, ((raw_acc - 25.0) / 70.0) * 100.0))
+
+    # 2. Recent Accuracy (30% weight)
+    if recent_total > 0:
+        recent_acc = min(100.0, max(0.0, (recent_correct / recent_total) * 100.0))
+    else:
+        recent_acc = raw_acc
+
+    # 3. Distinct Questions Accuracy (20% weight)
+    if unique_questions > 0 and unique_correct > 0:
+        distinct_acc = min(100.0, max(0.0, (unique_correct / unique_questions) * 100.0))
+    else:
+        distinct_acc = raw_acc
+
+    # 4. Cross-Category Balance (10% weight)
+    cat_count = categories_tested if categories_tested is not None else 0
+    cat_factor = min(100.0, (cat_count / 12.0) * 100.0) if cat_count > 0 else distinct_acc
+
+    # Raw multi-criteria composite
+    composite = (
+        0.40 * net_acc +
+        0.30 * recent_acc +
+        0.20 * distinct_acc +
+        0.10 * cat_factor
+    )
+
+    # 5. Statistical Confidence Scaling
+    if total_answered < 5:
+        confidence = 0.40 + (total_answered / 10.0) * 0.20
+    elif total_answered < 20:
+        confidence = 0.60 + ((total_answered - 5) / 15.0) * 0.30
+    elif total_answered < 35:
+        confidence = 0.90 + ((total_answered - 20) / 15.0) * 0.10
+    else:
+        confidence = 1.0
+
+    final_acc = composite * confidence
+
+    # Safeguards:
+    if raw_acc <= 25.0:
+        final_acc = min(final_acc, 8.0)
+    if unresolved_mistakes >= 15:
+        final_acc = min(final_acc, 65.0)
+
+    # For brand new users with 1-2 correct answers, cap at realistic 40%
+    if total_answered <= 3 and correct_answers == total_answered:
+        final_acc = min(final_acc, 40.0)
+
+    final_acc = round(min(100.0, max(0.0, final_acc)), 1)
+
+    if return_details:
+        return {
+            "accuracy": final_acc,
+            "raw_accuracy": round(raw_acc, 1),
+            "net_knowledge_score": round(net_acc, 1),
+            "recent_accuracy": round(recent_acc, 1),
+            "distinct_accuracy": round(distinct_acc, 1),
+            "confidence_factor": round(confidence, 2)
+        }
+    return final_acc
+
+
 def compute_driver_readiness(
     total_exams: int,
     passed_exams: int,
@@ -895,8 +1003,43 @@ class BotDatabase:
                 recent_pass_rate = None
                 avg_exam_time = 0.0
 
+            # Unique questions answered correctly
+            c.execute("""
+            SELECT COUNT(DISTINCT sa.canonical_id)
+            FROM session_answers sa
+            JOIN user_sessions us ON sa.session_id = us.session_id
+            WHERE us.user_id = ? AND sa.is_correct = 1
+            """, (user_id,))
+            uc_row = c.fetchone()
+            unique_correct = (uc_row[0] or 0) if uc_row else 0
+
+            # Recent answers history (last 40 answers)
+            c.execute("""
+            SELECT sa.is_correct
+            FROM session_answers sa
+            JOIN user_sessions us ON sa.session_id = us.session_id
+            WHERE us.user_id = ?
+            ORDER BY sa.id DESC
+            LIMIT 40
+            """, (user_id,))
+            recent_ans_rows = c.fetchall()
+            recent_ans_total = len(recent_ans_rows)
+            recent_ans_correct = sum(r[0] for r in recent_ans_rows if r[0] == 1)
+
             pass_rate = round((passed_exams / total_exams * 100), 1) if total_exams > 0 else 0.0
-            accuracy = round((correct_ans / total_ans * 100), 1) if total_ans > 0 else 0.0
+
+            accuracy_info = compute_driver_accuracy(
+                total_answered=total_ans,
+                correct_answers=correct_ans,
+                unique_questions=unique_qs,
+                unique_correct=unique_correct,
+                recent_total=recent_ans_total,
+                recent_correct=recent_ans_correct,
+                categories_tested=categories_tested,
+                unresolved_mistakes=mistakes_cnt,
+                return_details=True
+            )
+            accuracy = accuracy_info["accuracy"]
 
             readiness_info = compute_driver_readiness(
                 total_exams=total_exams,
@@ -921,6 +1064,7 @@ class BotDatabase:
                 "total_questions_answered": total_ans,
                 "correct_answers": correct_ans,
                 "accuracy": accuracy,
+                "accuracy_details": accuracy_info,
                 "unresolved_mistakes": mistakes_cnt,
                 "resolved_mistakes": resolved_cnt,
                 "unique_questions_tested": unique_qs,

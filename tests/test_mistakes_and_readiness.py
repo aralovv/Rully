@@ -7,7 +7,7 @@ Guarantees that:
 4. Exam Readiness Index does not award 25% to random guessers who never passed an exam.
 """
 import pytest
-from src.bot.database import BotDatabase, compute_driver_readiness
+from src.bot.database import BotDatabase, compute_driver_readiness, compute_driver_accuracy
 
 
 @pytest.fixture
@@ -69,6 +69,70 @@ def test_driver_readiness_zero_passed_hard_cap():
         unresolved_mistakes=0
     )
     assert score <= 20.0, f"Expected readiness cap at 20% for 0 passed exams, got {score}%"
+
+
+def test_driver_accuracy_brand_new_user():
+    acc = compute_driver_accuracy(total_answered=0, correct_answers=0)
+    assert acc == 0.0
+
+
+def test_driver_accuracy_random_guesser():
+    # 200 questions answered, only 50 correct (25% random guessing), 20 unresolved mistakes
+    acc = compute_driver_accuracy(
+        total_answered=200,
+        correct_answers=50,
+        unique_questions=60,
+        unique_correct=15,
+        recent_total=40,
+        recent_correct=10,
+        categories_tested=3,
+        unresolved_mistakes=20
+    )
+    assert acc <= 10.0, f"Expected guessing accuracy <= 10.0%, got {acc}%"
+
+
+def test_driver_accuracy_single_answer_confidence_scaling():
+    # Answering 1 question correctly must NOT give 100% accuracy due to Bayesian sample size confidence!
+    acc = compute_driver_accuracy(
+        total_answered=1,
+        correct_answers=1,
+        unique_questions=1,
+        unique_correct=1
+    )
+    assert acc <= 45.0, f"Single answer must not give fake 100% accuracy, got {acc}%"
+    assert acc > 0.0
+
+
+def test_driver_accuracy_well_prepared_student():
+    # 200 questions, 192 correct, 160 unique, 155 unique correct, recent 40/40, 15 categories
+    acc = compute_driver_accuracy(
+        total_answered=200,
+        correct_answers=192,
+        unique_questions=160,
+        unique_correct=155,
+        recent_total=40,
+        recent_correct=40,
+        categories_tested=15,
+        unresolved_mistakes=0
+    )
+    assert acc >= 95.0, f"Expected high accuracy >= 95.0%, got {acc}%"
+
+
+def test_driver_accuracy_improving_student_recency_lift():
+    # Overall raw is 65% (130/200), but last 40 questions are 38/40 (95%)
+    acc_info = compute_driver_accuracy(
+        total_answered=200,
+        correct_answers=130,
+        unique_questions=140,
+        unique_correct=100,
+        recent_total=40,
+        recent_correct=38,
+        categories_tested=12,
+        unresolved_mistakes=2,
+        return_details=True
+    )
+    assert acc_info["accuracy"] > 65.0, f"Recency trend must lift accuracy above raw 65%, got {acc_info['accuracy']}%"
+    assert acc_info["recent_accuracy"] == 95.0
 
 
 def test_mistakes_bank_strict_isolation_on_unanswered(test_db):

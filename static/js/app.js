@@ -552,27 +552,6 @@
       arcFill.style.strokeDashoffset = `${offset}`;
     }
 
-    // Mini Pillars Strip in Cockpit
-    const examValEl = document.getElementById('pillar-mini-exam-val');
-    if (examValEl) examValEl.textContent = `${details.pillars.exam_mastery}%`;
-    const accValEl = document.getElementById('pillar-mini-acc-val');
-    if (accValEl) accValEl.textContent = `${details.pillars.accuracy}%`;
-    const covValEl = document.getElementById('pillar-mini-cov-val');
-    if (covValEl) covValEl.textContent = `${details.pillars.coverage}%`;
-    const errValEl = document.getElementById('pillar-mini-err-val');
-    if (errValEl) errValEl.textContent = `${details.pillars.mistake_hygiene}%`;
-    const streakValEl = document.getElementById('pillar-mini-streak-val');
-    if (streakValEl) {
-      const streakDays = s.streak || state.streak?.current_streak || 0;
-      streakValEl.textContent = `${streakDays}k`;
-    }
-
-    setPillarDotStatus('pillar-mini-exam', details.pillars.exam_mastery);
-    setPillarDotStatus('pillar-mini-acc', details.pillars.accuracy);
-    setPillarDotStatus('pillar-mini-cov', details.pillars.coverage);
-    setPillarDotStatus('pillar-mini-err', details.pillars.mistake_hygiene);
-    setPillarDotStatus('pillar-mini-streak', details.pillars.pace_and_streak);
-
     // Contextual Description
     const descEl = document.getElementById('readiness-description');
     if (descEl) {
