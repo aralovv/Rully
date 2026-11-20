@@ -589,7 +589,26 @@ class BotDatabase:
             ))
             conn.commit()
 
-        return self.get_session(session_id)
+        return {
+            "session_id": session_id,
+            "user_id": user_id,
+            "session_type": session_type,
+            "category_id": category_id,
+            "language": language,
+            "total_questions": len(question_ids),
+            "current_index": 0,
+            "correct_count": 0,
+            "incorrect_count": 0,
+            "status": "IN_PROGRESS",
+            "start_time": start_t,
+            "time_limit_seconds": time_limit_seconds,
+            "deadline": deadline,
+            "question_ids": question_ids,
+            "show_answer": bool(show_answer),
+            "show_explanation": bool(show_explanation),
+            "created_at": now_ts,
+            "updated_at": now_ts
+        }
 
     def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
         with self._get_connection() as conn:

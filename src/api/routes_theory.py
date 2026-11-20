@@ -129,16 +129,18 @@ async def start_session(
 
     # Select questions according to session type
     question_ids: List[str] = []
+    loaded_questions: List[QuestionItem] = []
     if req.session_type == "EXAM":
         # 20 questions, 25 minutes standard
         session_data = engine.create_exam_session(language=lang)
-        question_ids = [q.canonical_id for q in session_data["questions"]]
+        loaded_questions = session_data["questions"]
+        question_ids = [q.canonical_id for q in loaded_questions]
         time_limit = req.time_limit_seconds if req.time_limit_seconds is not None else (25 * 60)
     elif req.session_type == "CATEGORY":
         if req.category_id is None:
             raise HTTPException(status_code=400, detail="category_id required for CATEGORY session")
-        questions = engine.get_questions_by_category(req.category_id, language=lang, limit=req.total_questions)
-        question_ids = [q.canonical_id for q in questions]
+        loaded_questions = engine.get_questions_by_category(req.category_id, language=lang, limit=req.total_questions)
+        question_ids = [q.canonical_id for q in loaded_questions]
         time_limit = req.time_limit_seconds or 0
     elif req.session_type == "MISTAKES":
         limit = req.total_questions if (req.total_questions and req.total_questions > 0) else 50
@@ -149,11 +151,13 @@ async def start_session(
                 detail="Xatolar banki bo‘sh. Hali xatolar mavjud emas."
             )
         question_ids = mistake_qids
+        loaded_questions = [engine.get_question(qid, language=lang) for qid in question_ids]
+        loaded_questions = [q for q in loaded_questions if q]
         time_limit = 0
     else:  # RANDOM / CUSTOM
         count = req.total_questions or 10
-        random_qs = engine.get_random_practice(count=count, language=lang)
-        question_ids = [q.canonical_id for q in random_qs]
+        loaded_questions = engine.get_random_practice(count=count, language=lang)
+        question_ids = [q.canonical_id for q in loaded_questions]
         time_limit = req.time_limit_seconds or 0
 
     if not question_ids:
@@ -174,11 +178,10 @@ async def start_session(
 
     # Fetch serialized question objects
     bookmarks = set(db.get_user_bookmarks(user_id))
-    questions_list = []
-    for qid in question_ids:
-        q = engine.get_question(qid, language=lang)
-        if q:
-            questions_list.append(serialize_question(q, is_bookmarked=(qid in bookmarks), include_correct=False))
+    questions_list = [
+        serialize_question(q, is_bookmarked=(q.canonical_id in bookmarks), include_correct=False)
+        for q in loaded_questions if q
+    ]
 
     return {
         "session_id": session_info["session_id"],

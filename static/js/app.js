@@ -320,19 +320,31 @@
   }
 
 
-  // 5. API Communications Layer
-  async function apiFetch(endpoint, options = {}) {
+  // 5. API Communications Layer (with automatic retry for cold-starts/network blips)
+  async function apiFetch(endpoint, options = {}, retries = 1) {
     const headers = {
       'Content-Type': 'application/json',
       'X-Telegram-Init-Data': initData,
       ...(options.headers || {})
     };
-    const res = await fetch(endpoint, { ...options, headers });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'API request failed' }));
-      throw new Error(err.detail || `HTTP ${res.status}`);
+    try {
+      const res = await fetch(endpoint, { ...options, headers });
+      if (!res.ok) {
+        if (retries > 0 && [502, 503, 504].includes(res.status)) {
+          await new Promise(r => setTimeout(r, 1500));
+          return apiFetch(endpoint, options, retries - 1);
+        }
+        const err = await res.json().catch(() => ({ detail: 'Server bilan aloqa uzildi. Iltimos, qayta urinib ko‘ring.' }));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      return await res.json();
+    } catch (e) {
+      if (retries > 0 && (e.name === 'TypeError' || (e.message && e.message.includes('fetch')))) {
+        await new Promise(r => setTimeout(r, 1500));
+        return apiFetch(endpoint, options, retries - 1);
+      }
+      throw e;
     }
-    return res.json();
   }
 
   // 6. SVG Icon System Injector
@@ -830,7 +842,7 @@
       } catch (e) {
         console.warn("Polling payment status check error:", e);
       }
-    }, 3000);
+    }, 4000);
   }
 
   // --- RULLY Cobalt Engine Start Loading Controller ---
@@ -960,9 +972,11 @@
     }
 
     applyLocalization();
-    await loadTelemetryData();
-    await loadCategories();
-    await updateSavedQuestionsCount();
+    await Promise.allSettled([
+      loadTelemetryData(),
+      loadCategories(),
+      updateSavedQuestionsCount()
+    ]);
 
     // Dismiss loading screen seamlessly
     dismissLoading();

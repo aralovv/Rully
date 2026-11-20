@@ -79,8 +79,84 @@ class AvtotestProductEngine:
         if not is_turso_enabled() and not os.path.exists(self.db_path):
             raise FileNotFoundError(f"Database not found at {self.db_path}")
 
+        self._cache_questions: Dict[str, Dict[str, Any]] = {}
+        self._cache_categories: List[Dict[str, Any]] = []
+        self._by_category: Dict[int, List[str]] = {}
+        self._all_canonical_ids: List[str] = []
+        self._preload_cache()
+
     def _get_connection(self):
+        if os.path.exists(self.db_path):
+            conn = sqlite3.connect(self.db_path, timeout=15.0, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            return conn
         return get_db_connection(self.db_path)
+
+    def _preload_cache(self):
+        """Loads all static questions, translations, and answers into RAM for zero-latency lookups."""
+        try:
+            with self._get_connection() as conn:
+                c = conn.cursor()
+                # 1. Base canonical questions
+                c.execute("""
+                SELECT cq.canonical_id, cq.category_id, cq.category_name, cq.primary_image_id, cq.has_image,
+                       cq.correct_option_key, cq.legal_reference,
+                       im.local_path as image_local_path
+                FROM canonical_questions cq
+                LEFT JOIN images im ON cq.primary_image_id = im.id
+                ORDER BY cq.canonical_id
+                """)
+                for r in c.fetchall():
+                    cid = r["canonical_id"]
+                    cat_id = r["category_id"] if r["category_id"] is not None else 0
+                    self._cache_questions[cid] = {
+                        "canonical_id": cid,
+                        "category_id": r["category_id"],
+                        "category_name": r["category_name"] or "",
+                        "has_image": bool(r["has_image"]),
+                        "correct_option_key": r["correct_option_key"],
+                        "legal_reference": r["legal_reference"],
+                        "image_local_path": r["image_local_path"] if r["has_image"] else None,
+                        "translations": {},
+                        "answers": []
+                    }
+                    self._by_category.setdefault(cat_id, []).append(cid)
+                    self._all_canonical_ids.append(cid)
+
+                # 2. Translations
+                c.execute("SELECT canonical_id, language, question_text, explanation FROM canonical_translations")
+                for r in c.fetchall():
+                    cid = r["canonical_id"]
+                    if cid in self._cache_questions:
+                        self._cache_questions[cid]["translations"][r["language"]] = {
+                            "question_text": r["question_text"],
+                            "explanation": r["explanation"]
+                        }
+
+                # 3. Answers
+                c.execute("SELECT canonical_id, option_key, text_uz_latn, text_uz_cyrl, text_ru, sort_order FROM canonical_answers ORDER BY sort_order")
+                for r in c.fetchall():
+                    cid = r["canonical_id"]
+                    if cid in self._cache_questions:
+                        self._cache_questions[cid]["answers"].append({
+                            "option_key": r["option_key"],
+                            "text_uz_latn": r["text_uz_latn"],
+                            "text_uz_cyrl": r["text_uz_cyrl"],
+                            "text_ru": r["text_ru"],
+                            "sort_order": r["sort_order"]
+                        })
+
+                # 4. Categories list
+                c.execute("""
+                SELECT COALESCE(cq.category_id, 0) as category_id, cq.category_name, COUNT(*) as question_count
+                FROM canonical_questions cq
+                GROUP BY cq.category_id, cq.category_name
+                ORDER BY COALESCE(cq.category_id, 0)
+                """)
+                self._cache_categories = [dict(r) for r in c.fetchall()]
+        except Exception as e:
+            # If preload fails, fallback to direct DB queries
+            pass
 
     # 1. Language Support
     @staticmethod
@@ -89,6 +165,16 @@ class AvtotestProductEngine:
 
     # 2. Categories
     def get_categories(self, language: str = "uz_latn") -> List[Dict[str, Any]]:
+        if self._cache_categories:
+            return [
+                {
+                    "category_id": r["category_id"],
+                    "name": localize_category(r["category_name"], language),
+                    "question_count": r["question_count"]
+                }
+                for r in self._cache_categories
+            ]
+
         with self._get_connection() as conn:
             c = conn.cursor()
             c.execute("""
@@ -110,6 +196,34 @@ class AvtotestProductEngine:
     def get_question(self, canonical_id: str, language: str = "uz_latn", include_answer_key: bool = False) -> Optional[QuestionItem]:
         if language not in SUPPORTED_LANGUAGES:
             raise ValueError(f"Unsupported language '{language}'. Choose from {list(SUPPORTED_LANGUAGES.keys())}")
+
+        # Serve from memory cache if available
+        if self._cache_questions and canonical_id in self._cache_questions:
+            q = self._cache_questions[canonical_id]
+            tr = q["translations"].get(language, {})
+            lang_col = f"text_{language}"
+            options = [
+                AnswerOption(
+                    option_key=a["option_key"],
+                    text=a.get(lang_col, ""),
+                    sort_order=a["sort_order"]
+                )
+                for a in q["answers"]
+            ]
+
+            return QuestionItem(
+                canonical_id=q["canonical_id"],
+                category_id=q["category_id"],
+                category_name=localize_category(q["category_name"], language),
+                language=language,
+                question_text=tr.get("question_text", ""),
+                options=options,
+                has_image=q["has_image"],
+                image_path=q["image_local_path"],
+                explanation=tr.get("explanation"),
+                legal_reference=localize_legal_reference(q["legal_reference"], language),
+                correct_option_key=q["correct_option_key"] if include_answer_key else None
+            )
 
         with self._get_connection() as conn:
             c = conn.cursor()
@@ -160,6 +274,12 @@ class AvtotestProductEngine:
 
     # 3. Practice by Category
     def get_questions_by_category(self, category_id: int, language: str = "uz_latn", limit: Optional[int] = None) -> List[QuestionItem]:
+        if self._by_category:
+            qids = list(self._by_category.get(category_id, []))
+            if limit:
+                qids = qids[:limit]
+            return [self.get_question(qid, language=language) for qid in qids if qid]
+
         with self._get_connection() as conn:
             c = conn.cursor()
             if category_id == 0:
@@ -178,6 +298,11 @@ class AvtotestProductEngine:
 
     # 4. Random Mixed Practice
     def get_random_practice(self, count: int = 10, language: str = "uz_latn") -> List[QuestionItem]:
+        if self._all_canonical_ids:
+            sample_count = min(count, len(self._all_canonical_ids))
+            qids = random.sample(self._all_canonical_ids, sample_count)
+            return [self.get_question(qid, language=language) for qid in qids]
+
         with self._get_connection() as conn:
             c = conn.cursor()
             c.execute("SELECT canonical_id FROM canonical_questions ORDER BY RANDOM() LIMIT ?", (count,))
@@ -192,10 +317,14 @@ class AvtotestProductEngine:
             cfg.update(config)
 
         total_q = cfg["total_questions"]
-        with self._get_connection() as conn:
-            c = conn.cursor()
-            c.execute("SELECT canonical_id FROM canonical_questions ORDER BY RANDOM() LIMIT ?", (total_q,))
-            qids = [row["canonical_id"] for row in c.fetchall()]
+        if self._all_canonical_ids:
+            sample_count = min(total_q, len(self._all_canonical_ids))
+            qids = random.sample(self._all_canonical_ids, sample_count)
+        else:
+            with self._get_connection() as conn:
+                c = conn.cursor()
+                c.execute("SELECT canonical_id FROM canonical_questions ORDER BY RANDOM() LIMIT ?", (total_q,))
+                qids = [row["canonical_id"] for row in c.fetchall()]
 
         questions = [self.get_question(qid, language=language) for qid in qids]
         session_id = f"EXAM-{int(time.time())}-{random.randint(1000, 9999)}"
@@ -213,6 +342,21 @@ class AvtotestProductEngine:
     # 6. Immediate Feedback on Submitted Answer
     def check_answer(self, canonical_id: str, submitted_key: str, language: str = "uz_latn") -> QuestionFeedback:
         submitted_key = submitted_key.strip().upper()
+
+        if self._cache_questions and canonical_id in self._cache_questions:
+            q = self._cache_questions[canonical_id]
+            tr = q["translations"].get(language, {})
+            correct_key = q["correct_option_key"]
+            is_correct = (submitted_key == correct_key)
+            return QuestionFeedback(
+                canonical_id=canonical_id,
+                submitted_key=submitted_key,
+                correct_key=correct_key,
+                is_correct=is_correct,
+                explanation=tr.get("explanation"),
+                legal_reference=localize_legal_reference(q["legal_reference"], language)
+            )
+
         with self._get_connection() as conn:
             c = conn.cursor()
             c.execute("""

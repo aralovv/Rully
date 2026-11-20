@@ -9,6 +9,7 @@ Handles:
 """
 
 import os
+import time
 import sqlite3
 import secrets
 from datetime import datetime, timedelta
@@ -25,8 +26,28 @@ def _get_connection():
     return get_db_connection(DB_PATH)
 
 
+_cached_card = None
+_cached_card_time = 0.0
+_cached_plans = {}
+_cached_plans_time = 0.0
+
+
+def invalidate_payment_cache():
+    """Forces card and plan caches to refresh on next call."""
+    global _cached_card, _cached_card_time, _cached_plans, _cached_plans_time
+    _cached_card = None
+    _cached_card_time = 0.0
+    _cached_plans = {}
+    _cached_plans_time = 0.0
+
+
 def get_active_monitoring_card() -> Optional[Dict[str, Any]]:
-    """Retrieves the active designated payment card for receiving transfers."""
+    """Retrieves the active designated payment card for receiving transfers (cached 60s)."""
+    global _cached_card, _cached_card_time
+    now = time.time()
+    if _cached_card is not None and (now - _cached_card_time) < 60.0:
+        return _cached_card
+
     with _get_connection() as conn:
         c = conn.cursor()
         c.execute("""
@@ -35,7 +56,22 @@ def get_active_monitoring_card() -> Optional[Dict[str, Any]]:
             ORDER BY id ASC LIMIT 1
         """)
         row = c.fetchone()
-        return dict(row) if row else None
+        _cached_card = dict(row) if row else None
+        _cached_card_time = now
+        return _cached_card
+
+
+def get_subscription_plan(plan_id: str) -> Optional[Dict[str, Any]]:
+    """Retrieves a subscription plan by ID (cached 60s)."""
+    global _cached_plans, _cached_plans_time
+    now = time.time()
+    if not _cached_plans or (now - _cached_plans_time) >= 60.0:
+        with _get_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT * FROM subscription_plans WHERE is_active = 1")
+            _cached_plans = {row["id"]: dict(row) for row in c.fetchall()}
+            _cached_plans_time = now
+    return _cached_plans.get(plan_id)
 
 
 def get_order_by_id(order_id: str) -> Optional[Dict[str, Any]]:
@@ -166,27 +202,23 @@ def create_or_get_payment_order(user_id: int, plan_id: str) -> Tuple[bool, str, 
     4. Unique payment suffix (1..999 UZS) ensuring final_amount is unique on the card.
     5. Immutable order snapshot.
     """
-    # 1. First expire any stale orders in system
-    expire_stale_orders()
+    # 1. Check plan validity (cached)
+    plan = get_subscription_plan(plan_id)
+    if not plan:
+        return False, f"Tanlangan tarif ({plan_id}) mavjud emas yoki faol emas.", None
+
+    # 2. Check active monitoring card (cached)
+    card = get_active_monitoring_card()
+    if not card:
+        return False, "Hozirda to‘lovlarni qabul qiluvchi faol bank kartasi topilmadi. Ma’muriyatga murojaat qiling.", None
+
+    now_dt = datetime.utcnow()
+    now_str = now_dt.isoformat()
 
     with _get_connection() as conn:
         c = conn.cursor()
 
-        # 2. Check plan validity
-        c.execute("SELECT * FROM subscription_plans WHERE id = ? AND is_active = 1", (plan_id,))
-        plan = c.fetchone()
-        if not plan:
-            return False, f"Tanlangan tarif ({plan_id}) mavjud emas yoki faol emas.", None
-
-        # 3. Check active monitoring card
-        card = get_active_monitoring_card()
-        if not card:
-            return False, "Hozirda to‘lovlarni qabul qiluvchi faol bank kartasi topilmadi. Ma’muriyatga murojaat qiling.", None
-
-        now_dt = datetime.utcnow()
-        now_str = now_dt.isoformat()
-
-        # 4. Check user's current pending order
+        # 3. Check user's current pending order
         c.execute("""
             SELECT * FROM payment_orders 
             WHERE user_id = ? AND status = 'PENDING'
