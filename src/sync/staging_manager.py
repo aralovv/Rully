@@ -69,13 +69,22 @@ class StagingManager:
                 t_num = item.ticket_num
                 pos = item.position
 
-                # Check if already staged with PENDING_REVIEW
+                # Check if already staged or approved
                 cur.execute("""
                     SELECT id FROM staged_questions
-                    WHERE source_code = ? AND source_ticket = ? AND source_position = ? AND review_status = 'PENDING_REVIEW';
+                    WHERE source_code = ? AND source_ticket = ? AND source_position = ? AND review_status IN ('PENDING_REVIEW', 'APPROVED');
                 """, (source_code, t_num, pos))
                 if cur.fetchone():
-                    continue  # Already in review queue
+                    continue  # Already in review queue or approved
+
+                # Check if already in canonical database
+                s_id = 1 if source_code.lower() == 'yesprava' else 2
+                cur.execute("""
+                    SELECT question_id FROM question_sources
+                    WHERE source_id = ? AND original_ticket = ? AND original_position = ? LIMIT 1;
+                """, (s_id, t_num, pos))
+                if cur.fetchone():
+                    continue  # Already published into canonical database
 
                 t_cache = ticket_data_cache.get(t_num, {})
                 q_latn = next((q for q in t_cache.get("uz_latn", []) if q.position == pos), item.raw_item)

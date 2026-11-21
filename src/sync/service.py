@@ -25,24 +25,33 @@ class QuestionSyncService:
         self.unifier = IncrementalUnifier(db_path=db_path)
         self.staging = StagingManager(db_path=db_path)
 
+    def _get_connection(self):
+        from src.db_adapter import get_db_connection
+        return get_db_connection(self.db_path)
+
     def get_database_metrics(self) -> Dict[str, int]:
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM canonical_questions;")
-        cq_count = cur.fetchone()[0]
+        row_cq = cur.fetchone()
+        cq_count = row_cq[0] if row_cq else 0
 
         cur.execute("SELECT COUNT(*) FROM canonical_translations;")
-        ct_count = cur.fetchone()[0]
+        row_ct = cur.fetchone()
+        ct_count = row_ct[0] if row_ct else 0
 
         cur.execute("SELECT COUNT(*) FROM images;")
-        img_count = cur.fetchone()[0]
+        row_img = cur.fetchone()
+        img_count = row_img[0] if row_img else 0
 
         cur.execute("SELECT COUNT(DISTINCT original_ticket) FROM question_sources WHERE original_ticket IS NOT NULL;")
-        tickets_count = cur.fetchone()[0]
+        row_tk = cur.fetchone()
+        tickets_count = row_tk[0] if row_tk else 0
 
         try:
             cur.execute("SELECT COUNT(*) FROM staged_questions WHERE review_status = 'PENDING_REVIEW';")
-            staged_count = cur.fetchone()[0]
+            row_st = cur.fetchone()
+            staged_count = row_st[0] if row_st else 0
         except Exception:
             staged_count = 0
 
@@ -78,7 +87,7 @@ class QuestionSyncService:
         If changes are found and auto_stage is True, stages them into the review queue.
         Does NOT publish to production canonical catalog.
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         detector = DiffDetector(conn)
         reports = []
         total_new_questions = 0
