@@ -617,10 +617,10 @@
           : `<b>AI Tavsiyasi:</b> Xatolar bankida <b>${mistakes} ta hal qilinmagan savol</b> mavjud. Ularni qayta ishlab to‘g‘rilang, bu balingizni keskin oshiradi!`));
     } else if (uniqueQs < 300) {
       adviceText = (lang === 'ru'
-        ? `<b>Совет AI:</b> Вы изучили <b>${uniqueQs} из 1 295 вопросов</b> базы. Рекомендуется пройти темы ПДД и режим 'Смешанный тест' для расширения кругозора!`
+        ? `<b>Совет AI:</b> Вы изучили <b>${uniqueQs} из 1 327 вопросов</b> базы. Рекомендуется пройти темы ПДД и режим 'Смешанный тест' для расширения кругозора!`
         : (lang === 'uz_cyrl'
-          ? `<b>AI Тавсияси:</b> Сиз 1 295 та саволдан <b>${uniqueQs} тасини</b> кўриб чиқдингиз. Қамровни кенгайтириш учун мавзули тестлар ва 'Аралаш тест'ни ечинг!`
-          : `<b>AI Tavsiyasi:</b> Siz 1 295 ta savoldan <b>${uniqueQs} tasini</b> ko‘rib chiqdingiz. Qamrovni kengaytirish uchun mavzuli testlar va 'Aralash test'ni yeching!`));
+          ? `<b>AI Тавсияси:</b> Сиз 1 327 та саволдан <b>${uniqueQs} тасини</b> кўриб чиқдингиз. Қамровни кенгайтириш учун мавзули тестлар ва 'Аралаш тест'ни ечинг!`
+          : `<b>AI Tavsiyasi:</b> Siz 1 327 ta savoldan <b>${uniqueQs} tasini</b> ko‘rib chiqdingiz. Qamrovni kengaytirish uchun mavzuli testlar va 'Aralash test'ni yeching!`));
     } else if (accuracy < 85) {
       adviceText = (lang === 'ru'
         ? `<b>Совет AI:</b> Точность ответов составляет <b>${accuracy}%</b>. На реальном экзамене допускается всего 2 ошибки (90%+). Читайте вопросы внимательнее и не спешите!`
@@ -697,7 +697,7 @@
           <div class="diag-pillar-progress-fill" style="width: ${details.pillars.coverage}%;"></div>
         </div>
         <p class="diag-pillar-desc">${t('pillar_cov_desc')}</p>
-        <span class="diag-pillar-metric-tag">${s.unique_questions_tested || 0} / 1 295 savol • ${s.categories_tested || 0} / 43 mavzu</span>
+        <span class="diag-pillar-metric-tag">${s.unique_questions_tested || 0} / 1 327 savol • ${s.categories_tested || 0} / 43 mavzu</span>
       </div>
 
       <!-- Pillar 4: Mistakes -->
@@ -1051,21 +1051,21 @@
         uz_latn: [
           "💳 <b>Avtomatik to‘lov:</b> To‘lov tushishi bilan PRO obuna darhol avtomatik faollashadi.",
           "🎨 <b>Yangi qulay interfeys:</b> Zamonaviy dizayn va bo‘limlar bo‘ylab qulay harakatlanish.",
-          "🚗 <b>YHQ Davlat standarti:</b> 1 295 ta rasmiy test savollari, 63 ta bilet va 43 ta tematik toifalar to‘liq bazasi.",
+          "🚗 <b>YHQ Davlat standarti:</b> 1 327 ta rasmiy test savollari, 64 ta bilet va 43 ta tematik toifalar to‘liq bazasi.",
           "📊 <b>Xatolar ustida ishlash:</b> Xato qilingan savollarni alohida mashq qilish va natijalarni kuzatish.",
           "💡 <b>Imtihon shpargalkasi:</b> YHQ qoidalari bo‘yicha muhim eslatmalar va yo‘l belgilari."
         ],
         uz_cyrl: [
           "💳 <b>Автоматик тўлов:</b> Тўлов тушиши билан PRO обуна дарҳол автоматик фаоллашади.",
           "🎨 <b>Янги қулай интерфейс:</b> Замонавий дизайн ва бўлимлар бўйлаб қулай ҳаракатланиш.",
-          "🚗 <b>ЙҲҚ Давлат стандарти:</b> 1 295 та расмий тест саволлари, 63 та билет ва 43 та тематик бўлимлар тўлиқ базаси.",
+          "🚗 <b>ЙҲҚ Давлат стандарти:</b> 1 327 та расмий тест саволлари, 64 та билет ва 43 та тематик бўлимлар тўлиқ базаси.",
           "📊 <b>Хатолар устида ишлаш:</b> Хато қилинган саволларни алоҳида машқ қилиш ва натижаларни кузатиш.",
           "💡 <b>Имтиҳон шпаргалкаси:</b> ЙҲҚ қоидалари бўйича муҳим эслатмалар ва йўл белгилари."
         ],
         ru: [
           "💳 <b>Автоматическая оплата:</b> Мгновенная активация PRO подписки после поступления оплаты.",
           "🎨 <b>Новый удобный интерфейс:</b> Современный темный дизайн и быстрое переключение разделов.",
-          "🚗 <b>Стандарт ПДД:</b> Полная база из 1 295 официальных вопросов, 63 билетов и 43 тематических категорий.",
+          "🚗 <b>Стандарт ПДД:</b> Полная база из 1 327 официальных вопросов, 64 билетов и 43 тематических категорий.",
           "📊 <b>Работа над ошибками:</b> Отдельная тренировка неверных ответов и отслеживание прогресса.",
           "💡 <b>Шпаргалка к экзамену:</b> Полезные подсказки по правилам и дорожным знакам."
         ]
@@ -1103,12 +1103,12 @@
       {
         icon: "🏛️",
         title: "1. Platforma haqida umumiy maʼlumot",
-        text: "<b>RULLY</b> — haydovchilik guvohnomasini olishga tayyorlanayotgan fuqarolar va avtomaktab o‘quvchilari uchun O‘zbekiston Respublikasi IIV Jamoat xavfsizligi departamenti YHXX davlat imtihonlari andozasi asosida yaratilgan intellektual tayyorgarlik platformasi. Tizim 1 295 ta rasmiy test savollari, 63 ta bilet, 43 ta tematik toifalar, davlat imtihoni simulyatori, amaliy avtodrom ko‘nikmalari va AI Ustoz tahlillarini o‘z ichiga oladi."
+        text: "<b>RULLY</b> — haydovchilik guvohnomasini olishga tayyorlanayotgan fuqarolar va avtomaktab o‘quvchilari uchun O‘zbekiston Respublikasi IIV Jamoat xavfsizligi departamenti YHXX davlat imtihonlari andozasi asosida yaratilgan intellektual tayyorgarlik platformasi. Tizim 1 327 ta rasmiy test savollari, 64 ta bilet, 43 ta tematik toifalar, davlat imtihoni simulyatori, amaliy avtodrom ko‘nikmalari va AI Ustoz tahlillarini o‘z ichiga oladi."
       },
       {
         icon: "🎯",
         title: "2. Tayyorgarlik darajasi va O‘tish ko‘rsatkichi farqi",
-        text: "• <b>Tayyorgarlik darajasi (Spidometr):</b> Bu sizning haqiqiy davlat imtihoniga umumiy tayyorlik ko‘rsatkichingiz. U 5 ta aqlli mezon (Imtihonlar dinamikasi 30%, Aniq bilim 25%, 1 295 ta savol qamrovi 25%, Xatolar banki gigiyenasi 10%, Muntazamlik va vaqt 10%) asosida yaxlit hisoblanadi.<br>• <b>O‘tish ko‘rsatkichi (Muvaffaqiyatli imtihonlar):</b> Bu siz topshirgan barcha imtihonlarning nechtasidan o‘tganingizni ko‘rsatuvchi sof statistik fakt (masalan: 12 ta imtihondan 1 tasidan o‘tgan bo‘lsangiz — 8.3%). Shu sababli bu ikki ko‘rsatkich bir xil bo‘lmaydi."
+        text: "• <b>Tayyorgarlik darajasi (Spidometr):</b> Bu sizning haqiqiy davlat imtihoniga umumiy tayyorlik ko‘rsatkichingiz. U 5 ta aqlli mezon (Imtihonlar dinamikasi 30%, Aniq bilim 25%, 1 327 ta savol qamrovi 25%, Xatolar banki gigiyenasi 10%, Muntazamlik va vaqt 10%) asosida yaxlit hisoblanadi.<br>• <b>O‘tish ko‘rsatkichi (Muvaffaqiyatli imtihonlar):</b> Bu siz topshirgan barcha imtihonlarning nechtasidan o‘tganingizni ko‘rsatuvchi sof statistik fakt (masalan: 12 ta imtihondan 1 tasidan o‘tgan bo‘lsangiz — 8.3%). Shu sababli bu ikki ko‘rsatkich bir xil bo‘lmaydi."
       },
       {
         icon: "🎓",
@@ -1155,12 +1155,12 @@
       {
         icon: "🏛️",
         title: "1. Платформа ҳақида умумий маълумот",
-        text: "<b>RULLY</b> — ҳайдовчилик гувоҳномасини олишга тайёрланаётган фуқаролар ва автомактаб ўқувчилари учун Ўзбекистон Республикаси ИИВ ЙҲХХ давлат имтиҳонлари андозаси асосида яратилган интеллектуал тайёргарлик платформаси. Тизим 1 295 та расмий тест саволлари, 63 та билет, 43 та тематик бўлимлар, давлат имтиҳони симулятори, амалий автодром кўникмалари ва AI Устоз таҳлилларини ўз ичига олади."
+        text: "<b>RULLY</b> — ҳайдовчилик гувоҳномасини олишга тайёрланаётган фуқаролар ва автомактаб ўқувчилари учун Ўзбекистон Республикаси ИИВ ЙҲХХ давлат имтиҳонлари андозаси асосида яратилган интеллектуал тайёргарлик платформаси. Тизим 1 327 та расмий тест саволлари, 64 та билет, 43 та тематик бўлимлар, давлат имтиҳони симулятори, амалий автодром кўникмалари ва AI Устоз таҳлилларини ўз ичига олади."
       },
       {
         icon: "🎯",
         title: "2. Тайёргарлик даражаси ва Ўтиш кўрсаткичи фарқи",
-        text: "• <b>Тайёргарлик даражаси (Спидометр):</b> Бу сизнинг ҳақиқий давлат имтиҳонига умумий тайёрлик кўрсаткичингиз. У 5 та ақлли мезон (Имтиҳонлар динамикаси 30%, Аниқ билим 25%, 1 295 та савол қамрови 25%, Хатолар банки гигиенаси 10%, Мунтазамлик ва вақт 10%) асосида яхлит ҳисобланади.<br>• <b>Ўтиш кўрсаткичи (Муваффақиятли имтиҳонлар):</b> Бу сиз топширган барча имтиҳонларнинг нечтасидан ўтганингизни кўрсатувчи соф статистик факт (масалан: 12 та имтиҳондан 1 тасидан ўтган бўлсангиз — 8.3%). Шу сабабли бу икки кўрсаткич бир хил бўлмайди."
+        text: "• <b>Тайёргарлик даражаси (Спидометр):</b> Бу сизнинг ҳақиқий давлат имтиҳонига умумий тайёрлик кўрсаткичингиз. У 5 та ақлли мезон (Имтиҳонлар динамикаси 30%, Аниқ билим 25%, 1 327 та савол қамрови 25%, Хатолар банки гигиенаси 10%, Мунтазамлик ва вақт 10%) асосида яхлит ҳисобланади.<br>• <b>Ўтиш кўрсаткичи (Муваффақиятли имтиҳонлар):</b> Бу сиз топширган барча имтиҳонларнинг нечтасидан ўтганингизни кўрсатувчи соф статистик факт (масалан: 12 та имтиҳондан 1 тасидан ўтган бўлсангиз — 8.3%). Шу сабабли бу икки кўрсаткич бир хил бўлмайди."
       },
       {
         icon: "🎓",
@@ -1207,12 +1207,12 @@
       {
         icon: "🏛️",
         title: "1. Общая информация о платформе",
-        text: "<b>RULLY</b> — интеллектуальная интерактивная платформа для подготовки к экзаменам на получение водительского удостоверения по стандартам СБДД МВД Республики Узбекистан. Включает 1 295 официальных вопросов, 63 билета, 43 тематические категории, симулятор экзамена, модуль автодрома и аналитику от AI Наставника."
+        text: "<b>RULLY</b> — интеллектуальная интерактивная платформа для подготовки к экзаменам на получение водительского удостоверения по стандартам СБДД МВД Республики Узбекистан. Включает 1 327 официальных вопросов, 64 билета, 43 тематические категории, симулятор экзамена, модуль автодрома и аналитику от AI Наставника."
       },
       {
         icon: "🎯",
         title: "2. Разница между Уровнем готовности и Процентом сдачи",
-        text: "• <b>Уровень готовности (Спидометр):</b> Комплексная оценка готовности к госэкзамену по 5 критериям (Динамика экзаменов 30%, Точность знаний 25%, Охват 1 295 вопросов 25%, Гигиена банка ошибок 10%, Регулярность и темп 10%).<br>• <b>Процент сдачи (Успешные попытки):</b> Сухой исторический процент успешно сданных экзаменов от общего числа попыток (например: сдан 1 из 12 экзаменов = 8.3%). Поэтому эти две цифры различаются."
+        text: "• <b>Уровень готовности (Спидометр):</b> Комплексная оценка готовности к госэкзамену по 5 критериям (Динамика экзаменов 30%, Точность знаний 25%, Охват 1 327 вопросов 25%, Гигиена банка ошибок 10%, Регулярность и темп 10%).<br>• <b>Процент сдачи (Успешные попытки):</b> Сухой исторический процент успешно сданных экзаменов от общего числа попыток (например: сдан 1 из 12 экзаменов = 8.3%). Поэтому эти две цифры различаются."
       },
       {
         icon: "🎓",

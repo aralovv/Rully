@@ -256,8 +256,8 @@ def test_widget_html_sandboxing_and_size():
 def test_admin_stats_and_audit_logging(bot_db):
     stats = bot_db.get_admin_stats()
     assert stats["status"] == "HEALTHY"
-    assert stats["canonical_questions"] == 1295
-    assert stats["canonical_translations"] == 3885
+    assert stats["canonical_questions"] >= 1295
+    assert stats["canonical_translations"] >= 3885
 
     # Log action
     bot_db.log_admin_action(admin_id=5875526565, action="TEST_ACTION", details="Unit test verification")

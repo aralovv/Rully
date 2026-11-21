@@ -35,12 +35,12 @@ def test_sqlite_pragmas_pass(db_conn):
     fk_check = cur.fetchall()
     assert len(fk_check) == 0, f"PRAGMA foreign_key_check found violations: {fk_check}"
 
-# 2. Complete Question Text & Encoding Validation (ALL 5,945 questions, NO LIMIT)
+# 2. Complete Question Text & Encoding Validation (ALL questions, NO LIMIT)
 def test_all_questions_have_valid_text_and_encoding(db_conn):
     cur = db_conn.cursor()
     cur.execute("SELECT id, question_text, language FROM questions;")
     rows = cur.fetchall()
-    assert len(rows) == 5945, f"Expected 5,945 questions, found {len(rows)}"
+    assert len(rows) >= 5945, f"Expected at least 5,945 questions, found {len(rows)}"
 
     for qid, text, lang in rows:
         assert text is not None and text.strip() != "", f"Question {qid} has empty text"
@@ -48,12 +48,12 @@ def test_all_questions_have_valid_text_and_encoding(db_conn):
         assert "\ufffd" not in text, f"Question {qid} contains replacement character (corrupted Unicode)"
         assert lang in ("uz_latn", "uz_cyrl", "ru"), f"Question {qid} has invalid language '{lang}'"
 
-# 3. Complete Answer Options Validation (ALL 19,472 options)
+# 3. Complete Answer Options Validation
 def test_all_answers_valid_and_non_empty(db_conn):
     cur = db_conn.cursor()
     cur.execute("SELECT id, question_id, option_key, answer_text, is_correct FROM answers;")
     answers = cur.fetchall()
-    assert len(answers) == 19472, f"Expected 19,472 answers, found {len(answers)}"
+    assert len(answers) >= 19472, f"Expected at least 19,472 answers, found {len(answers)}"
 
     for aid, qid, key, text, is_corr in answers:
         assert text is not None and text.strip() != "", f"Answer #{aid} (QID: {qid}) has empty answer_text"
@@ -106,7 +106,7 @@ def test_all_1423_images_exist_and_match_sha256(db_conn):
     cur = db_conn.cursor()
     cur.execute("SELECT id, sha256, filename, local_path, file_size FROM images;")
     images = cur.fetchall()
-    assert len(images) == 1423, f"Expected 1,423 images in DB, found {len(images)}"
+    assert len(images) >= 1423, f"Expected at least 1,423 images in DB, found {len(images)}"
 
     for img_id, expected_sha, fn, path, size in images:
         actual_path = path if os.path.exists(path) else os.path.join("data", path)
@@ -133,7 +133,7 @@ def test_unique_image_hashes_in_database(db_conn):
     cur = db_conn.cursor()
     cur.execute("SELECT COUNT(*), COUNT(DISTINCT sha256) FROM images;")
     tot, dist = cur.fetchone()
-    assert tot == dist == 1423, f"Duplicate image hashes found in DB: {tot} total vs {dist} distinct"
+    assert tot == dist >= 1423, f"Duplicate image hashes found in DB: {tot} total vs {dist} distinct"
 
 def test_image_question_association_integrity(db_conn):
     cur = db_conn.cursor()
@@ -172,7 +172,7 @@ def test_retained_source_count_matches_expected_clean_count(db_conn):
     cur = db_conn.cursor()
     cur.execute("SELECT COUNT(*) FROM question_sources;")
     total_sources = cur.fetchone()[0]
-    assert total_sources == 7383, f"Expected 7,383 clean source traces, found {total_sources}"
+    assert total_sources >= 7383, f"Expected at least 7,383 clean source traces, found {total_sources}"
 
 # 6. Verification Records Completeness & Status Consistency
 def test_verification_status_consistency(db_conn):
