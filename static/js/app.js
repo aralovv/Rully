@@ -1649,8 +1649,17 @@
       });
     }
 
+    // Safety watchdog: guarantee dismissal within 3500ms even on degraded networks
+    let isDismissed = false;
+    const safetyWatchdog = setTimeout(() => {
+      dismissLoadingScreen();
+    }, 3500);
+
     // Return completion function
-    return function dismissLoadingScreen() {
+    function dismissLoadingScreen() {
+      if (isDismissed) return;
+      isDismissed = true;
+      clearTimeout(safetyWatchdog);
       const elapsed = Date.now() - startTime;
       const remaining = Math.max(0, MIN_DISPLAY_MS - elapsed);
 
@@ -1667,7 +1676,9 @@
           }, 550);
         }, 220);
       }, remaining);
-    };
+    }
+
+    return dismissLoadingScreen;
   }
 
   // 8. Application Bootstrap
@@ -2520,39 +2531,18 @@
           finishQuiz(true);
         }, 500);
       }
-    } catch (e) {
-      console.error("Answer submission failed", e);
-    } finally {
-      state.quiz.isSubmitting = false;
-    }
-          const answeredCount = Object.keys(state.quiz.answers).length;
-          if (answeredCount >= state.quiz.questions.length) {
-            const finishBtn = document.getElementById('btn-exam-finish');
-            if (finishBtn) {
-              finishBtn.classList.add('pulse-highlight');
-            }
+
+      // In practice mode, smoothly scroll explanation into view
+      if (state.quiz.showExplanation !== false) {
+        setTimeout(() => {
+          const fbBoxEl = document.getElementById('quiz-feedback-box');
+          if (fbBoxEl && fbBoxEl.classList.contains('active')) {
+            fbBoxEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
           }
-          // Smoothly scroll explanation into view so user can comfortably read it to the end
-          setTimeout(() => {
-            const fbBoxEl = document.getElementById('quiz-feedback-box');
-            if (fbBoxEl && fbBoxEl.classList.contains('active')) {
-              fbBoxEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
-            }
-          }, 120);
-        }
-      } else {
-        // Practice modes (CATEGORY, MISTAKES): smoothly scroll to explanation if shown
-        if (state.quiz.showExplanation !== false) {
-          setTimeout(() => {
-            const fbBoxEl = document.getElementById('quiz-feedback-box');
-            if (fbBoxEl && fbBoxEl.classList.contains('active')) {
-              fbBoxEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
-            }
-          }, 120);
-        }
+        }, 120);
       }
     } catch (e) {
-      console.error("Submit answer error", e);
+      console.error("Answer submission failed", e);
     } finally {
       state.quiz.isSubmitting = false;
     }
