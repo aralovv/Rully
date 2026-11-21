@@ -31,25 +31,16 @@ async def auth_telegram(req: TelegramAuthRequest, db: BotDatabase = Depends(get_
     if not user_id:
         raise HTTPException(status_code=400, detail="Missing user ID")
 
-    user = db.get_or_create_user(
+    bundle = db.get_user_full_auth_bundle(
         user_id=user_id,
         username=user_data.get("username"),
         first_name=user_data.get("first_name", "Haydovchi"),
         last_name=user_data.get("last_name", "")
     )
 
-    streak = db.get_learning_streak(user_id)
-    stats = db.get_user_stats(user_id)
-    subscription = db.get_user_subscription(user_id)
-    free_tier = db.get_user_free_tier_status(user_id)
-
     return {
         "ok": True,
-        "user": user,
-        "subscription": subscription,
-        "free_tier": free_tier,
-        "streak": streak,
-        "stats": stats
+        **bundle
     }
 
 @router.get("/user/me")

@@ -1605,7 +1605,7 @@
     if (!screenEl) return () => {};
 
     const startTime = Date.now();
-    const MIN_DISPLAY_MS = 1350; // smooth engine start animation minimum window
+    const MIN_DISPLAY_MS = 650; // smooth engine start animation window (reduced for ultra-snappy load)
 
     // Step 1: Initial state & smooth arc progression
     if (arcProgressEl) {
@@ -1695,6 +1695,33 @@
     } catch (e) {}
     applyLocalization();
 
+    // 0ms Synchronous Hydration from Telegram WebApp SDK (never flash default names)
+    const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+    if (tgUser && (tgUser.first_name || tgUser.username)) {
+      state.user = {
+        first_name: tgUser.first_name || tgUser.username,
+        username: tgUser.username || '',
+        user_id: tgUser.id,
+        language: state.lang
+      };
+      updateDriverProfileUI();
+    }
+
+    // 0ms Synchronous Hydration from local cached profile & stats
+    try {
+      const cachedBundle = localStorage.getItem('rully_auth_bundle');
+      if (cachedBundle) {
+        const bundle = JSON.parse(cachedBundle);
+        if (bundle.user) state.user = { ...(state.user || {}), ...bundle.user };
+        if (bundle.subscription) state.subscription = bundle.subscription;
+        if (bundle.free_tier) state.free_tier = bundle.free_tier;
+        if (bundle.stats) state.stats = { stats: bundle.stats, streak: bundle.streak };
+        updateDriverProfileUI();
+        updateSubscriptionUI();
+        applyTelemetryUI(bundle);
+      }
+    } catch (e) {}
+
     const dismissLoading = initLoadingScreen();
     injectSvgIcons();
     setupEventListeners();
@@ -1715,6 +1742,7 @@
       state.free_tier = authRes.free_tier || { is_pro: false, has_access: true, remaining_exams: 2 };
       state.lang = authRes.user.language || state.lang || 'uz_latn';
       try { localStorage.setItem('rully_lang', state.lang); } catch (e) {}
+      try { localStorage.setItem('rully_auth_bundle', JSON.stringify(authRes)); } catch (e) {}
       state.stats = {
         stats: authRes.stats,
         streak: authRes.streak
@@ -1726,11 +1754,13 @@
       updateDriverProfileUI();
     } catch (e) {
       console.warn("Auth initialization error, using fallback session:", e);
-      initData = "dev_user_8809526955";
-      state.user = { first_name: "Haydovchi", username: "kurs_savdo", language: state.lang || "uz_latn" };
-      state.subscription = { is_pro: false, tier: 'free' };
-      updateDriverProfileUI();
-      updateSubscriptionUI();
+      if (!state.user) {
+        initData = "dev_user_8809526955";
+        state.user = { first_name: "Haydovchi", username: "kurs_savdo", language: state.lang || "uz_latn" };
+        state.subscription = { is_pro: false, tier: 'free' };
+        updateDriverProfileUI();
+        updateSubscriptionUI();
+      }
     }
 
     applyLocalization();
@@ -2420,14 +2450,14 @@
     }
   }
 
-  const MIN_ANSWER_COOLDOWN_MS = 260; // 260ms cooldown prevents accidental rapid clicks / double-taps
+  const MIN_ANSWER_COOLDOWN_MS = 70; // 70ms debounce avoids duplicate rapid taps without lagging real user action
 
   async function submitAnswer(canonicalId, selectedKey) {
     if (!state.quiz.active) return;
     if (state.quiz.isSubmitting) return;
     if (state.quiz.answers && state.quiz.answers[canonicalId]) return;
 
-    // Cooldown check: ignore taps that land within 260ms of question render
+    // Cooldown check: ignore taps that land within 70ms of question render
     const now = Date.now();
     if (state.quiz.questionRenderedAt && (now - state.quiz.questionRenderedAt < MIN_ANSWER_COOLDOWN_MS)) {
       return;
@@ -2435,90 +2465,125 @@
 
     state.quiz.isSubmitting = true;
 
+    // Resolve question & immediate answer verification in 0ms (no server wait!)
+    const q = (state.quiz.questions && state.quiz.questions.find(item => item.canonical_id === canonicalId)) || (state.quiz.questions ? state.quiz.questions[state.quiz.currentIndex] : null);
+    const correctKey = (q && q.correct_option_key) ? q.correct_option_key.toUpperCase() : null;
+    const isCorrect = (correctKey !== null) ? (selectedKey.toUpperCase() === correctKey) : null;
+
     // 1. Instant visual feedback: immediately highlight clicked card & disable options
     const optionsWrap = document.getElementById('quiz-options-list');
     if (optionsWrap) {
       const cards = optionsWrap.querySelectorAll('.tactical-option-card');
       cards.forEach(c => {
         c.style.pointerEvents = 'none';
-        if (c.getAttribute('data-key') === selectedKey) {
-          c.classList.add('selected');
+        const cardKey = c.getAttribute('data-key');
+        if (state.quiz.showAnswer !== false && isCorrect !== null) {
+          if (cardKey === selectedKey) {
+            c.classList.add(isCorrect ? 'correct' : 'wrong');
+          } else if (!isCorrect && cardKey === correctKey) {
+            c.classList.add('correct');
+          }
+        } else {
+          if (cardKey === selectedKey) {
+            c.classList.add('selected');
+          }
         }
       });
     }
 
-    triggerHaptic('impact', 'medium');
+    triggerHaptic(isCorrect === false ? 'notification' : 'impact', isCorrect === false ? 'error' : 'medium');
+
+    // Optimistically record verified answer immediately (0ms)
+    state.quiz.answers[canonicalId] = {
+      canonical_id: canonicalId,
+      selected_key: selectedKey,
+      correct_key: correctKey,
+      is_correct: isCorrect,
+      explanation: q ? q.explanation : '',
+      legal_reference: q ? q.legal_reference : ''
+    };
 
     const isTerminalMode = (state.quiz.sessionType === 'EXAM' || (state.quiz.sessionType === 'CUSTOM' && !state.quiz.showExplanation));
 
-    // 2. Terminal mode (Official EXAM or fast practice): optimistic advance with lock
-    if (isTerminalMode) {
-      // Optimistically record answer
-      state.quiz.answers[canonicalId] = {
-        canonical_id: canonicalId,
-        selected_key: selectedKey,
-        is_correct: null
-      };
-
-      // Instantly mark current number box in matrix navigation as answered
-      const curBox = document.querySelector(`.exam-box-item[data-idx="${state.quiz.currentIndex}"]`);
-      if (curBox) {
-        curBox.classList.remove('unanswered', 'correct', 'wrong');
+    // Instantly mark current number box in matrix navigation as correct / wrong / answered
+    const curBox = document.querySelector(`.exam-box-item[data-idx="${state.quiz.currentIndex}"]`);
+    if (curBox) {
+      curBox.classList.remove('unanswered', 'answered', 'correct', 'wrong');
+      if (state.quiz.showAnswer !== false && isCorrect !== null) {
+        curBox.classList.add(isCorrect ? 'correct' : 'wrong');
+      } else {
         curBox.classList.add('answered');
       }
+    }
 
-      // Background asynchronous sync to backend
-      apiFetch('/api/session/answer', {
-        method: 'POST',
-        body: JSON.stringify({
-          session_id: state.quiz.sessionId,
-          canonical_id: canonicalId,
-          selected_key: selectedKey,
-          language: state.lang
-        })
-      }).then(res => {
-        if (!state.quiz.active) return;
-        if (state.quiz.answers) {
-          state.quiz.answers[canonicalId] = res;
-
-          // Directly sync the corresponding matrix box to avoid any stale state
-          const targetIdx = state.quiz.questions.findIndex(q => q.canonical_id === canonicalId);
-          if (targetIdx !== -1) {
-            const boxEl = document.querySelector(`.exam-box-item[data-idx="${targetIdx}"]`);
-            if (boxEl) {
-              boxEl.classList.remove('answered', 'unanswered', 'correct', 'wrong');
-              if (state.quiz.showAnswer !== false) {
-                boxEl.classList.add(res.is_correct ? 'correct' : 'wrong');
-              } else {
-                boxEl.classList.add('answered');
-              }
-            }
-          }
+    // Track mistakes locally for instant termination
+    if (isCorrect === false && state.quiz.sessionType === 'EXAM') {
+      state.quiz.incorrectCount = (state.quiz.incorrectCount || 0) + 1;
+      if (state.quiz.incorrectCount >= 3) {
+        state.quiz.active = false;
+        if (state.quiz.advanceTimeout) {
+          clearTimeout(state.quiz.advanceTimeout);
+          state.quiz.advanceTimeout = null;
         }
-        // Immediate termination if 3rd mistake reached
-        if (state.quiz.sessionType === 'EXAM' && res.is_exam_terminated) {
-          state.quiz.active = false;
-          if (state.quiz.advanceTimeout) {
-            clearTimeout(state.quiz.advanceTimeout);
-            state.quiz.advanceTimeout = null;
-          }
-          triggerHaptic('notification', 'error');
-          if (typeof showToast === 'function') {
-            showToast(t('res_exam_terminated_toast') || 'Imtihon to‘xtatildi: 2 tadan ortiq xato qilindi!');
-          }
-          finishQuiz(true);
+        triggerHaptic('notification', 'error');
+        if (typeof showToast === 'function') {
+          showToast(t('res_exam_terminated_toast') || 'Imtihon to‘xtatildi: 2 tadan ortiq xato qilindi!');
         }
-      }).catch(err => {
-        console.error("Background answer sync error:", err);
-      });
+        finishQuiz(true);
+        // Background sync to server
+        apiFetch('/api/session/answer', {
+          method: 'POST',
+          body: JSON.stringify({
+            session_id: state.quiz.sessionId,
+            canonical_id: canonicalId,
+            selected_key: selectedKey,
+            language: state.lang
+          })
+        }).catch(e => console.warn(e));
+        return;
+      }
+    }
 
-      // Clear any prior advance timeout
+    // Background asynchronous sync to backend (non-blocking)
+    apiFetch('/api/session/answer', {
+      method: 'POST',
+      body: JSON.stringify({
+        session_id: state.quiz.sessionId,
+        canonical_id: canonicalId,
+        selected_key: selectedKey,
+        language: state.lang
+      })
+    }).then(res => {
+      if (state.quiz.answers) {
+        state.quiz.answers[canonicalId] = {
+          ...state.quiz.answers[canonicalId],
+          ...res
+        };
+      }
+      // Immediate termination if 3rd mistake confirmed by backend
+      if (state.quiz.sessionType === 'EXAM' && res.is_exam_terminated && state.quiz.active) {
+        state.quiz.active = false;
+        if (state.quiz.advanceTimeout) {
+          clearTimeout(state.quiz.advanceTimeout);
+          state.quiz.advanceTimeout = null;
+        }
+        triggerHaptic('notification', 'error');
+        if (typeof showToast === 'function') {
+          showToast(t('res_exam_terminated_toast') || 'Imtihon to‘xtatildi: 2 tadan ortiq xato qilindi!');
+        }
+        finishQuiz(true);
+      }
+    }).catch(err => {
+      console.warn("Background answer sync error:", err);
+    });
+
+    // 2. Terminal mode (Official EXAM or fast practice): instant advance after 100ms micro-delay
+    if (isTerminalMode) {
       if (state.quiz.advanceTimeout) {
         clearTimeout(state.quiz.advanceTimeout);
         state.quiz.advanceTimeout = null;
       }
 
-      // Advance to next unanswered question after 180ms micro-delay
       state.quiz.advanceTimeout = setTimeout(() => {
         if (!state.quiz.active) return;
         let nextUnanswered = -1;
@@ -2541,58 +2606,39 @@
             finishBtn.classList.add('pulse-highlight');
           }
         }
-      }, 180);
-
+      }, 100);
       return;
     }
 
-    // 3. Regular practice mode (with instant explanation feedback)
-    state.quiz.isSubmitting = true;
-    try {
-      const res = await apiFetch('/api/session/answer', {
-        method: 'POST',
-        body: JSON.stringify({
-          session_id: state.quiz.sessionId,
-          canonical_id: canonicalId,
-          selected_key: selectedKey,
-          language: state.lang
-        })
-      });
-
-      state.quiz.answers[canonicalId] = res;
-
-      if (res.is_correct) {
-        triggerHaptic('notification', 'success');
+    // 3. Regular practice mode: show explanation drawer immediately (0ms)
+    state.quiz.isSubmitting = false;
+    const fbBox = document.getElementById('quiz-feedback-box');
+    if (fbBox && state.quiz.showExplanation !== false && state.quiz.sessionType !== 'EXAM') {
+      fbBox.classList.add('active');
+      fbBox.style.display = 'block';
+      const headerTitle = fbBox.querySelector('.statutory-header');
+      if (headerTitle) {
+        const iconSvg = window.renderIcon ? window.renderIcon(isCorrect ? 'checkCircle' : 'xCircle') : '';
+        headerTitle.innerHTML = `<span class="r-icon sm">${iconSvg}</span> <span>${isCorrect ? t('correct_badge') : t('wrong_badge')}</span>`;
+      }
+      if (isCorrect) {
+        fbBox.classList.remove('wrong');
+        fbBox.classList.add('correct');
       } else {
-        triggerHaptic('notification', 'error');
+        fbBox.classList.remove('correct');
+        fbBox.classList.add('wrong');
       }
+      const clauseEl = document.getElementById('feedback-clause-text');
+      if (clauseEl) clauseEl.textContent = q?.legal_reference ? `${t('rule_clause')} ${q.legal_reference}` : '';
+      const descEl = document.getElementById('feedback-desc-text');
+      if (descEl) descEl.textContent = q?.explanation || '';
 
-      renderCurrentQuestion();
-
-      if (state.quiz.sessionType === 'EXAM' && res.is_exam_terminated) {
-        triggerHaptic('notification', 'error');
-        if (typeof showToast === 'function') {
-          showToast(t('res_exam_terminated_toast') || 'Imtihon to‘xtatildi: 2 tadan ortiq xato qilindi!');
+      setTimeout(() => {
+        const fbBoxEl = document.getElementById('quiz-feedback-box');
+        if (fbBoxEl && fbBoxEl.classList.contains('active')) {
+          fbBoxEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
         }
-        setTimeout(() => {
-          if (!state.quiz.active) return;
-          finishQuiz(true);
-        }, 500);
-      }
-
-      // In practice mode, smoothly scroll explanation into view
-      if (state.quiz.showExplanation !== false) {
-        setTimeout(() => {
-          const fbBoxEl = document.getElementById('quiz-feedback-box');
-          if (fbBoxEl && fbBoxEl.classList.contains('active')) {
-            fbBoxEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
-          }
-        }, 120);
-      }
-    } catch (e) {
-      console.error("Answer submission failed", e);
-    } finally {
-      state.quiz.isSubmitting = false;
+      }, 120);
     }
   }
 

@@ -186,7 +186,7 @@ async def start_session(
     # Fetch serialized question objects (using bookmarks fetched atomically with session)
     bookmarks = session_info.get("bookmark_ids") or set()
     questions_list = [
-        serialize_question(q, is_bookmarked=(q.canonical_id in bookmarks), include_correct=False)
+        serialize_question(q, is_bookmarked=(q.canonical_id in bookmarks), include_correct=True)
         for q in loaded_questions if q
     ]
 
