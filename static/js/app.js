@@ -2137,6 +2137,9 @@
   };
 
   function renderCurrentQuestion() {
+    state.quiz.questionRenderedAt = Date.now();
+    state.quiz.isSubmitting = false;
+
     const q = state.quiz.questions[state.quiz.currentIndex];
     if (!q) return;
 
@@ -2407,11 +2410,22 @@
     }
   }
 
+  const MIN_ANSWER_COOLDOWN_MS = 260; // 260ms cooldown prevents accidental rapid clicks / double-taps
+
   async function submitAnswer(canonicalId, selectedKey) {
+    if (!state.quiz.active) return;
     if (state.quiz.isSubmitting) return;
     if (state.quiz.answers && state.quiz.answers[canonicalId]) return;
 
-    // 1. Instant 0ms visual feedback: immediately highlight clicked card
+    // Cooldown check: ignore taps that land within 260ms of question render
+    const now = Date.now();
+    if (state.quiz.questionRenderedAt && (now - state.quiz.questionRenderedAt < MIN_ANSWER_COOLDOWN_MS)) {
+      return;
+    }
+
+    state.quiz.isSubmitting = true;
+
+    // 1. Instant visual feedback: immediately highlight clicked card & disable options
     const optionsWrap = document.getElementById('quiz-options-list');
     if (optionsWrap) {
       const cards = optionsWrap.querySelectorAll('.tactical-option-card');
@@ -2427,7 +2441,7 @@
 
     const isTerminalMode = (state.quiz.sessionType === 'EXAM' || (state.quiz.sessionType === 'CUSTOM' && !state.quiz.showExplanation));
 
-    // 2. Terminal mode (Official EXAM or fast practice): 0ms optimistic UI advance
+    // 2. Terminal mode (Official EXAM or fast practice): optimistic advance with lock
     if (isTerminalMode) {
       // Optimistically record answer
       state.quiz.answers[canonicalId] = {
@@ -2443,7 +2457,7 @@
         curBox.classList.add('answered');
       }
 
-      // Background asynchronous sync to backend (never blocks user)
+      // Background asynchronous sync to backend
       apiFetch('/api/session/answer', {
         method: 'POST',
         body: JSON.stringify({
@@ -2453,26 +2467,35 @@
           language: state.lang
         })
       }).then(res => {
+        if (!state.quiz.active) return;
         if (state.quiz.answers) {
           state.quiz.answers[canonicalId] = res;
         }
-        // Check 3rd mistake limit in exam mode
+        // Immediate termination if 3rd mistake reached
         if (state.quiz.sessionType === 'EXAM' && res.is_exam_terminated) {
+          state.quiz.active = false;
+          if (state.quiz.advanceTimeout) {
+            clearTimeout(state.quiz.advanceTimeout);
+            state.quiz.advanceTimeout = null;
+          }
           triggerHaptic('notification', 'error');
           if (typeof showToast === 'function') {
             showToast(t('res_exam_terminated_toast') || 'Imtihon to‘xtatildi: 2 tadan ortiq xato qilindi!');
           }
-          setTimeout(() => {
-            if (!state.quiz.active) return;
-            finishQuiz(true);
-          }, 450);
+          finishQuiz(true);
         }
       }).catch(err => {
         console.error("Background answer sync error:", err);
       });
 
-      // Advance to next unanswered question after 90ms micro-delay
-      setTimeout(() => {
+      // Clear any prior advance timeout
+      if (state.quiz.advanceTimeout) {
+        clearTimeout(state.quiz.advanceTimeout);
+        state.quiz.advanceTimeout = null;
+      }
+
+      // Advance to next unanswered question after 180ms micro-delay
+      state.quiz.advanceTimeout = setTimeout(() => {
         if (!state.quiz.active) return;
         let nextUnanswered = -1;
         for (let i = 1; i <= state.quiz.questions.length; i++) {
@@ -2488,12 +2511,13 @@
           state.quiz.currentIndex = nextUnanswered;
           renderCurrentQuestion();
         } else {
+          state.quiz.isSubmitting = false;
           const finishBtn = document.getElementById('btn-exam-finish');
           if (finishBtn) {
             finishBtn.classList.add('pulse-highlight');
           }
         }
-      }, 90);
+      }, 180);
 
       return;
     }
@@ -2592,6 +2616,11 @@
   }
 
   async function finishQuiz(isAutoTerminated = false) {
+    state.quiz.active = false;
+    if (state.quiz.advanceTimeout) {
+      clearTimeout(state.quiz.advanceTimeout);
+      state.quiz.advanceTimeout = null;
+    }
     clearInterval(state.quiz.timerInterval);
     triggerHaptic('impact', 'heavy');
 

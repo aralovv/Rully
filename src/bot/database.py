@@ -910,6 +910,18 @@ class BotDatabase:
         today_str = datetime.utcnow().strftime("%Y-%m-%d")
         with self._get_connection() as conn:
             c = conn.cursor()
+
+            # Guard: If EXAM session already reached 3 mistakes or was terminated, reject further answers
+            if session_type == "EXAM":
+                c.execute("SELECT status, incorrect_count FROM user_sessions WHERE session_id = ?", (session_id,))
+                sess_row = c.fetchone()
+                if sess_row and (sess_row["status"] in ("FAILED_MISTAKES", "COMPLETED", "TERMINATED") or (sess_row["incorrect_count"] or 0) >= 3):
+                    return {
+                        "is_new": False,
+                        "streak": {"current_streak": 0, "today_questions_count": 0},
+                        "is_exam_terminated": True
+                    }
+
             is_new = False
             try:
                 c.execute("""
@@ -957,8 +969,9 @@ class BotDatabase:
             if session_type == "EXAM":
                 c.execute("SELECT COUNT(*) as incorrect_cnt FROM session_answers WHERE session_id = ? AND is_correct = 0", (session_id,))
                 cnt_row = c.fetchone()
-                if cnt_row and cnt_row["incorrect_cnt"] > 2:
+                if cnt_row and cnt_row["incorrect_cnt"] >= 3:
                     is_exam_terminated = True
+                    c.execute("UPDATE user_sessions SET status = 'FAILED_MISTAKES', updated_at = ? WHERE session_id = ?", (now_ts, session_id))
 
             conn.commit()
             return {

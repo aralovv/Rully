@@ -219,6 +219,18 @@ async def submit_answer(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    if session.get("session_type") == "EXAM" and (session.get("status") in ("FAILED_MISTAKES", "COMPLETED", "TERMINATED") or (session.get("incorrect_count", 0) >= 3)):
+        return {
+            "canonical_id": req.canonical_id,
+            "selected_key": req.selected_key.upper(),
+            "correct_key": "",
+            "is_correct": False,
+            "explanation": "",
+            "legal_reference": "",
+            "streak": {"current_streak": 0, "today_questions_count": 0},
+            "is_exam_terminated": True
+        }
+
     lang = req.language or session.get("language", "uz_latn")
     try:
         feedback = engine.check_answer(req.canonical_id, req.selected_key, language=lang)
