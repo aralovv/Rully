@@ -2270,12 +2270,19 @@
       let extraClass = "";
       if (existingAns) {
         if (state.quiz.showAnswer !== false) {
-          if (opt.option_key === existingAns.correct_key) extraClass = "correct";
-          else if (opt.option_key === existingAns.selected_key) extraClass = "wrong";
+          if (existingAns.is_correct === true) {
+            if (opt.option_key === existingAns.selected_key) extraClass = "correct";
+          } else if (existingAns.is_correct === false) {
+            if (opt.option_key === existingAns.correct_key) extraClass = "correct";
+            else if (opt.option_key === existingAns.selected_key) extraClass = "wrong";
+          } else {
+            // Pending answer confirmation: keep neutral selected
+            if (opt.option_key === existingAns.selected_key) extraClass = "selected";
+          }
         } else {
           // If showAnswer is disabled, only show what was selected
           if (opt.option_key === existingAns.selected_key) {
-            extraClass = existingAns.is_correct ? "correct" : "wrong";
+            extraClass = "selected";
           }
         }
       }
@@ -2370,9 +2377,12 @@
       const ans = state.quiz.answers[qItem.canonical_id];
       let statusClass = 'unanswered';
       if (ans) {
-        if (state.quiz.showAnswer !== false) {
-          statusClass = ans.is_correct ? 'correct' : 'wrong';
+        if (ans.is_correct === true) {
+          statusClass = (state.quiz.showAnswer !== false) ? 'correct' : 'answered';
+        } else if (ans.is_correct === false) {
+          statusClass = (state.quiz.showAnswer !== false) ? 'wrong' : 'answered';
         } else {
+          // ans.is_correct is null or undefined (syncing with backend): keep clean 'answered' (blue)
           statusClass = 'answered';
         }
       }
@@ -2453,7 +2463,7 @@
       // Instantly mark current number box in matrix navigation as answered
       const curBox = document.querySelector(`.exam-box-item[data-idx="${state.quiz.currentIndex}"]`);
       if (curBox) {
-        curBox.classList.remove('unanswered');
+        curBox.classList.remove('unanswered', 'correct', 'wrong');
         curBox.classList.add('answered');
       }
 
@@ -2470,6 +2480,20 @@
         if (!state.quiz.active) return;
         if (state.quiz.answers) {
           state.quiz.answers[canonicalId] = res;
+
+          // Directly sync the corresponding matrix box to avoid any stale state
+          const targetIdx = state.quiz.questions.findIndex(q => q.canonical_id === canonicalId);
+          if (targetIdx !== -1) {
+            const boxEl = document.querySelector(`.exam-box-item[data-idx="${targetIdx}"]`);
+            if (boxEl) {
+              boxEl.classList.remove('answered', 'unanswered', 'correct', 'wrong');
+              if (state.quiz.showAnswer !== false) {
+                boxEl.classList.add(res.is_correct ? 'correct' : 'wrong');
+              } else {
+                boxEl.classList.add('answered');
+              }
+            }
+          }
         }
         // Immediate termination if 3rd mistake reached
         if (state.quiz.sessionType === 'EXAM' && res.is_exam_terminated) {
