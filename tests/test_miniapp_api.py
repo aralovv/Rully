@@ -4,6 +4,7 @@ Covers: Auth, HMAC signature, Theory Exam, Categories, Practical Curriculum,
 Checklist, Scenarios, and Static SPA serving.
 """
 
+import os
 import pytest
 from fastapi.testclient import TestClient
 from src.api.main import app
@@ -14,7 +15,8 @@ client = TestClient(app)
 # 1. Security & Cryptographic Verification Tests
 def test_security_hmac_verification():
     # Valid generation with active token
-    init_data = generate_dev_init_data(user_id=8809526955, bot_token="8657532177:AAGsyMFpzuwPus9jOdFRNP8f65qa8E-4q8g")
+    active_token = os.getenv("BOT_TOKEN") or "5875526565:AAEwGdyseiyejQQkf67_WEkvKX0cz0EX94s"
+    init_data = generate_dev_init_data(user_id=8809526955, bot_token=active_token)
     is_valid, user_data = verify_telegram_init_data(init_data)
     assert is_valid is True
     assert user_data is not None

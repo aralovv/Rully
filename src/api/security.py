@@ -41,7 +41,6 @@ def get_allowed_bot_tokens() -> List[str]:
     # In local testing/dev only: fallback to test tokens if no token set
     if not is_production():
         known_tokens = [
-            "8657532177:AAGsyMFpzuwPus9jOdFRNP8f65qa8E-4q8g",
             "5875526565:AAEwGdyseiyejQQkf67_WEkvKX0cz0EX94s"
         ]
         for kt in known_tokens:

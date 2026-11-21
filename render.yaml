@@ -12,15 +12,15 @@ services:
       - key: TURSO_AUTH_TOKEN
         sync: false
       - key: BOT_TOKEN
-        value: 8657532177:AAGsyMFpzuwPus9jOdFRNP8f65qa8E-4q8g
+        sync: false
       - key: SECRET_KEY
-        value: rully_secure_secret_key_32_bytes_minimum_for_crypto_production_2026
+        generateValue: true
       - key: ADMIN_IDS
-        value: "1956239701"
+        sync: false
       - key: ADMIN_TELEGRAM_ID
-        value: "1956239701"
+        sync: false
       - key: ORDERS_GROUP_CHAT_ID
-        value: "-5464313435"
+        sync: false
       - key: ADMIN_USERNAME
         value: Admin
       - key: HOST
