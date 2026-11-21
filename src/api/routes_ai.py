@@ -121,11 +121,11 @@ async def clear_chat_history(
     user: Dict[str, Any] = Depends(get_current_user)
 ):
     user_id = user["user_id"]
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute("""
-    DELETE FROM ai_conversations
-    WHERE user_id = ? AND session_id = ?
-    """, (user_id, req.session_id or "default"))
-    conn.commit()
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute("""
+        DELETE FROM ai_conversations
+        WHERE user_id = ? AND session_id = ?
+        """, (user_id, req.session_id or "default"))
+        conn.commit()
     return {"ok": True, "cleared": True}

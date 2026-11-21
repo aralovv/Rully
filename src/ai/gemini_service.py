@@ -1,8 +1,9 @@
 import os
 import re
 import json
+import asyncio
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 import httpx
 from src.ai.prompts import SYSTEM_PROMPT_UZ, get_system_prompt
 from src.ai.tools import GEMINI_TOOLS_DECLARATIONS, TOOL_MAPPING, normalize_lang
@@ -10,7 +11,11 @@ from src.db_adapter import get_db_connection
 
 logger = logging.getLogger(__name__)
 
-GEMINI_API_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent"
+GEMINI_MODELS = [
+    "gemini-3.1-flash-lite",
+    "gemini-3.8-flash",
+    "gemini-flash-latest"
+]
 
 class GeminiService:
     def __init__(self):
@@ -20,6 +25,44 @@ class GeminiService:
     def api_key(self):
         val = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         return val.strip() if val else None
+
+    async def _call_gemini_with_fallback(
+        self,
+        client: httpx.AsyncClient,
+        payload: Dict[str, Any]
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[int], Optional[str]]:
+        """Calls Gemini API with automatic fallback across models and retry on temporary 503/429 spikes."""
+        last_status = None
+        last_text = None
+
+        for model_name in GEMINI_MODELS:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.api_key}"
+            req_headers = {
+                "Content-Type": "application/json",
+                "x-goog-api-key": self.api_key
+            }
+
+            for attempt in range(2):
+                try:
+                    resp = await client.post(url, json=payload, headers=req_headers)
+                    last_status = resp.status_code
+                    last_text = resp.text
+
+                    if resp.status_code == 200:
+                        return resp.json(), 200, None
+
+                    if resp.status_code in (429, 503):
+                        logger.warning(f"Gemini model {model_name} returned {resp.status_code} (attempt {attempt+1}).")
+                        if attempt == 0:
+                            await asyncio.sleep(0.8)
+                            continue
+                    break
+                except Exception as e:
+                    logger.warning(f"Gemini request exception on {model_name}: {e}")
+                    last_text = str(e)
+                    break
+
+        return None, last_status, last_text
 
     def check_and_increment_rate_limit(self, user_id: int, is_pro: bool) -> tuple[bool, int, int]:
         """
@@ -172,11 +215,6 @@ class GeminiService:
             "parts": [{"text": get_system_prompt(lang)}]
         }
 
-        url = f"{GEMINI_API_ENDPOINT}?key={self.api_key}"
-        req_headers = {
-            "Content-Type": "application/json",
-            "x-goog-api-key": self.api_key
-        }
         payload = {
             "system_instruction": system_instruction,
             "contents": contents,
@@ -192,12 +230,12 @@ class GeminiService:
             }
         }
 
-        # 5. Call Gemini
+        # 5. Call Gemini with automatic fallback & retry
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
-                resp = await client.post(url, json=payload, headers=req_headers)
-                if resp.status_code != 200:
-                    logger.error(f"Gemini API error: {resp.status_code} {resp.text}")
+                data, status_code, err_text = await self._call_gemini_with_fallback(client, payload)
+                if not data or status_code != 200:
+                    logger.error(f"Gemini API error: {status_code} {err_text}")
                     if lang == "ru":
                         err_reply = "К сожалению, произошла ошибка связи с искусственным интеллектом. Пожалуйста, попробуйте еще раз."
                     elif lang == "uz_cyrl":
@@ -207,10 +245,9 @@ class GeminiService:
                     return {
                         "ok": False,
                         "reply": err_reply,
-                        "error": resp.text
+                        "error": err_text or f"Status {status_code}"
                     }
 
-                data = resp.json()
                 candidate = data.get("candidates", [{}])[0]
                 content = candidate.get("content", {})
                 parts = content.get("parts", [])
@@ -269,9 +306,8 @@ class GeminiService:
                             }
                         }
 
-                        second_resp = await client.post(url, json=second_payload, headers=req_headers)
-                        if second_resp.status_code == 200:
-                            second_data = second_resp.json()
+                        second_data, second_status, _ = await self._call_gemini_with_fallback(client, second_payload)
+                        if second_data and second_status == 200:
                             final_parts = second_data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
                             final_text = "".join(p.get("text", "") for p in final_parts)
                         else:
