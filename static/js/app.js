@@ -800,25 +800,32 @@
     });
   }
 
+  function canAccessExam() {
+    if (isUserPro()) return true;
+    if (state.free_tier && state.free_tier.remaining_exams > 0) return true;
+    return false;
+  }
+
   function updateSubscriptionUI() {
     const isPro = isUserPro();
+    const canExam = canAccessExam();
     updateCustomQuizChipsUI();
 
     // 1. Lock Badges on Mistakes, Cheatsheet
     const mistakesBadge = document.getElementById('badge-mistakes-lock');
-    if (mistakesBadge) mistakesBadge.classList.toggle('hidden', isPro);
+    if (mistakesBadge) mistakesBadge.classList.toggle('hidden', canExam);
 
     const cheatsheetBadge = document.getElementById('badge-cheatsheet-lock');
-    if (cheatsheetBadge) cheatsheetBadge.classList.toggle('hidden', isPro);
+    if (cheatsheetBadge) cheatsheetBadge.classList.toggle('hidden', canExam);
 
     const practiceMistakesBadge = document.getElementById('badge-practice-mistakes-lock');
-    if (practiceMistakesBadge) practiceMistakesBadge.classList.toggle('hidden', isPro);
+    if (practiceMistakesBadge) practiceMistakesBadge.classList.toggle('hidden', canExam);
 
     // 2. Unified Hero Exam & Telemetry Stats Lock (Single blur & unified lock for both cards)
     const heroWrap = document.getElementById('hero-exam-cockpit-wrap');
     const heroLock = document.getElementById('hero-cockpit-lock-overlay');
-    if (heroWrap) heroWrap.classList.toggle('locked', !isPro);
-    if (heroLock) heroLock.style.display = isPro ? 'none' : 'flex';
+    if (heroWrap) heroWrap.classList.toggle('locked', !canExam);
+    if (heroLock) heroLock.style.display = canExam ? 'none' : 'flex';
 
     // 3. Profile Subscription Card
     const subPill = document.getElementById('profile-sub-status-pill');
@@ -1137,8 +1144,8 @@
       },
       {
         icon: "💎",
-        title: "8. Obuna (PRO) va To‘lovlar xavfsizligi",
-        text: "PRO tariflar davlat imtihoni simulyatsiyasi, AI Ustoz bilan cheksiz muloqot, xatolar banki va amaliy modul tahlillarini to‘liq ochadi. Barcha to‘lovlar rasmiy bank kartalari orqali xavfsiz qabul qilinadi va to‘lov tushishi bilan bir necha soniyada obuna hisobingizda avtomatik ravishda faollashtiriladi."
+        title: "8. Obuna (PRO) va Bepul Sinov (Free Tier)",
+        text: "Har bir yangi foydalanuvchiga platforma imkoniyatlari bilan tanishish uchun <b>2 ta to‘liq Davlat Imtihoni sinovi bepul</b> taqdim etiladi. Sinovdan so‘ng, cheksiz davlat imtihonlari, AI Ustoz bilan muloqot, xatolar banki va barcha 1 327 ta savoldan to‘liq foydalanish uchun PRO tarifga ulanish mumkin. Barcha to‘lovlar rasmiy bank kartalari orqali xavfsiz qabul qilinadi va avtomatik ravishda faollashtiriladi."
       },
       {
         icon: "⚖️",
@@ -1189,8 +1196,8 @@
       },
       {
         icon: "💎",
-        title: "8. Обуна (PRO) ва Тўловлар хавфсизлиги",
-        text: "PRO тарифлар давлат имтиҳони симуляцияси, AI Устоз билан таҳлил, хатолар банки ва автодром модулларини тўлиқ очади. Барча тўловлар расмий банк карталари орқали хавфсиз қабул қилинади ва тўлов тушиши билан бир неча сонияда обуна автоматик фаоллаштирилади."
+        title: "8. Обуна (PRO) ва Бепул Синов (Free Tier)",
+        text: "Ҳар бир янги фойдаланувчига платформа имкониятлари билан танишиш учун <b>2 та тўлиқ Давлат Имтиҳони синови бепул</b> тақдим этилади. Синовдан сўнг, чексиз давлат имтиҳонлари, AI Устоз билан таҳлил, хатолар банки ва барча 1 327 та саволдан тўлиқ фойдаланиш учун PRO тарифга уланиш мумкин. Барча тўловлар расмий банк карталари орқали хавфсиз қабул қилинади ва автоматик фаоллаштирилади."
       },
       {
         icon: "⚖️",
@@ -1241,8 +1248,8 @@
       },
       {
         icon: "💎",
-        title: "8. Подписка (PRO) и безопасность платежей",
-        text: "PRO тариф открывает полный доступ к симулятору госэкзамена, безлимитному AI разбору, банку ошибок и видеоанализу автодрома. Оплата принимается через официальные банковские карты с мгновенной автоматической активацией подписки в течение нескольких секунд."
+        title: "8. Подписка (PRO) и Пробный период (Free Tier)",
+        text: "Каждому новому пользователю для ознакомления предоставляется <b>2 полных пробных Госэкзамена бесплатно</b>. После их прохождения для безлимитной сдачи экзаменов, общения с AI Наставником, банка ошибок и доступа ко всем 1 327 вопросам доступна подписка PRO. Все платежи принимаются безопасно через банковские карты с мгновенной активацией."
       },
       {
         icon: "⚖️",
@@ -1694,6 +1701,7 @@
 
       state.user = authRes.user;
       state.subscription = authRes.subscription || authRes.user?.subscription || { is_pro: false, tier: 'free' };
+      state.free_tier = authRes.free_tier || { is_pro: false, has_access: true, remaining_exams: 2 };
       state.lang = authRes.user.language || state.lang || 'uz_latn';
       try { localStorage.setItem('rully_lang', state.lang); } catch (e) {}
       state.stats = {
@@ -1701,6 +1709,7 @@
         streak: authRes.streak
       };
       updateSubscriptionUI();
+      applyTelemetryUI(authRes);
 
       try { sessionStorage.setItem('rully_tg_init_data', initData); } catch (e) {}
       updateDriverProfileUI();
@@ -1714,14 +1723,33 @@
     }
 
     applyLocalization();
-    await Promise.allSettled([
-      loadTelemetryData(),
+
+    // Dismiss loading screen immediately - cockpit dashboard is fully ready!
+    dismissLoading();
+
+    // Background warm-up (non-blocking SWR)
+    Promise.allSettled([
       loadCategories(),
       updateSavedQuestionsCount()
     ]);
+  }
 
-    // Dismiss loading screen seamlessly
-    dismissLoading();
+  function applyTelemetryUI(data) {
+    if (!data) return;
+    const s = data.stats || {};
+    const passRateEl = document.getElementById('stat-pass-rate-val');
+    if (passRateEl) passRateEl.textContent = `${s.pass_rate || 0}%`;
+    const testsEl = document.getElementById('stat-tests-val');
+    if (testsEl) testsEl.textContent = s.total_exams || 0;
+    const accEl = document.getElementById('stat-accuracy-val');
+    if (accEl) accEl.textContent = `${s.accuracy || 0}%`;
+
+    const streakEl = document.getElementById('user-streak-text');
+    if (data.streak && streakEl) {
+      streakEl.textContent = `${data.streak.current_streak} kun`;
+    }
+
+    updateReadinessClusterUI();
   }
 
   function updateDriverProfileUI() {
@@ -1747,28 +1775,27 @@
         state.subscription = data.subscription;
       }
       updateSubscriptionUI();
-      const s = data.stats || {};
-
-      document.getElementById('stat-pass-rate-val').textContent = `${s.pass_rate || 0}%`;
-      document.getElementById('stat-tests-val').textContent = s.total_exams || 0;
-      document.getElementById('stat-accuracy-val').textContent = `${s.accuracy || 0}%`;
-
-      const streakEl = document.getElementById('user-streak-text');
-      if (data.streak && streakEl) {
-        streakEl.textContent = `${data.streak.current_streak} kun`;
-      }
-
-      updateReadinessClusterUI();
+      applyTelemetryUI(data);
     } catch (e) {
       console.error("Telemetry fetch failed", e);
     }
   }
 
-  // 9. Categories Engine
+  // 9. Categories Engine (with SWR Session Cache)
   async function loadCategories() {
+    const cacheKey = `rully_categories_${state.lang}`;
+    try {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        state.categories = JSON.parse(cached);
+        renderCategoriesList();
+      }
+    } catch (e) {}
+
     try {
       const data = await apiFetch(`/api/categories?lang=${state.lang}`);
       state.categories = data.categories || [];
+      try { sessionStorage.setItem(cacheKey, JSON.stringify(state.categories)); } catch (e) {}
       renderCategoriesList();
     } catch (e) {
       console.error("Categories fetch failed", e);
@@ -1870,6 +1897,11 @@
     isStartingQuizSession = true;
 
     triggerHaptic('impact', 'medium');
+    const heroBtn = document.getElementById('hero-start-btn');
+    if (heroBtn && sessionType === 'EXAM') {
+      heroBtn.style.opacity = '0.75';
+      heroBtn.style.transform = 'scale(0.97)';
+    }
     try {
       // In Official State Exam mode: 20 questions, 25 minutes, no statutory explanations
       if (sessionType === 'EXAM') {
@@ -1944,6 +1976,11 @@
       alert("Sinovni boshlashda xatolik: " + e.message);
     } finally {
       isStartingQuizSession = false;
+      const heroBtn = document.getElementById('hero-start-btn');
+      if (heroBtn) {
+        heroBtn.style.opacity = '';
+        heroBtn.style.transform = '';
+      }
     }
   }
 
@@ -2319,7 +2356,11 @@
       const ans = state.quiz.answers[qItem.canonical_id];
       let statusClass = 'unanswered';
       if (ans) {
-        statusClass = ans.is_correct ? 'correct' : 'wrong';
+        if (state.quiz.showAnswer !== false) {
+          statusClass = ans.is_correct ? 'correct' : 'wrong';
+        } else {
+          statusClass = 'answered';
+        }
       }
       const isCurrent = (i === state.quiz.currentIndex);
       const isThreeDigit = (i + 1 >= 100);
@@ -2358,13 +2399,96 @@
   async function submitAnswer(canonicalId, selectedKey) {
     if (state.quiz.isSubmitting) return;
     if (state.quiz.answers && state.quiz.answers[canonicalId]) return;
-    state.quiz.isSubmitting = true;
 
-    // Disable all option cards immediately to block double-taps
-    const optionCards = document.querySelectorAll('.quiz-option-card');
-    optionCards.forEach(c => c.style.pointerEvents = 'none');
+    // 1. Instant 0ms visual feedback: immediately highlight clicked card
+    const optionsWrap = document.getElementById('quiz-options-list');
+    if (optionsWrap) {
+      const cards = optionsWrap.querySelectorAll('.tactical-option-card');
+      cards.forEach(c => {
+        c.style.pointerEvents = 'none';
+        if (c.getAttribute('data-key') === selectedKey) {
+          c.classList.add('selected');
+        }
+      });
+    }
 
     triggerHaptic('impact', 'medium');
+
+    const isTerminalMode = (state.quiz.sessionType === 'EXAM' || (state.quiz.sessionType === 'CUSTOM' && !state.quiz.showExplanation));
+
+    // 2. Terminal mode (Official EXAM or fast practice): 0ms optimistic UI advance
+    if (isTerminalMode) {
+      // Optimistically record answer
+      state.quiz.answers[canonicalId] = {
+        canonical_id: canonicalId,
+        selected_key: selectedKey,
+        is_correct: null
+      };
+
+      // Instantly mark current number box in matrix navigation as answered
+      const curBox = document.querySelector(`.exam-box-item[data-idx="${state.quiz.currentIndex}"]`);
+      if (curBox) {
+        curBox.classList.remove('unanswered');
+        curBox.classList.add('answered');
+      }
+
+      // Background asynchronous sync to backend (never blocks user)
+      apiFetch('/api/session/answer', {
+        method: 'POST',
+        body: JSON.stringify({
+          session_id: state.quiz.sessionId,
+          canonical_id: canonicalId,
+          selected_key: selectedKey,
+          language: state.lang
+        })
+      }).then(res => {
+        if (state.quiz.answers) {
+          state.quiz.answers[canonicalId] = res;
+        }
+        // Check 3rd mistake limit in exam mode
+        if (state.quiz.sessionType === 'EXAM' && res.is_exam_terminated) {
+          triggerHaptic('notification', 'error');
+          if (typeof showToast === 'function') {
+            showToast(t('res_exam_terminated_toast') || 'Imtihon to‘xtatildi: 2 tadan ortiq xato qilindi!');
+          }
+          setTimeout(() => {
+            if (!state.quiz.active) return;
+            finishQuiz(true);
+          }, 450);
+        }
+      }).catch(err => {
+        console.error("Background answer sync error:", err);
+      });
+
+      // Advance to next unanswered question after 90ms micro-delay
+      setTimeout(() => {
+        if (!state.quiz.active) return;
+        let nextUnanswered = -1;
+        for (let i = 1; i <= state.quiz.questions.length; i++) {
+          const checkIdx = (state.quiz.currentIndex + i) % state.quiz.questions.length;
+          const qCheck = state.quiz.questions[checkIdx];
+          if (!state.quiz.answers[qCheck.canonical_id]) {
+            nextUnanswered = checkIdx;
+            break;
+          }
+        }
+
+        if (nextUnanswered !== -1) {
+          state.quiz.currentIndex = nextUnanswered;
+          renderCurrentQuestion();
+        } else {
+          const finishBtn = document.getElementById('btn-exam-finish');
+          if (finishBtn) {
+            finishBtn.classList.add('pulse-highlight');
+          }
+        }
+      }, 90);
+
+      return;
+    }
+
+    // 3. Regular practice mode (with instant explanation feedback)
+    state.quiz.isSubmitting = true;
     try {
       const res = await apiFetch('/api/session/answer', {
         method: 'POST',
@@ -2386,50 +2510,21 @@
 
       renderCurrentQuestion();
 
-      // Check auto-termination on 3rd mistake in EXAM mode (Uzbekistan DYHXX VMQ 408: max 2 mistakes)
-      if (state.quiz.sessionType === 'EXAM') {
-        const mistakeAnswers = Object.values(state.quiz.answers).filter(a => !a.is_correct);
-        if (mistakeAnswers.length > 2 || res.is_exam_terminated) {
-          triggerHaptic('notification', 'error');
-          if (typeof showToast === 'function') {
-            showToast(t('res_exam_terminated_toast') || 'Imtihon to‘xtatildi: 2 tadan ortiq xato qilindi!');
-          }
-          setTimeout(() => {
-            if (!state.quiz.active) return;
-            finishQuiz(true);
-          }, 650);
-          return;
+      if (state.quiz.sessionType === 'EXAM' && res.is_exam_terminated) {
+        triggerHaptic('notification', 'error');
+        if (typeof showToast === 'function') {
+          showToast(t('res_exam_terminated_toast') || 'Imtihon to‘xtatildi: 2 tadan ortiq xato qilindi!');
         }
+        setTimeout(() => {
+          if (!state.quiz.active) return;
+          finishQuiz(true);
+        }, 500);
       }
-
-      // In EXAM and CUSTOM terminal mode:
-      if (state.quiz.sessionType === 'EXAM' || state.quiz.sessionType === 'CUSTOM') {
-        // If explanation is off, automatically advance to next unanswered question after 380ms
-        if (!state.quiz.showExplanation) {
-          setTimeout(() => {
-            if (!state.quiz.active) return;
-            let nextUnanswered = -1;
-            for (let i = 1; i <= state.quiz.questions.length; i++) {
-              const checkIdx = (state.quiz.currentIndex + i) % state.quiz.questions.length;
-              const qCheck = state.quiz.questions[checkIdx];
-              if (!state.quiz.answers[qCheck.canonical_id]) {
-                nextUnanswered = checkIdx;
-                break;
-              }
-            }
-
-            if (nextUnanswered !== -1) {
-              state.quiz.currentIndex = nextUnanswered;
-              renderCurrentQuestion();
-            } else {
-              const finishBtn = document.getElementById('btn-exam-finish');
-              if (finishBtn) {
-                finishBtn.classList.add('pulse-highlight');
-              }
-            }
-          }, 380);
-        } else {
-          // If explanation is on, keep it on screen for reading. Highlight finish if all answered
+    } catch (e) {
+      console.error("Answer submission failed", e);
+    } finally {
+      state.quiz.isSubmitting = false;
+    }
           const answeredCount = Object.keys(state.quiz.answers).length;
           if (answeredCount >= state.quiz.questions.length) {
             const finishBtn = document.getElementById('btn-exam-finish');
@@ -3038,9 +3133,41 @@
           ${imgHtml}
           ${optionsHtml}
           ${expHtml}
+          <button class="btn-ask-ai-saved" data-qid="${q.canonical_id}">
+            <span class="r-icon xs" style="display:inline-flex;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </span>
+            <span>${t('btn_ask_ai_saved')}</span>
+          </button>
         </div>
       `;
     }).join('');
+
+    bodyEl.querySelectorAll('.btn-ask-ai-saved').forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const qid = btn.getAttribute('data-qid');
+        const q = (questions || []).find(item => item.canonical_id === qid);
+        if (!q) return;
+
+        closeSavedQuestionsModal();
+
+        if (!state.subscription?.is_pro) {
+          openPaywallModal('ai');
+          return;
+        }
+
+        switchTab('ai');
+        const optList = (q.options || []).map(o => `${o.option_key}) ${o.text}`).join('\n');
+        const prompt = state.lang === 'ru'
+          ? `Пожалуйста, разбери и объясни этот вопрос и правило:\n\nВопрос: ${q.question_text}\nВарианты ответов:\n${optList}\nПравильный ответ: ${q.correct_option_key}`
+          : state.lang === 'uz_cyrl'
+          ? `Илтимос, ушбу савол ва ЙҲҚ қоидасини батафсил тушунтириб бер:\n\nСавол: ${q.question_text}\nВариантлар:\n${optList}\nТўғри жавоб: ${q.correct_option_key}`
+          : `Iltimos, ushbu savol va YHQ qoidasini batafsil tushuntirib ber:\n\nSavol: ${q.question_text}\nVariantlar:\n${optList}\nTo'g'ri javob: ${q.correct_option_key}`;
+
+        sendAiMessage(prompt);
+      };
+    });
 
     bodyEl.querySelectorAll('.btn-remove-saved').forEach(btn => {
       btn.onclick = async (e) => {
@@ -3464,7 +3591,7 @@
     const heroBtn = document.getElementById('btn-hero-start-exam');
     if (heroBtn) {
       heroBtn.onclick = () => {
-        if (!state.subscription?.is_pro) {
+        if (!canAccessExam()) {
           openPaywallModal('exam');
           return;
         }
@@ -3481,7 +3608,7 @@
 
     async function handleStartMistakesPractice() {
       triggerHaptic('impact', 'medium');
-      if (!state.subscription?.is_pro) {
+      if (!canAccessExam()) {
         openPaywallModal('mistakes');
         return;
       }
@@ -3517,7 +3644,7 @@
 
     function openSecretsModal() {
       triggerHaptic('impact', 'medium');
-      if (!state.subscription?.is_pro) {
+      if (!canAccessExam()) {
         openPaywallModal('cheatsheet');
         return;
       }
@@ -3837,7 +3964,7 @@
     const heroWrap = document.getElementById('hero-exam-cockpit-wrap');
     if (heroWrap) {
       heroWrap.onclick = (e) => {
-        if (!state.subscription?.is_pro) {
+        if (!canAccessExam()) {
           e.preventDefault();
           e.stopPropagation();
           openPaywallModal('exam');
@@ -4090,7 +4217,18 @@
           return;
         }
         switchTab('ai');
-        sendAiMessage(t('btn_ai_saved_tutor_prompt'));
+        if (savedQuestionsCache && savedQuestionsCache.length > 0) {
+          const topQ = savedQuestionsCache[0];
+          const optList = (topQ.options || []).map(o => `${o.option_key}) ${o.text}`).join('\n');
+          const prompt = state.lang === 'ru'
+            ? `Пожалуйста, объясни этот сохраненный вопрос и ПДД правило:\n\nВопрос: ${topQ.question_text}\nВарианты:\n${optList}\nПравильный ответ: ${topQ.correct_option_key}`
+            : state.lang === 'uz_cyrl'
+            ? `Илтимос, ушбу сақланган савол ва ЙҲҚ қоидасини батафсил тушунтириб бер:\n\nСавол: ${topQ.question_text}\nВариантлар:\n${optList}\nТўғри жавоб: ${topQ.correct_option_key}`
+            : `Iltimos, ushbu saqlangan savol va YHQ qoidasini batafsil tushuntirib ber:\n\nSavol: ${topQ.question_text}\nVariantlar:\n${optList}\nTo'g'ri javob: ${topQ.correct_option_key}`;
+          sendAiMessage(prompt);
+        } else {
+          sendAiMessage(t('btn_ai_saved_tutor_prompt'));
+        }
       };
     }
 

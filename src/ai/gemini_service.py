@@ -180,6 +180,11 @@ class GeminiService:
             "system_instruction": system_instruction,
             "contents": contents,
             "tools": tools_def,
+            "toolConfig": {
+                "functionCallingConfig": {
+                    "mode": "AUTO"
+                }
+            },
             "generationConfig": {
                 "temperature": 0.35,
                 "maxOutputTokens": 1024

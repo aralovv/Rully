@@ -681,6 +681,72 @@ class BotDatabase:
                 "is_active": False
             }
 
+    def get_user_exam_count(self, user_id: int) -> int:
+        """
+        Returns count of completed or substantially attempted EXAM sessions for the user.
+        Counts:
+        1. Finished exams recorded in exam_results.
+        2. Any active/unfinalized session of type 'EXAM' that has >= 3 answers recorded.
+        """
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT COUNT(*) FROM exam_results WHERE user_id = ?", (user_id,))
+            finished = (c.fetchone()[0] or 0)
+
+            c.execute("""
+            SELECT COUNT(DISTINCT us.session_id)
+            FROM user_sessions us
+            JOIN session_answers sa ON us.session_id = sa.session_id
+            LEFT JOIN exam_results er ON us.session_id = er.session_id
+            WHERE us.user_id = ? AND us.session_type = 'EXAM' AND er.id IS NULL
+            GROUP BY us.session_id
+            HAVING COUNT(sa.id) >= 3
+            """, (user_id,))
+            rows = c.fetchall()
+            unfinished = len(rows)
+            return finished + unfinished
+
+    def get_user_free_tier_status(self, user_id: int) -> Dict[str, Any]:
+        """
+        Evaluates Free Tier access for the user:
+        - 2 free official state exam attempts are provided to all new users.
+        - PRO subscribers have unlimited access.
+        """
+        sub = self.get_user_subscription(user_id)
+        if sub.get("is_pro"):
+            return {
+                "is_pro": True,
+                "has_access": True,
+                "free_tier_active": False,
+                "allowed_exams": 2,
+                "used_exams": 0,
+                "remaining_exams": 999999
+            }
+
+        used_exams = self.get_user_exam_count(user_id)
+        remaining = max(0, 2 - used_exams)
+        has_access = (remaining > 0)
+        return {
+            "is_pro": False,
+            "has_access": has_access,
+            "free_tier_active": has_access,
+            "allowed_exams": 2,
+            "used_exams": used_exams,
+            "remaining_exams": remaining
+        }
+
+    def get_user_answered_count(self, user_id: int) -> int:
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute("""
+            SELECT COUNT(*)
+            FROM session_answers sa
+            JOIN user_sessions us ON sa.session_id = us.session_id
+            WHERE us.user_id = ?
+            """, (user_id,))
+            row = c.fetchone()
+            return (row[0] or 0) if row else 0
+
     def activate_subscription(self, user_id: int, plan_id: str) -> Dict[str, Any]:
         """
         Activates or extends a PRO subscription (14 days / 14 000 UZS or 30 days / 25 000 UZS).
@@ -752,6 +818,9 @@ class BotDatabase:
                 json.dumps(question_ids), 1 if show_answer else 0, 1 if show_explanation else 0,
                 now_ts, now_ts
             ))
+            # Also fetch bookmark IDs inside the same connection to save network roundtrip
+            c.execute("SELECT canonical_id FROM user_bookmarks WHERE user_id = ?", (user_id,))
+            bm_ids = [r["canonical_id"] for r in c.fetchall()]
             conn.commit()
 
         return {
@@ -772,7 +841,8 @@ class BotDatabase:
             "show_answer": bool(show_answer),
             "show_explanation": bool(show_explanation),
             "created_at": now_ts,
-            "updated_at": now_ts
+            "updated_at": now_ts,
+            "bookmark_ids": set(bm_ids)
         }
 
     def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
@@ -827,6 +897,75 @@ class BotDatabase:
                 c.execute("UPDATE user_sessions SET incorrect_count = incorrect_count + 1, updated_at = ? WHERE session_id = ?", (now_ts, session_id))
             conn.commit()
             return True
+
+    def process_session_answer(self, session_id: str, user_id: int, canonical_id: str,
+                               selected_key: str, correct_key: str, is_correct: bool,
+                               session_type: str = "EXAM") -> Dict[str, Any]:
+        """
+        Atomic single-connection execution for answer submission, mistake tracking,
+        streak update, and exam termination check. Cuts 5-6 Turso network round-trips
+        down to a single connection (<60ms).
+        """
+        now_ts = datetime.utcnow().isoformat()
+        today_str = datetime.utcnow().strftime("%Y-%m-%d")
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            is_new = False
+            try:
+                c.execute("""
+                INSERT INTO session_answers (
+                    session_id, canonical_id, selected_key, correct_key, is_correct, answered_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """, (session_id, canonical_id, selected_key, correct_key, 1 if is_correct else 0, now_ts))
+                is_new = True
+            except sqlite3.IntegrityError:
+                is_new = False
+
+            streak_info = {"current_streak": 1, "today_questions_count": 1}
+
+            if is_new:
+                if is_correct:
+                    c.execute("UPDATE user_sessions SET correct_count = correct_count + 1, updated_at = ? WHERE session_id = ?", (now_ts, session_id))
+                    c.execute("UPDATE user_mistakes SET is_resolved = 1 WHERE user_id = ? AND canonical_id = ?", (user_id, canonical_id))
+                else:
+                    c.execute("UPDATE user_sessions SET incorrect_count = incorrect_count + 1, updated_at = ? WHERE session_id = ?", (now_ts, session_id))
+                    c.execute("""
+                    INSERT INTO user_mistakes (user_id, canonical_id, mistake_count, last_mistake_at, is_resolved)
+                    VALUES (?, ?, 1, ?, 0)
+                    ON CONFLICT(user_id, canonical_id) DO UPDATE SET
+                        mistake_count = mistake_count + 1,
+                        last_mistake_at = excluded.last_mistake_at,
+                        is_resolved = 0;
+                    """, (user_id, canonical_id, now_ts))
+
+                # Streak progress inside same connection
+                c.execute("SELECT current_streak, today_questions_count FROM learning_streak WHERE user_id = ?", (user_id,))
+                st_row = c.fetchone()
+                if st_row:
+                    new_today = (st_row["today_questions_count"] or 0) + 1
+                    c.execute("UPDATE learning_streak SET today_questions_count = ?, last_active_date = ?, updated_at = ? WHERE user_id = ?",
+                              (new_today, today_str, now_ts, user_id))
+                    streak_info = {"current_streak": st_row["current_streak"], "today_questions_count": new_today}
+                else:
+                    c.execute("""
+                    INSERT INTO learning_streak (user_id, current_streak, max_streak, today_questions_count, last_active_date, created_at, updated_at)
+                    VALUES (?, 1, 1, 1, ?, ?, ?)
+                    """, (user_id, today_str, now_ts, now_ts))
+                    streak_info = {"current_streak": 1, "today_questions_count": 1}
+
+            is_exam_terminated = False
+            if session_type == "EXAM":
+                c.execute("SELECT COUNT(*) as incorrect_cnt FROM session_answers WHERE session_id = ? AND is_correct = 0", (session_id,))
+                cnt_row = c.fetchone()
+                if cnt_row and cnt_row["incorrect_cnt"] > 2:
+                    is_exam_terminated = True
+
+            conn.commit()
+            return {
+                "is_new": is_new,
+                "streak": streak_info,
+                "is_exam_terminated": is_exam_terminated
+            }
 
     def get_session_answers(self, session_id: str) -> Dict[str, Dict[str, Any]]:
         with self._get_connection() as conn:

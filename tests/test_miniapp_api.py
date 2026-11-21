@@ -126,9 +126,36 @@ def test_exam_session_lifecycle():
     # Reset dev user to free tier first
     with db._get_connection() as conn:
         conn.execute("UPDATE telegram_users SET is_pro = 0, subscription_tier = 'free', subscription_expires_at = NULL WHERE user_id = 8809526955")
+        conn.execute("DELETE FROM exam_results WHERE user_id = 8809526955")
         conn.commit()
 
-    # 1. Free user attempt to start EXAM should be blocked (403 SUBSCRIPTION_REQUIRED)
+    # 1. New user with 0 exams can use free tier (Exam 1 & Exam 2)
+    free_exam_1 = client.post("/api/session/start", json={
+        "session_type": "EXAM",
+        "total_questions": 20,
+        "language": "uz_latn"
+    })
+    assert free_exam_1.status_code == 200
+    sid_1 = free_exam_1.json()["session_id"]
+
+    free_exam_2 = client.post("/api/session/start", json={
+        "session_type": "EXAM",
+        "total_questions": 20,
+        "language": "uz_latn"
+    })
+    assert free_exam_2.status_code == 200
+    sid_2 = free_exam_2.json()["session_id"]
+
+    # Record 2 completed exams to exhaust free tier
+    with db._get_connection() as conn:
+        conn.execute("""
+            INSERT INTO exam_results (session_id, user_id, total_questions, correct_count, incorrect_count, percentage, passed, time_taken_seconds, category_breakdown_json, created_at)
+            VALUES (?, 8809526955, 20, 18, 2, 90.0, 1, 600, '{}', '2026-01-01T00:00:00'),
+                   (?, 8809526955, 20, 19, 1, 95.0, 1, 550, '{}', '2026-01-01T01:00:00')
+        """, (sid_1, sid_2))
+        conn.commit()
+
+    # 3rd exam attempt should be blocked (403 SUBSCRIPTION_REQUIRED)
     blocked_res = client.post("/api/session/start", json={
         "session_type": "EXAM",
         "total_questions": 20,

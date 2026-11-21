@@ -41,11 +41,13 @@ async def auth_telegram(req: TelegramAuthRequest, db: BotDatabase = Depends(get_
     streak = db.get_learning_streak(user_id)
     stats = db.get_user_stats(user_id)
     subscription = db.get_user_subscription(user_id)
+    free_tier = db.get_user_free_tier_status(user_id)
 
     return {
         "ok": True,
         "user": user,
         "subscription": subscription,
+        "free_tier": free_tier,
         "streak": streak,
         "stats": stats
     }
@@ -57,10 +59,12 @@ async def get_user_me(user: Dict[str, Any] = Depends(get_current_user), db: BotD
     streak = db.get_learning_streak(user_id)
     bookmarks = db.get_user_bookmarks(user_id)
     subscription = db.get_user_subscription(user_id)
+    free_tier = db.get_user_free_tier_status(user_id)
 
     return {
         "user": user,
         "subscription": subscription,
+        "free_tier": free_tier,
         "stats": stats,
         "streak": streak,
         "bookmarks_count": len(bookmarks),
@@ -83,7 +87,8 @@ async def get_subscription_plans():
 @router.get("/subscription/status")
 async def get_subscription_status(user: Dict[str, Any] = Depends(get_current_user), db: BotDatabase = Depends(get_db)):
     sub = db.get_user_subscription(user["user_id"])
-    return {"ok": True, "subscription": sub}
+    ft = db.get_user_free_tier_status(user["user_id"])
+    return {"ok": True, "subscription": sub, "free_tier": ft}
 
 @router.post("/subscription/activate")
 async def activate_subscription(

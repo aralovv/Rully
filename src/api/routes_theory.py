@@ -118,10 +118,17 @@ async def start_session(
     if lang not in ["uz_latn", "uz_cyrl", "ru"]:
         lang = "uz_latn"
 
-    # Enforce PRO subscription for State Exam, Mistakes Bank, and Extended Custom Quiz (> 20 questions)
-    if req.session_type in ["EXAM", "MISTAKES"] or (req.session_type == "CUSTOM" and req.total_questions and req.total_questions > 20):
+    # Enforce Free Tier (2 free exam sessions) & PRO subscription
+    if req.session_type in ["EXAM", "MISTAKES"]:
+        ft = db.get_user_free_tier_status(user_id)
+        if not ft["has_access"]:
+            raise HTTPException(
+                status_code=403,
+                detail="SUBSCRIPTION_REQUIRED"
+            )
+    elif req.session_type == "CUSTOM" and req.total_questions and req.total_questions > 20:
         sub = db.get_user_subscription(user_id)
-        if not sub.get("is_pro"):
+        if not sub or not sub.get("is_pro"):
             raise HTTPException(
                 status_code=403,
                 detail="SUBSCRIPTION_REQUIRED"
@@ -176,8 +183,8 @@ async def start_session(
         show_explanation=show_explanation
     )
 
-    # Fetch serialized question objects
-    bookmarks = set(db.get_user_bookmarks(user_id))
+    # Fetch serialized question objects (using bookmarks fetched atomically with session)
+    bookmarks = session_info.get("bookmark_ids") or set()
     questions_list = [
         serialize_question(q, is_bookmarked=(q.canonical_id in bookmarks), include_correct=False)
         for q in loaded_questions if q
@@ -218,32 +225,16 @@ async def submit_answer(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-    # Record in session_answers (idempotent)
-    is_new = db.save_answer(
+    # Record in session_answers atomically (batch DB operations)
+    res = db.process_session_answer(
         session_id=req.session_id,
+        user_id=user_id,
         canonical_id=req.canonical_id,
         selected_key=req.selected_key.upper(),
         correct_key=feedback.correct_key,
-        is_correct=feedback.is_correct
+        is_correct=feedback.is_correct,
+        session_type=session.get("session_type", "EXAM")
     )
-
-    if is_new:
-        # Track mistake pool only for fresh answers
-        if not feedback.is_correct:
-            db.record_mistake(user_id, req.canonical_id)
-        else:
-            db.resolve_mistake(user_id, req.canonical_id)
-
-        # Increment learning streak
-        streak = db.increment_streak_progress(user_id, 1)
-
-    # Check auto-termination on 3rd mistake in EXAM mode (Uzbekistan DYHXX VMQ 408: max 2 mistakes)
-    is_exam_terminated = False
-    if session.get("session_type") == "EXAM":
-        answers = db.get_session_answers(req.session_id)
-        current_incorrect = sum(1 for a in answers.values() if not a.get("is_correct"))
-        if current_incorrect > 2:
-            is_exam_terminated = True
 
     return {
         "canonical_id": req.canonical_id,
@@ -252,8 +243,8 @@ async def submit_answer(
         "is_correct": feedback.is_correct,
         "explanation": feedback.explanation,
         "legal_reference": feedback.legal_reference,
-        "streak": streak,
-        "is_exam_terminated": is_exam_terminated
+        "streak": res["streak"],
+        "is_exam_terminated": res["is_exam_terminated"]
     }
 
 # 5. Finish Session & Calculate Score
