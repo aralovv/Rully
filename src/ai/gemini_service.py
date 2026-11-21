@@ -18,7 +18,8 @@ class GeminiService:
 
     @property
     def api_key(self):
-        return os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        val = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        return val.strip() if val else None
 
     def check_and_increment_rate_limit(self, user_id: int, is_pro: bool) -> tuple[bool, int, int]:
         """

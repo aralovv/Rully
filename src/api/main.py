@@ -289,6 +289,8 @@ async def health_check():
         "environment": "vercel" if IS_VERCEL else "standalone-cloud",
         "canonical_db": "master_database.sqlite",
         "turso_configured": bool(os.getenv("TURSO_DATABASE_URL")),
+        "gemini_api_key_set": bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")),
+        "gemini_key_len": len((os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "")),
         "mtproto_status": mtproto.connection_status,
         "bot_active": _bot_instance is not None
     }

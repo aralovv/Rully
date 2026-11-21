@@ -239,6 +239,25 @@ CREATE TABLE IF NOT EXISTS system_settings (
     updated_at TEXT NOT NULL
 );
 
+-- 15. AI Assistant Conversations & Usage Limits
+CREATE TABLE IF NOT EXISTS ai_conversations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    session_id TEXT NOT NULL DEFAULT 'default',
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    meta_json TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ai_conv_user ON ai_conversations(user_id, session_id);
+
+CREATE TABLE IF NOT EXISTS ai_usage_limits (
+    user_id INTEGER NOT NULL,
+    usage_date TEXT NOT NULL,
+    request_count INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (user_id, usage_date)
+);
+
 -- 15. Staged Questions (Human-in-the-Loop Review Queue)
 CREATE TABLE IF NOT EXISTS staged_questions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
