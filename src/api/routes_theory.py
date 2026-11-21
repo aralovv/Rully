@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.api.deps import get_current_user, get_db
+from src.api.routes_auth import invalidate_auth_cache
 from src.bot.database import BotDatabase
 from src.avtotest_product import AvtotestProductEngine, QuestionItem
 from src.bot.category_localization import localize_category
@@ -317,6 +318,7 @@ async def finish_session(
 
     finish_status = "FAILED_MISTAKES" if (is_exam and incorrect_count > 2) else "COMPLETED"
     db.finish_session(req.session_id, status=finish_status)
+    invalidate_auth_cache(user_id)
 
     return {
         "session_id": req.session_id,

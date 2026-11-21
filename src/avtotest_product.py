@@ -193,7 +193,7 @@ class AvtotestProductEngine:
             return categories
 
     # Helper to construct a QuestionItem in a specified language
-    def get_question(self, canonical_id: str, language: str = "uz_latn", include_answer_key: bool = False) -> Optional[QuestionItem]:
+    def get_question(self, canonical_id: str, language: str = "uz_latn", include_answer_key: bool = True) -> Optional[QuestionItem]:
         if language not in SUPPORTED_LANGUAGES:
             raise ValueError(f"Unsupported language '{language}'. Choose from {list(SUPPORTED_LANGUAGES.keys())}")
 

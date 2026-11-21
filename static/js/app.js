@@ -83,6 +83,7 @@
 
   // 2. Application Reactive State
   const state = {
+    authPending: true,
     user: null,
     lang: 'uz_latn',
     stats: null,
@@ -801,6 +802,7 @@
   }
 
   function canAccessExam() {
+    if (state.authPending) return true;
     if (isUserPro()) return true;
     if (state.free_tier && state.free_tier.remaining_exams > 0) return true;
     return false;
@@ -1683,7 +1685,7 @@
 
   // 8. Application Bootstrap
   async function initApp() {
-    // Immediate pre-auth trilingual detection for instant localized loading screen
+    // 1. Immediate pre-auth trilingual detection for instant localized loading screen
     try {
       const cachedLang = localStorage.getItem('rully_lang');
       const tgLang = window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code;
@@ -1693,9 +1695,8 @@
         state.lang = 'ru';
       }
     } catch (e) {}
-    applyLocalization();
 
-    // 0ms Synchronous Hydration from Telegram WebApp SDK (never flash default names)
+    // 2. 0ms Synchronous Hydration from Telegram WebApp SDK (never flash default names)
     const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
     if (tgUser && (tgUser.first_name || tgUser.username)) {
       state.user = {
@@ -1707,7 +1708,7 @@
       updateDriverProfileUI();
     }
 
-    // 0ms Synchronous Hydration from local cached profile & stats
+    // 3. 0ms Synchronous Hydration from local cached profile & stats (instant PRO restore)
     try {
       const cachedBundle = localStorage.getItem('rully_auth_bundle');
       if (cachedBundle) {
@@ -1721,6 +1722,9 @@
         applyTelemetryUI(bundle);
       }
     } catch (e) {}
+
+    // 4. Initial localization with hydrated user and optimistic subscription
+    applyLocalization();
 
     const dismissLoading = initLoadingScreen();
     injectSvgIcons();
@@ -1737,6 +1741,7 @@
         body: JSON.stringify({ init_data: initData })
       });
 
+      state.authPending = false;
       state.user = authRes.user;
       state.subscription = authRes.subscription || authRes.user?.subscription || { is_pro: false, tier: 'free' };
       state.free_tier = authRes.free_tier || { is_pro: false, has_access: true, remaining_exams: 2 };
@@ -1748,18 +1753,21 @@
         streak: authRes.streak
       };
       updateSubscriptionUI();
+      updateAiProLockState();
       applyTelemetryUI(authRes);
 
       try { sessionStorage.setItem('rully_tg_init_data', initData); } catch (e) {}
       updateDriverProfileUI();
     } catch (e) {
       console.warn("Auth initialization error, using fallback session:", e);
+      state.authPending = false;
       if (!state.user) {
         initData = "dev_user_8809526955";
         state.user = { first_name: "Haydovchi", username: "kurs_savdo", language: state.lang || "uz_latn" };
         state.subscription = { is_pro: false, tier: 'free' };
         updateDriverProfileUI();
         updateSubscriptionUI();
+        updateAiProLockState();
       }
     }
 
@@ -2506,7 +2514,10 @@
     const isTerminalMode = (state.quiz.sessionType === 'EXAM' || (state.quiz.sessionType === 'CUSTOM' && !state.quiz.showExplanation));
 
     // Instantly mark current number box in matrix navigation as correct / wrong / answered
-    const curBox = document.querySelector(`.exam-box-item[data-idx="${state.quiz.currentIndex}"]`);
+    const targetIdx = (state.quiz.questions && state.quiz.questions.length)
+      ? state.quiz.questions.findIndex(item => item.canonical_id === canonicalId)
+      : state.quiz.currentIndex;
+    const curBox = document.querySelector(`.exam-box-item[data-idx="${targetIdx >= 0 ? targetIdx : state.quiz.currentIndex}"]`);
     if (curBox) {
       curBox.classList.remove('unanswered', 'answered', 'correct', 'wrong');
       if (state.quiz.showAnswer !== false && isCorrect !== null) {
@@ -2529,8 +2540,7 @@
         if (typeof showToast === 'function') {
           showToast(t('res_exam_terminated_toast') || 'Imtihon to‘xtatildi: 2 tadan ortiq xato qilindi!');
         }
-        finishQuiz(true);
-        // Background sync to server
+        // Send answer and then finish session
         apiFetch('/api/session/answer', {
           method: 'POST',
           body: JSON.stringify({
@@ -2539,7 +2549,9 @@
             selected_key: selectedKey,
             language: state.lang
           })
-        }).catch(e => console.warn(e));
+        }).finally(() => {
+          finishQuiz(true);
+        });
         return;
       }
     }
@@ -3306,6 +3318,7 @@
   let aiIsGenerating = false;
 
   function updateAiProLockState() {
+    if (state.authPending) return;
     const isPro = !!(state.subscription && state.subscription.is_pro);
     const lockedBox = document.getElementById('ai-pro-locked-box');
     const inputEl = document.getElementById('ai-input-field');

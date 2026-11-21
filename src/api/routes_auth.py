@@ -3,14 +3,22 @@ Authentication and User Profile Endpoints for RULLY Mini App.
 """
 
 import os
+import time
 from fastapi import APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from src.api.deps import get_current_user, get_db
 from src.api.security import verify_telegram_init_data
 from src.bot.database import BotDatabase, SUBSCRIPTION_PLANS
 
 router = APIRouter(prefix="/api", tags=["Auth & User"])
+
+# Ultra-fast in-memory cache for auth bootstrap bundles
+_AUTH_BUNDLE_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
+_AUTH_CACHE_TTL = 45.0  # seconds
+
+def invalidate_auth_cache(user_id: int):
+    _AUTH_BUNDLE_CACHE.pop(user_id, None)
 
 class TelegramAuthRequest(BaseModel):
     init_data: str = Field(..., description="Raw initData string from Telegram WebApp")
@@ -31,12 +39,22 @@ async def auth_telegram(req: TelegramAuthRequest, db: BotDatabase = Depends(get_
     if not user_id:
         raise HTTPException(status_code=400, detail="Missing user ID")
 
+    now = time.time()
+    cached = _AUTH_BUNDLE_CACHE.get(user_id)
+    if cached and (now - cached[0] < _AUTH_CACHE_TTL):
+        return {
+            "ok": True,
+            **cached[1]
+        }
+
     bundle = db.get_user_full_auth_bundle(
         user_id=user_id,
         username=user_data.get("username"),
         first_name=user_data.get("first_name", "Haydovchi"),
         last_name=user_data.get("last_name", "")
     )
+
+    _AUTH_BUNDLE_CACHE[user_id] = (now, bundle)
 
     return {
         "ok": True,
@@ -97,6 +115,7 @@ async def activate_subscription(
 
     user_id = user["user_id"]
     sub = db.activate_subscription(user_id, req.plan_id)
+    invalidate_auth_cache(user_id)
     return {
         "ok": True,
         "subscription": sub,
