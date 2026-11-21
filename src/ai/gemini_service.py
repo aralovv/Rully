@@ -44,7 +44,7 @@ class GeminiService:
 
             for attempt in range(2):
                 try:
-                    resp = await client.post(url, json=payload, headers=req_headers)
+                    resp = await client.post(url, json=payload, headers=req_headers, timeout=12.0)
                     last_status = resp.status_code
                     last_text = resp.text
 
@@ -54,7 +54,7 @@ class GeminiService:
                     if resp.status_code in (429, 503):
                         logger.warning(f"Gemini model {model_name} returned {resp.status_code} (attempt {attempt+1}).")
                         if attempt == 0:
-                            await asyncio.sleep(0.8)
+                            await asyncio.sleep(0.5)
                             continue
                     break
                 except Exception as e:

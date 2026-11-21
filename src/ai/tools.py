@@ -54,17 +54,22 @@ def tool_search_questions(
             c.execute(sql, tuple(fallback_params))
             rows = c.fetchall()
         
+        answers_by_cid = {}
+        if rows:
+            cids = [r["canonical_id"] for r in rows]
+            placeholders = ",".join("?" * len(cids))
+            c.execute(f"""
+                SELECT canonical_id, option_key, {col_text} AS opt_text
+                FROM canonical_answers
+                WHERE canonical_id IN ({placeholders})
+                ORDER BY canonical_id, sort_order
+            """, tuple(cids))
+            for a in c.fetchall():
+                answers_by_cid.setdefault(a["canonical_id"], []).append({"key": a["option_key"], "text": a["opt_text"]})
+
         results = []
         for idx, r in enumerate(rows):
             cid = r["canonical_id"]
-            c.execute(f"""
-                SELECT option_key, {col_text} AS opt_text
-                FROM canonical_answers
-                WHERE canonical_id = ?
-                ORDER BY sort_order
-            """, (cid,))
-            answers = [{"key": a["option_key"], "text": a["opt_text"]} for a in c.fetchall()]
-            
             results.append({
                 "canonical_id": cid,
                 "question_number": idx + 1,
@@ -73,7 +78,7 @@ def tool_search_questions(
                 "legal_reference": r["legal_reference"],
                 "explanation": r["explanation"],
                 "correct_option_key": r["correct_option_key"],
-                "options": answers
+                "options": answers_by_cid.get(cid, [])
             })
             
         return {
@@ -101,17 +106,22 @@ def tool_get_user_bookmarks(user_id: int, limit: int = 5, language: str = "uz_la
         """, (lang, user_id, min(limit, 10)))
         
         rows = c.fetchall()
+        answers_by_cid = {}
+        if rows:
+            cids = [r["canonical_id"] for r in rows]
+            placeholders = ",".join("?" * len(cids))
+            c.execute(f"""
+                SELECT canonical_id, option_key, {col_text} AS opt_text
+                FROM canonical_answers
+                WHERE canonical_id IN ({placeholders})
+                ORDER BY canonical_id, sort_order
+            """, tuple(cids))
+            for a in c.fetchall():
+                answers_by_cid.setdefault(a["canonical_id"], []).append({"key": a["option_key"], "text": a["opt_text"]})
+
         results = []
         for idx, r in enumerate(rows):
             cid = r["canonical_id"]
-            c.execute(f"""
-                SELECT option_key, {col_text} AS opt_text
-                FROM canonical_answers
-                WHERE canonical_id = ?
-                ORDER BY sort_order
-            """, (cid,))
-            answers = [{"key": a["option_key"], "text": a["opt_text"]} for a in c.fetchall()]
-            
             results.append({
                 "canonical_id": cid,
                 "question_number": idx + 1,
@@ -120,7 +130,7 @@ def tool_get_user_bookmarks(user_id: int, limit: int = 5, language: str = "uz_la
                 "legal_reference": r["legal_reference"],
                 "explanation": r["explanation"],
                 "correct_option_key": r["correct_option_key"],
-                "options": answers
+                "options": answers_by_cid.get(cid, [])
             })
             
         return {
@@ -148,17 +158,22 @@ def tool_get_user_mistakes(user_id: int, limit: int = 5, language: str = "uz_lat
         """, (lang, user_id, min(limit, 10)))
         
         rows = c.fetchall()
+        answers_by_cid = {}
+        if rows:
+            cids = [r["canonical_id"] for r in rows]
+            placeholders = ",".join("?" * len(cids))
+            c.execute(f"""
+                SELECT canonical_id, option_key, {col_text} AS opt_text
+                FROM canonical_answers
+                WHERE canonical_id IN ({placeholders})
+                ORDER BY canonical_id, sort_order
+            """, tuple(cids))
+            for a in c.fetchall():
+                answers_by_cid.setdefault(a["canonical_id"], []).append({"key": a["option_key"], "text": a["opt_text"]})
+
         results = []
         for idx, r in enumerate(rows):
             cid = r["canonical_id"]
-            c.execute(f"""
-                SELECT option_key, {col_text} AS opt_text
-                FROM canonical_answers
-                WHERE canonical_id = ?
-                ORDER BY sort_order
-            """, (cid,))
-            answers = [{"key": a["option_key"], "text": a["opt_text"]} for a in c.fetchall()]
-            
             results.append({
                 "canonical_id": cid,
                 "question_number": idx + 1,
@@ -168,7 +183,7 @@ def tool_get_user_mistakes(user_id: int, limit: int = 5, language: str = "uz_lat
                 "legal_reference": r["legal_reference"],
                 "explanation": r["explanation"],
                 "correct_option_key": r["correct_option_key"],
-                "options": answers
+                "options": answers_by_cid.get(cid, [])
             })
             
         return {
@@ -214,7 +229,7 @@ def tool_get_user_statistics(user_id: int, language: str = "uz_latn") -> Dict[st
 GEMINI_TOOLS_DECLARATIONS = [
     {
         "name": "search_questions",
-        "description": "Avtotest savollar bazasidan berilgan matn, belgi yoki qoida bo'yicha tegishli savollarni qidirish.",
+        "description": "Avtotest savollar bazasidan berilgan matn, belgi yoki qoida bo'yicha aynan test savolini topish. Faqat foydalanuvchi aniq biror test savolini yoki misolni ko'rsatishni so'raganda ishlatiladi.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
