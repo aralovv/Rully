@@ -919,8 +919,9 @@
     const isRulesOpen = document.getElementById('platform-rules-modal')?.classList.contains('active');
     const isChangelogOpen = document.getElementById('version-history-modal')?.classList.contains('active');
     const isReadinessOpen = document.getElementById('readiness-diagnostic-modal')?.classList.contains('active');
+    const isSavedOpen = document.getElementById('saved-questions-modal')?.classList.contains('active');
 
-    if (isInvoiceOpen || isPaywallOpen || isQuizOpen || isSettingsOpen || isRulesOpen || isChangelogOpen || isReadinessOpen) {
+    if (isInvoiceOpen || isPaywallOpen || isQuizOpen || isSettingsOpen || isRulesOpen || isChangelogOpen || isReadinessOpen || isSavedOpen) {
       bb.show();
     } else {
       bb.hide();
@@ -929,6 +930,12 @@
 
   function handleNativeBackClick() {
     triggerHaptic('impact', 'light');
+    const savedModal = document.getElementById('saved-questions-modal');
+    if (savedModal && savedModal.classList.contains('active')) {
+      closeSavedQuestionsModal();
+      return;
+    }
+
     const readinessModal = document.getElementById('readiness-diagnostic-modal');
     if (readinessModal && readinessModal.classList.contains('active')) {
       closeReadinessDiagnosticModal();
@@ -3087,6 +3094,8 @@
     const modal = document.getElementById('saved-questions-modal');
     if (!modal) return;
     modal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+    updateNativeBackButton();
 
     // Ensure all modal elements are translated to active language
     applyLocalization();
@@ -3132,6 +3141,8 @@
     triggerHaptic('impact', 'light');
     const modal = document.getElementById('saved-questions-modal');
     if (modal) modal.classList.remove('active');
+    document.body.style.overflow = '';
+    updateNativeBackButton();
   }
 
   function filterSavedQuestions(query) {
@@ -3232,17 +3243,54 @@
           </div>
           <div class="saved-question-text">${q.question_text}</div>
           ${imgHtml}
-          ${optionsHtml}
-          ${expHtml}
-          <button class="btn-ask-ai-saved" data-qid="${q.canonical_id}">
-            <span class="r-icon xs" style="display:inline-flex;">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+
+          <button type="button" class="btn-toggle-saved-details" data-qid="${q.canonical_id}" aria-expanded="false">
+            <span class="btn-toggle-saved-left">
+              <span class="btn-toggle-saved-icon-eye">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </span>
+              <span class="btn-toggle-saved-text">${t('btn_show_saved_details')}</span>
             </span>
-            <span>${t('btn_ask_ai_saved')}</span>
+            <span class="btn-toggle-saved-chevron">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            </span>
           </button>
+
+          <div class="saved-card-details-collapse" id="saved-details-${q.canonical_id}" style="display: none;">
+            ${optionsHtml}
+            ${expHtml}
+            <button class="btn-ask-ai-saved" data-qid="${q.canonical_id}">
+              <span class="btn-ai-emoji">✨</span>
+              <span>${t('btn_ask_ai_saved')}</span>
+            </button>
+          </div>
         </div>
       `;
     }).join('');
+
+    bodyEl.querySelectorAll('.btn-toggle-saved-details').forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        triggerHaptic('impact', 'light');
+        const qid = btn.getAttribute('data-qid');
+        const detailsEl = document.getElementById(`saved-details-${qid}`);
+        const textEl = btn.querySelector('.btn-toggle-saved-text');
+        if (!detailsEl) return;
+
+        const isCurrentlyOpen = detailsEl.style.display !== 'none';
+        if (isCurrentlyOpen) {
+          detailsEl.style.display = 'none';
+          btn.classList.remove('is-active');
+          btn.setAttribute('aria-expanded', 'false');
+          if (textEl) textEl.textContent = t('btn_show_saved_details');
+        } else {
+          detailsEl.style.display = 'block';
+          btn.classList.add('is-active');
+          btn.setAttribute('aria-expanded', 'true');
+          if (textEl) textEl.textContent = t('btn_hide_saved_details');
+        }
+      };
+    });
 
     bodyEl.querySelectorAll('.btn-ask-ai-saved').forEach(btn => {
       btn.onclick = (e) => {
