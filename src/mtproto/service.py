@@ -173,19 +173,22 @@ class MTProtoManager:
             try:
                 sender = await event.get_sender()
                 sender_username = getattr(sender, "username", "") or ""
-                # Verify sender is Humocardbot or test bot
-                if MONITORED_BOT.lower() not in sender_username.lower() and MONITORED_BOT.lower() not in str(event.chat_id).lower():
+                sender_first_name = getattr(sender, "first_name", "") or ""
+                sender_title = getattr(sender, "title", "") or ""
+
+                is_from_humo = (
+                    MONITORED_BOT.lower() in sender_username.lower()
+                    or "humo" in sender_username.lower()
+                    or "humo" in sender_first_name.lower()
+                    or "humo" in sender_title.lower()
+                    or MONITORED_BOT.lower() in str(event.chat_id).lower()
+                )
+
+                raw_text = event.raw_text or ""
+                if not is_from_humo and not ("HUMOCARD" in raw_text or "HUMO" in raw_text or "To‘ldirish" in raw_text or "To'ldirish" in raw_text):
                     return
 
-                raw_text = event.raw_text
                 self.last_event_at = datetime.utcnow().isoformat()
-
-                # Zero-Active-Order Optimization:
-                # If there are 0 active orders, skip heavy parsing/matching
-                active_count = get_active_orders_count()
-                if active_count == 0:
-                    logger.debug("Zero active orders: skipping MTProto matching pipeline.")
-                    return
 
                 # Parse Humocard notification
                 parsed = parse_humocard_notification(raw_text)
@@ -202,6 +205,8 @@ class MTProtoManager:
                 if res.get("status") == "MATCHED":
                     self.last_payment_at = datetime.utcnow().isoformat()
                     logger.info(f"MTProto Auto-Matched payment: {res}")
+                else:
+                    logger.info(f"MTProto Processed payment event: {res.get('status')}")
             except Exception as ex:
                 logger.error(f"Error handling MTProto incoming message: {ex}")
 

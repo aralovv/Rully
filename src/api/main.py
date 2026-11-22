@@ -150,12 +150,29 @@ async def lifespan(app: FastAPI):
                     logger.error(f"Telegram Bot polling error: {e}")
 
             bot_task = asyncio.create_task(bot_worker_loop())
+        # 6. Anti-sleep keep-alive pinger for Render cloud deployment
+        async def keepalive_pinger_loop():
+            target_url = os.getenv("WEB_APP_URL", "https://rully-app.onrender.com").rstrip("/") + "/api/health"
+            await asyncio.sleep(60)  # Grace period on startup
+            import httpx
+            while True:
+                try:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        r = await client.get(target_url)
+                        logger.debug(f"Render keepalive ping: {r.status_code}")
+                except Exception as e:
+                    logger.debug(f"Render keepalive notice: {e}")
+                await asyncio.sleep(420)  # Every 7 minutes (Render idle limit is 15 minutes)
+
+        keepalive_task = asyncio.create_task(keepalive_pinger_loop())
     else:
         logger.info("Running in Vercel Serverless environment. Long-running daemons disabled.")
 
     yield
 
     # Teardown
+    if keepalive_task:
+        keepalive_task.cancel()
     if bot_task:
         bot_task.cancel()
     if _dp_instance:
@@ -172,7 +189,9 @@ async def lifespan(app: FastAPI):
         mtproto_task.cancel()
     if not IS_VERCEL:
         try:
-            await get_mtproto_manager().disconnect()
+            manager = get_mtproto_manager()
+            if manager.client and manager.client.is_connected():
+                await manager.client.disconnect()
         except Exception:
             pass
     if expiration_task:
@@ -279,11 +298,13 @@ async def favicon():
 
 @app.get("/api/health")
 @app.get("/healthz")
+@app.get("/api/ping")
 async def health_check():
     from src.mtproto.service import get_mtproto_manager
     mtproto = get_mtproto_manager()
     return {
         "status": "healthy",
+        "pong": True,
         "service": "rully-miniapp-api",
         "version": "2.1.0",
         "environment": "vercel" if IS_VERCEL else "standalone-cloud",
