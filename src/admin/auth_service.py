@@ -24,8 +24,8 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 DB_PATH = os.getenv("DB_PATH", "master_database.sqlite")
-DEFAULT_ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "Anvarjon")
-DEFAULT_ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Anvarjon2007!@")
+DEFAULT_ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "Admin")
+DEFAULT_ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 DEFAULT_ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "1956239701"))
 SESSION_DURATION_HOURS = 12
 OTP_EXPIRY_MINUTES = 5

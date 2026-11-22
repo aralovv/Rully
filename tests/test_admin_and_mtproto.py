@@ -343,7 +343,7 @@ def test_admin_auth_flow():
     assert res_bad.status_code == 401
 
     # Step 2: Successful initiate login with valid credentials
-    admin_pwd = os.getenv("ADMIN_PASSWORD", "Anvarjon2007!@")
+    admin_pwd = os.getenv("ADMIN_PASSWORD", "test_admin_password_123")
     res_init = client.post("/api/admin/auth/login", json={
         "username": "Anvarjon",
         "password": admin_pwd
