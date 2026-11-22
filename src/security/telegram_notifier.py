@@ -217,3 +217,54 @@ async def send_payment_invoice_to_user(
         f"Buyurtma kodi: <code>{order_id}</code>"
     )
     return await send_telegram_message(MAIN_BOT_TOKEN, user_id, text)
+
+
+_last_mtproto_alerted_status = None
+_last_mtproto_alert_time = 0.0
+
+async def send_mtproto_status_alert(status: str, detail: str = "", force: bool = False) -> bool:
+    """
+    Sends an immediate critical alert to the administrator's personal Telegram account
+    if MTProto loses connection, encounters an auth error, or disconnects.
+    Deduplicated to avoid flooding.
+    """
+    global _last_mtproto_alerted_status, _last_mtproto_alert_time
+    import time
+    now = time.time()
+
+    # Avoid duplicate spam within 30 minutes unless status changed or forced
+    if not force and status == _last_mtproto_alerted_status and (now - _last_mtproto_alert_time) < 1800:
+        return False
+
+    _last_mtproto_alerted_status = status
+    _last_mtproto_alert_time = now
+
+    admin_id = ADMIN_TELEGRAM_ID
+    if not admin_id or not MAIN_BOT_TOKEN:
+        return False
+
+    if status == "CONNECTED":
+        icon = "🟢"
+        title = "MTProto Ulandi va Faol"
+        instruction = "Humocardbot xabarnomalari 24/7 rejimda tinglanmoqda."
+    elif status == "AUTH_REQUIRED":
+        icon = "🔴"
+        title = "MTProto: Qayta Avtorizatsiya Talab Qilinadi"
+        instruction = "Telegram sessiyasi bekor qilingan. Iltimos, <code>python connect_mtproto.py</code> orqali qayta ulang."
+    elif status == "DISCONNECTED":
+        icon = "🟡"
+        title = "MTProto: Aloqa Uzildi"
+        instruction = "MTProto mijozi aloqani yo'qotdi yoki sessiya topilmadi. Avtomatik qayta ulanish kutilmoqda."
+    else:
+        icon = "⚠️"
+        title = f"MTProto: Xatolik ({status})"
+        instruction = "MTProto ishlashida muammo aniqlandi."
+
+    text = (
+        f"{icon} <b>DIQQAT: {title}</b>\n\n"
+        f"Holat: <b>{status}</b>\n"
+        f"Tafsilot: <i>{detail}</i>\n\n"
+        f"ℹ️ {instruction}"
+    )
+    return await send_telegram_message(MAIN_BOT_TOKEN, admin_id, text)
+

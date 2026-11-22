@@ -20,6 +20,7 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError
 from src.mtproto.service import DEFAULT_API_ID, DEFAULT_API_HASH, get_mtproto_manager
+from src.security.telegram_notifier import send_mtproto_status_alert
 
 async def interactive_connect():
     print("=" * 60)
@@ -68,6 +69,15 @@ async def interactive_connect():
     session_str = client.session.save()
     manager.phone_number = phone
     manager.save_session(session_str, me)
+
+    try:
+        await send_mtproto_status_alert(
+            "CONNECTED",
+            f"Akkaunt (@{me.username or me.first_name}, {phone}) muvaffaqiyatli ulandi! Humocardbot xabarnomalari 24/7 rejimda tinglanmoqda.",
+            force=True
+        )
+    except Exception:
+        pass
 
     print("\n" + "=" * 60)
     print(f"✅ TABRIKLAYMIZ! MTProto muvaffaqiyatli ulandi!")

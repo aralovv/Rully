@@ -18,6 +18,7 @@ if root_dir not in sys.path:
 
 from src.mtproto.service import get_mtproto_manager
 from src.payments.order_manager import expire_stale_orders
+from src.security.telegram_notifier import send_mtproto_status_alert
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,19 +55,37 @@ async def main():
                     f"No active authorized session found or login required. Status: {manager.connection_status}. "
                     f"Waiting {retry_delay}s before retry... (Connect via Admin Panel if not connected)"
                 )
+                if manager.connection_status == "AUTH_REQUIRED":
+                    await send_mtproto_status_alert(
+                        "AUTH_REQUIRED",
+                        "Telegram sessiyasi bekor qilingan yoki muddati tugagan. connect_mtproto.py orqali qayta ulang."
+                    )
                 await asyncio.sleep(retry_delay)
                 continue
 
-            logger.info(f"MTProto successfully CONNECTED! Listening for Humocardbot messages...")
+            logger.info("MTProto successfully CONNECTED! Listening for Humocardbot messages...")
             retry_delay = 5  # reset delay on success
+            acc_user = manager.account_info.get("username") or manager.phone_number or ""
+            await send_mtproto_status_alert(
+                "CONNECTED",
+                f"Akkaunt (@{acc_user}) muvaffaqiyatli ulandi! Humocardbot xabarnomalari 24/7 rejimda tinglanmoqda."
+            )
             await manager.client.run_until_disconnected()
             logger.warning("MTProto client disconnected. Reconnecting in 5s...")
+            await send_mtproto_status_alert(
+                "DISCONNECTED",
+                "MTProto mijoz aloqasi uzildi. Server 5 soniyada avtomatik qayta ulanishga urinmoqda..."
+            )
             await asyncio.sleep(5)
         except (KeyboardInterrupt, SystemExit):
             logger.info("Worker stopped by user.")
             break
         except Exception as e:
             logger.error(f"MTProto worker exception: {e}. Retrying in {retry_delay}s...")
+            await send_mtproto_status_alert(
+                "ERROR",
+                f"MTProto worker xatoligi: {str(e)[:120]}"
+            )
             await asyncio.sleep(retry_delay)
             retry_delay = min(retry_delay * 2, 60)
 
