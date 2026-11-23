@@ -103,9 +103,21 @@ class GeminiService:
 
         return None, last_status, last_text
 
+    @staticmethod
+    def _detect_image_mime(data: bytes) -> Optional[str]:
+        if not data or len(data) < 12:
+            return None
+        if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+            return "image/webp"
+        if data[:2] == b"\xff\xd8":
+            return "image/jpeg"
+        if data[:8] == b"\x89PNG\r\n\x1a\n":
+            return "image/png"
+        return None
+
     async def _load_image_base64(self, image_url: str) -> Optional[Tuple[str, str]]:
         """Loads question image and returns (base64_str, mime_type).
-        Tries local disk first, then remote GitHub/CDN fallback.
+        Validates image magic bytes to ensure HTML error pages are never sent to Gemini.
         """
         if not image_url:
             return None
@@ -116,11 +128,12 @@ class GeminiService:
             # 1. Local disk check
             if os.path.exists(local_path):
                 with open(local_path, "rb") as f:
-                    b64 = base64.b64encode(f.read()).decode("utf-8")
-                    mime = "image/webp" if clean_name.lower().endswith(".webp") else "image/jpeg"
-                    return b64, mime
+                    content = f.read()
+                    mime = self._detect_image_mime(content)
+                    if mime:
+                        return base64.b64encode(content).decode("utf-8"), mime
 
-            # 2. Remote fallback check (prioritize fast Render edge CDN and jsDelivr over throttled GitHub raw)
+            # 2. Remote candidates
             candidates = []
             if image_url.startswith("http://") or image_url.startswith("https://"):
                 candidates.append(image_url)
@@ -133,10 +146,10 @@ class GeminiService:
                 for candidate in candidates:
                     try:
                         r = await client.get(candidate)
-                        if r.status_code == 200 and len(r.content) > 0:
-                            b64 = base64.b64encode(r.content).decode("utf-8")
-                            mime = "image/webp" if clean_name.lower().endswith(".webp") else "image/jpeg"
-                            return b64, mime
+                        if r.status_code == 200 and len(r.content) > 12:
+                            mime = self._detect_image_mime(r.content)
+                            if mime:
+                                return base64.b64encode(r.content).decode("utf-8"), mime
                     except Exception:
                         continue
         except Exception as e:
