@@ -1361,7 +1361,11 @@
     document.getElementById('app-container').style.display = 'flex';
     switchView('overview');
     loadTopbarIndicators();
-    setInterval(loadTopbarIndicators, 20000);
+    setInterval(() => {
+      if (!document.hidden) {
+        loadTopbarIndicators();
+      }
+    }, 20000);
   }
 
   // ================= APP INITIALIZATION =================

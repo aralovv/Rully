@@ -114,7 +114,9 @@
       days_left: 0,
       is_active: false
     },
-    selectedPlanId: 'pro_14'
+    selectedPlanId: 'pro_14',
+    lastAuthAt: 0,
+    history: null
   };
 
   // 3. Tactile Haptic Feedback Controller
@@ -1569,6 +1571,7 @@
           triggerHaptic('notification', 'success');
 
           // Update subscription state
+          state.lastAuthAt = 0;
           state.subscription = {
             tier: 'pro',
             is_pro: true,
@@ -1753,6 +1756,10 @@
       state.subscription = authRes.subscription || authRes.user?.subscription || { is_pro: false, tier: 'free' };
       state.free_tier = authRes.free_tier || { is_pro: false, has_access: true, remaining_exams: 2 };
       state.lang = authRes.user.language || state.lang || 'uz_latn';
+      state.lastAuthAt = Date.now();
+      if (authRes.history) {
+        state.history = authRes.history;
+      }
       try { localStorage.setItem('rully_lang', state.lang); } catch (e) {}
       try { localStorage.setItem('rully_auth_bundle', JSON.stringify(authRes)); } catch (e) {}
       state.stats = {
@@ -2713,6 +2720,7 @@
     }
     clearInterval(state.quiz.timerInterval);
     triggerHaptic('impact', 'heavy');
+    state.lastAuthAt = 0; // Invalidate profile cache so fresh results/stats will be fetched
 
     const elapsed = (Date.now() - state.quiz.startTime) / 1000;
     try {
@@ -2978,32 +2986,46 @@
   }
 
   // 14. Telemetry History & Mistakes Bank
-  async function loadResultsHistory() {
+  function renderHistoryTable(history) {
+    const histList = document.getElementById('history-table-body');
+    if (!histList) return;
+    if (!history || history.length === 0) {
+      histList.innerHTML = `<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 18px;">${t('history_empty')}</td></tr>`;
+    } else {
+      histList.innerHTML = history.map(h => {
+        const dateStr = h.created_at ? h.created_at.substring(0, 10) : '';
+        const statusClass = h.passed ? 'passed' : 'failed';
+        const statusText = h.passed ? t('status_passed') : t('status_failed');
+        return `
+          <tr style="border-bottom: 1px solid var(--border-hairline);">
+            <td style="padding: 12px 8px;">${dateStr}</td>
+            <td style="padding: 12px 8px; font-weight: 800; font-variant-numeric: tabular-nums;">${h.correct_count}/${h.total_questions} (${h.percentage}%)</td>
+            <td style="padding: 12px 8px;"><span class="telemetry-status-badge ${statusClass}" style="font-size: 11px;">${statusText}</span></td>
+          </tr>
+        `;
+      }).join('');
+    }
+  }
+
+  async function loadResultsHistory(force = false) {
     try {
+      const isFresh = (state.lastAuthAt && (Date.now() - state.lastAuthAt) < 60000);
+      if (!force && isFresh && state.history) {
+        if (state.subscription) updateSubscriptionUI();
+        renderHistoryTable(state.history);
+        return;
+      }
+
       const data = await apiFetch('/api/user/me');
+      state.lastAuthAt = Date.now();
       if (data.subscription) {
         state.subscription = data.subscription;
       }
-      updateSubscriptionUI();
-      const histList = document.getElementById('history-table-body');
-      if (histList) {
-        if (!data.history || data.history.length === 0) {
-          histList.innerHTML = `<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 18px;">${t('history_empty')}</td></tr>`;
-        } else {
-          histList.innerHTML = data.history.map(h => {
-            const dateStr = h.created_at.substring(0, 10);
-            const statusClass = h.passed ? 'passed' : 'failed';
-            const statusText = h.passed ? t('status_passed') : t('status_failed');
-            return `
-              <tr style="border-bottom: 1px solid var(--border-hairline);">
-                <td style="padding: 12px 8px;">${dateStr}</td>
-                <td style="padding: 12px 8px; font-weight: 800; font-variant-numeric: tabular-nums;">${h.correct_count}/${h.total_questions} (${h.percentage}%)</td>
-                <td style="padding: 12px 8px;"><span class="telemetry-status-badge ${statusClass}" style="font-size: 11px;">${statusText}</span></td>
-              </tr>
-            `;
-          }).join('');
-        }
+      if (data.history) {
+        state.history = data.history;
       }
+      updateSubscriptionUI();
+      renderHistoryTable(data.history || []);
 
       const mistakesData = await apiFetch(`/api/mistakes?lang=${state.lang}`);
       state.mistakesCount = mistakesData.count || 0;
@@ -3057,12 +3079,16 @@
   // Displays question, correct answer, and statutory explanation.
   // ==========================================================================
   let savedQuestionsCache = [];
+  let savedQuestionsCacheLang = '';
+  let savedQuestionsLastFetched = 0;
 
   async function updateSavedQuestionsCount() {
     try {
       const data = await apiFetch(`/api/bookmarks?lang=${state.lang}`);
       const count = data.count || (data.questions ? data.questions.length : 0);
       savedQuestionsCache = data.questions || [];
+      savedQuestionsCacheLang = state.lang;
+      savedQuestionsLastFetched = Date.now();
 
       const countEl = document.getElementById('saved-questions-count');
       if (countEl) countEl.textContent = count;
@@ -3106,6 +3132,22 @@
     const searchInput = document.getElementById('saved-filter-input');
     if (searchInput) searchInput.value = '';
 
+    // Fast path: render immediately from cache if valid for active language (< 60s fresh)
+    const isCacheFresh = (savedQuestionsCacheLang === state.lang && (Date.now() - savedQuestionsLastFetched) < 60000 && Array.isArray(savedQuestionsCache));
+    if (isCacheFresh) {
+      renderSavedQuestionsList(savedQuestionsCache);
+      if (searchWrap) {
+        searchWrap.style.display = savedQuestionsCache.length > 2 ? 'block' : 'none';
+      }
+      const modalBadge = document.getElementById('saved-modal-count-badge');
+      if (modalBadge) {
+        modalBadge.textContent = t('saved_count_n', { n: savedQuestionsCache.length });
+      }
+      const countEl = document.getElementById('saved-questions-count');
+      if (countEl) countEl.textContent = savedQuestionsCache.length;
+      return;
+    }
+
     if (bodyEl) {
       bodyEl.innerHTML = `
         <div style="text-align: center; padding: 48px 16px; color: var(--text-muted);">
@@ -3118,6 +3160,8 @@
     try {
       const data = await apiFetch(`/api/bookmarks?lang=${state.lang}`);
       savedQuestionsCache = data.questions || [];
+      savedQuestionsCacheLang = state.lang;
+      savedQuestionsLastFetched = Date.now();
       renderSavedQuestionsList(savedQuestionsCache);
 
       if (searchWrap) {

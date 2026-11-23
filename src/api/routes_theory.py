@@ -14,7 +14,7 @@ from src.api.routes_auth import invalidate_auth_cache
 from src.bot.database import BotDatabase
 from src.avtotest_product import AvtotestProductEngine, QuestionItem
 from src.bot.category_localization import localize_category
-from src.security.rate_limiter import rate_limiter
+from src.security.rate_limiter import rate_limiter, BoundedTTLCache
 
 router = APIRouter(prefix="/api", tags=["Theory & Exam"])
 engine = AvtotestProductEngine("master_database.sqlite")
@@ -56,8 +56,7 @@ def serialize_question(q: QuestionItem, is_bookmarked: bool = False, include_cor
     }
 
 # 1. Categories
-_categories_cache: Dict[str, Any] = {}
-_categories_cache_time: Dict[str, float] = {}
+_categories_cache = BoundedTTLCache[str, Any](maxsize=16, ttl_seconds=600.0)
 
 @router.get("/categories")
 def list_categories(
@@ -68,14 +67,12 @@ def list_categories(
     if selected_lang not in ["uz_latn", "uz_cyrl", "ru"]:
         selected_lang = "uz_latn"
     
-    now = time.time()
-    last_cached = _categories_cache_time.get(selected_lang, 0.0)
-    if selected_lang in _categories_cache and (now - last_cached) < 600:
-        categories = _categories_cache[selected_lang]
+    cached = _categories_cache.get(selected_lang)
+    if cached is not None:
+        categories = cached
     else:
         categories = engine.get_categories(selected_lang)
-        _categories_cache[selected_lang] = categories
-        _categories_cache_time[selected_lang] = now
+        _categories_cache.set(selected_lang, categories)
 
     return {
         "language": selected_lang,

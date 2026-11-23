@@ -943,13 +943,13 @@ class BotDatabase:
             unfinished = len(rows)
             return finished + unfinished
 
-    def get_user_free_tier_status(self, user_id: int) -> Dict[str, Any]:
+    def get_user_free_tier_status(self, user_id: int, subscription: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Evaluates Free Tier access for the user:
         - 2 free official state exam attempts are provided to all new users.
         - PRO subscribers have unlimited access.
         """
-        sub = self.get_user_subscription(user_id)
+        sub = subscription if subscription is not None else self.get_user_subscription(user_id)
         if sub.get("is_pro"):
             return {
                 "is_pro": True,

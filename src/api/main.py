@@ -8,6 +8,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
 
@@ -225,6 +226,9 @@ app = FastAPI(
     version="2.1.0",
     lifespan=lifespan
 )
+
+# Enable GZip compression for responses >= 1000 bytes (boosts Render/cold-start static transfer)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Strict CORS Configuration for Mini App webviews, official Telegram clients, and private admin web access
 ALLOWED_ORIGINS = [

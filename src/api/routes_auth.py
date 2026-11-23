@@ -33,7 +33,8 @@ class SubscriptionActivateRequest(BaseModel):
 def auth_telegram(req: TelegramAuthRequest, request: Request, db: BotDatabase = Depends(get_db)):
     client_ip = request.client.host if request.client else "unknown"
     rate_key = f"auth_ip:{client_ip}"
-    allowed, _, retry_after = rate_limiter.is_allowed(rate_key, max_requests=30, window_seconds=60)
+    # IP-based rate limit: 120 req/min (allows shared Wi-Fi NAT environments e.g., driving schools/campuses)
+    allowed, _, retry_after = rate_limiter.is_allowed(rate_key, max_requests=120, window_seconds=60)
     if not allowed:
         raise HTTPException(
             status_code=429,
@@ -82,7 +83,7 @@ def get_user_me(user: Dict[str, Any] = Depends(get_current_user), db: BotDatabas
     streak = db.get_learning_streak(user_id)
     bookmarks = db.get_user_bookmarks(user_id)
     subscription = db.get_user_subscription(user_id)
-    free_tier = db.get_user_free_tier_status(user_id)
+    free_tier = db.get_user_free_tier_status(user_id, subscription=subscription)
 
     return {
         "user": user,
@@ -110,7 +111,7 @@ def get_subscription_plans():
 @router.get("/subscription/status")
 def get_subscription_status(user: Dict[str, Any] = Depends(get_current_user), db: BotDatabase = Depends(get_db)):
     sub = db.get_user_subscription(user["user_id"])
-    ft = db.get_user_free_tier_status(user["user_id"])
+    ft = db.get_user_free_tier_status(user["user_id"], subscription=sub)
     return {"ok": True, "subscription": sub, "free_tier": ft}
 
 @router.post("/subscription/activate")
