@@ -6,6 +6,7 @@ Handles:
 - Session cookie management and logout
 """
 
+import os
 from fastapi import APIRouter, Request, Response, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -71,13 +72,20 @@ async def admin_otp_verify(req: AdminOTPVerifyRequest, request: Request, respons
 
     session_token = data["session_token"]
 
-    # Set secure HTTP-only cookie
+    # Set secure HTTP-only cookie with environment-aware Secure flag
+    is_secure = bool(
+        os.getenv("VERCEL")
+        or os.getenv("RENDER")
+        or os.getenv("ENVIRONMENT", "").lower() in ["production", "prod"]
+        or request.url.scheme == "https"
+    )
+
     response.set_cookie(
         key="admin_session",
         value=session_token,
         httponly=True,
         samesite="lax",
-        secure=False,  # Set to True automatically when running under HTTPS
+        secure=is_secure,
         max_age=12 * 3600,
         path="/"
     )

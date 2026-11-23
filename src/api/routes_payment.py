@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 
 from src.api.deps import get_current_user
+from src.security.rate_limiter import rate_limiter
 from src.payments.order_manager import (
     create_or_get_payment_order,
     get_user_active_order,
@@ -42,6 +43,15 @@ async def api_create_payment_order(
     Includes atomic debounce protection against rapid button double-clicks.
     """
     user_id = user["user_id"]
+
+    # Rate limiting (P0): max 3 order creation requests per minute per user
+    allowed, _, retry_after = rate_limiter.is_allowed(f"order_create:{user_id}", max_requests=3, window_seconds=60)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many order creation requests. Please wait {int(retry_after)}s before creating a new order."
+        )
+
     now = time.time()
     last_click = _user_order_locks.get(user_id, 0.0)
     if (now - last_click) < 2.5:

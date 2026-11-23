@@ -4,12 +4,13 @@ Authentication and User Profile Endpoints for RULLY Mini App.
 
 import os
 import time
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, Request
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, Tuple
 from src.api.deps import get_current_user, get_db
 from src.api.security import verify_telegram_init_data
 from src.bot.database import BotDatabase, SUBSCRIPTION_PLANS
+from src.security.rate_limiter import rate_limiter
 
 router = APIRouter(prefix="/api", tags=["Auth & User"])
 
@@ -30,7 +31,16 @@ class SubscriptionActivateRequest(BaseModel):
     plan_id: str = Field(..., description="Plan ID ('pro_14' or 'pro_30')")
 
 @router.post("/auth/telegram")
-async def auth_telegram(req: TelegramAuthRequest, db: BotDatabase = Depends(get_db)):
+async def auth_telegram(req: TelegramAuthRequest, request: Request, db: BotDatabase = Depends(get_db)):
+    client_ip = request.client.host if request.client else "unknown"
+    rate_key = f"auth_ip:{client_ip}"
+    allowed, _, retry_after = rate_limiter.is_allowed(rate_key, max_requests=30, window_seconds=60)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many authentication attempts. Please retry in {int(retry_after)}s."
+        )
+
     is_valid, user_data = verify_telegram_init_data(req.init_data)
     if not is_valid or not user_data:
         raise HTTPException(status_code=401, detail="Invalid Telegram signature")
@@ -38,6 +48,12 @@ async def auth_telegram(req: TelegramAuthRequest, db: BotDatabase = Depends(get_
     user_id = user_data.get("id")
     if not user_id:
         raise HTTPException(status_code=400, detail="Missing user ID")
+
+    # Additional per-user rate limit (max 30 requests/min)
+    user_rate_key = f"auth_user:{user_id}"
+    allowed_u, _, _ = rate_limiter.is_allowed(user_rate_key, max_requests=30, window_seconds=60)
+    if not allowed_u:
+        raise HTTPException(status_code=429, detail="Too many authentication requests for this user.")
 
     now = time.time()
     cached = _AUTH_BUNDLE_CACHE.get(user_id)
@@ -105,9 +121,10 @@ async def activate_subscription(
     user: Dict[str, Any] = Depends(get_current_user),
     db: BotDatabase = Depends(get_db)
 ):
-    # Security: Disable direct activation backdoor in production
-    is_prod = os.getenv("ENVIRONMENT", "").lower() == "production" or bool(os.getenv("VERCEL"))
-    if is_prod:
+    # Security (P0): Fail-closed. Direct manual activation is strictly forbidden in production / live cloud.
+    allow_test = os.getenv("ALLOW_TEST_ACTIVATION", "").strip().lower() == "true"
+    is_cloud_prod = bool(os.getenv("VERCEL") or os.getenv("RENDER") or os.getenv("ENVIRONMENT", "").lower() in ["production", "prod"])
+    if not allow_test or is_cloud_prod:
         raise HTTPException(
             status_code=403,
             detail="DIRECT_ACTIVATION_DISABLED: Manual activation is disabled in production. Please use /api/payment/orders/create"

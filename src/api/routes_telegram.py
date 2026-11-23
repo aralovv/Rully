@@ -39,9 +39,10 @@ async def telegram_webhook_handler(
     """
     Receives incoming webhook updates from Telegram Bot API servers.
     """
-    webhook_secret = os.getenv("TELEGRAM_WEBHOOK_SECRET")
-    if webhook_secret and x_telegram_bot_api_secret_token != webhook_secret:
-        logger.warning("Rejected webhook update due to invalid secret token")
+    webhook_secret = os.getenv("TELEGRAM_WEBHOOK_SECRET", "").strip()
+    # Security (P0): Fail-closed. Reject if webhook secret is unset or signature token does not match
+    if not webhook_secret or x_telegram_bot_api_secret_token != webhook_secret:
+        logger.warning("Rejected webhook update due to missing or invalid secret token")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid secret token")
 
     try:

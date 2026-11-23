@@ -226,12 +226,35 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS Configuration for Mini App webviews and private admin web access
+# Strict CORS Configuration for Mini App webviews, official Telegram clients, and private admin web access
+ALLOWED_ORIGINS = [
+    "https://rully-rully4.vercel.app",
+    "https://rully-three.vercel.app",
+    "https://rully-app.onrender.com",
+    "https://web.telegram.org",
+    "https://webk.telegram.org",
+    "https://webz.telegram.org",
+    "https://t.me",
+    "http://localhost:3000",
+    "http://localhost:8080",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8080",
+    "http://127.0.0.1:5173",
+]
+_extra_origins = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+if _extra_origins:
+    ALLOWED_ORIGINS.extend(_extra_origins)
+
+# Strict Regex: only trusted rully domains, official telegram origins, and localhost ports
+STRICT_CORS_ORIGIN_REGEX = r"^https?:\/\/(localhost|127\.0\.0\.1|rully[a-zA-Z0-9-]*\.vercel\.app|rully[a-zA-Z0-9-]*\.onrender\.com|web[kz]?\.telegram\.org|t\.me)(:[0-9]+)?$"
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^https?://.*$",
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=STRICT_CORS_ORIGIN_REGEX,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
     allow_headers=["*"],
 )
 

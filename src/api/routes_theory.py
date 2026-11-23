@@ -14,6 +14,7 @@ from src.api.routes_auth import invalidate_auth_cache
 from src.bot.database import BotDatabase
 from src.avtotest_product import AvtotestProductEngine, QuestionItem
 from src.bot.category_localization import localize_category
+from src.security.rate_limiter import rate_limiter
 
 router = APIRouter(prefix="/api", tags=["Theory & Exam"])
 engine = AvtotestProductEngine("master_database.sqlite")
@@ -115,6 +116,15 @@ async def start_session(
     db: BotDatabase = Depends(get_db)
 ):
     user_id = user["user_id"]
+
+    # Rate limiting (P0): max 10 session start requests per minute per user
+    allowed, _, retry_after = rate_limiter.is_allowed(f"session_start:{user_id}", max_requests=10, window_seconds=60)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many session start requests. Please wait {int(retry_after)}s before starting another session."
+        )
+
     lang = req.language or user.get("language", "uz_latn")
     if lang not in ["uz_latn", "uz_cyrl", "ru"]:
         lang = "uz_latn"
@@ -219,6 +229,8 @@ async def submit_answer(
     session = db.get_session(req.session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    if session.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden: Session belongs to another user")
 
     if session.get("session_type") == "EXAM" and (session.get("status") in ("FAILED_MISTAKES", "COMPLETED", "TERMINATED") or (session.get("incorrect_count", 0) >= 3)):
         return {
@@ -275,6 +287,8 @@ async def finish_session(
     session = db.get_session(req.session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    if session.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden: Session belongs to another user")
 
     answers = db.get_session_answers(req.session_id)
     total_q = session["total_questions"]
@@ -345,6 +359,8 @@ async def get_session_state(
     session = db.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    if session.get("user_id") != user["user_id"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Session belongs to another user")
 
     answers = db.get_session_answers(session_id)
     return {

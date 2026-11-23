@@ -4,3 +4,4 @@ import os
 os.environ["TURSO_DATABASE_URL"] = ""
 os.environ["TURSO_AUTH_TOKEN"] = ""
 os.environ["ENVIRONMENT"] = "testing"
+os.environ["ALLOW_TEST_ACTIVATION"] = "true"

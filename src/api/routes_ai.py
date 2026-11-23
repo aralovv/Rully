@@ -6,6 +6,7 @@ from src.api.deps import get_current_user, get_db
 from src.bot.database import BotDatabase
 from src.db_adapter import get_db_connection
 from src.ai.gemini_service import GeminiService
+from src.security.rate_limiter import rate_limiter
 
 router = APIRouter(prefix="/api/ai", tags=["AI Assistant"])
 gemini_service = GeminiService()
@@ -81,6 +82,24 @@ async def chat_with_ai(
             "ok": False,
             "requires_pro": True,
             "reply": pro_msg
+        }
+
+    # Rate limit (P0): max 5 requests per minute per user (RPM protection)
+    allowed, _, retry_after = rate_limiter.is_allowed(f"ai_rpm:{user_id}", max_requests=5, window_seconds=60)
+    if not allowed:
+        rpm_msg = (
+            f"Iltimos, biroz kuting. AI Ustozga minutiga ko‘pi bilan 5 ta so‘rov yuborish mumkin ({int(retry_after)} soniya kuting)."
+            if lang == "uz_latn" else (
+                f"Илтимос, бироз кутинг. AI Устозга минутига кўпи билан 5 та сўров юбориш мумкин ({int(retry_after)} сония кутинг)."
+                if lang == "uz_cyrl" else
+                f"Пожалуйста, подождите. К AI можно отправлять не более 5 запросов в минуту (подождите {int(retry_after)} сек)."
+            )
+        )
+        return {
+            "ok": False,
+            "reply": rpm_msg,
+            "rate_limited": True,
+            "retry_after": retry_after
         }
 
     msg = req.message.strip()
