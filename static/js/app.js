@@ -3309,12 +3309,12 @@
         switchTab('ai');
         const optList = (q.options || []).map(o => `${o.option_key}) ${o.text}`).join('\n');
         const prompt = state.lang === 'ru'
-          ? `Пожалуйста, разбери и объясни этот вопрос и правило:\n\nВопрос: ${q.question_text}\nВарианты ответов:\n${optList}\nПравильный ответ: ${q.correct_option_key}`
+          ? `Пожалуйста, подробно разбери этот вопрос и дорожную ситуацию на картинке:\n\nВопрос: ${q.question_text}\nВарианты:\n${optList}\nПравильный ответ: ${q.correct_option_key}`
           : state.lang === 'uz_cyrl'
-          ? `Илтимос, ушбу савол ва ЙҲҚ қоидасини батафсил тушунтириб бер:\n\nСавол: ${q.question_text}\nВариантлар:\n${optList}\nТўғри жавоб: ${q.correct_option_key}`
-          : `Iltimos, ushbu savol va YHQ qoidasini batafsil tushuntirib ber:\n\nSavol: ${q.question_text}\nVariantlar:\n${optList}\nTo'g'ri javob: ${q.correct_option_key}`;
+          ? `Илтимос, ушбу савол ва расмдаги йўл ҳаракати вазиятини батафсил таҳлил қилиб бер:\n\nСавол: ${q.question_text}\nВариантлар:\n${optList}\nТўғри жавоб: ${q.correct_option_key}`
+          : `Iltimos, ushbu savol va rasmdagi yo‘l harakati vaziyatini batafsil tahlil qilib ber:\n\nSavol: ${q.question_text}\nVariantlar:\n${optList}\nTo‘g‘ri javob: ${q.correct_option_key}`;
 
-        sendAiMessage(prompt);
+        sendAiMessage(prompt, q.image_url, q.canonical_id);
       };
     });
 
@@ -3497,7 +3497,7 @@
     });
   }
 
-  function appendAiMessageToUI(role, text, cards = []) {
+  function appendAiMessageToUI(role, text, cards = [], imageUrl = null) {
     const container = document.getElementById('ai-chat-messages');
     if (!container) return;
 
@@ -3507,6 +3507,19 @@
 
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    let imgHtml = '';
+    if (imageUrl) {
+      imgHtml = `
+        <div class="ai-msg-image-wrap" onclick="openLightbox('${imageUrl}')">
+          <img src="${imageUrl}" alt="Savol rasmi" class="ai-msg-attached-img" />
+          <span class="ai-msg-image-zoom-hint">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 11px; height: 11px;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+            <span>Kattalashtirish</span>
+          </span>
+        </div>
+      `;
+    }
 
     let cardsHtml = '';
     if (cards && cards.length > 0) {
@@ -3543,7 +3556,7 @@
     msgDiv.innerHTML = `
       <div class="ai-msg-avatar">${isBot ? botAvatarHtml : userAvatarHtml}</div>
       <div class="ai-msg-content">
-        <div class="ai-msg-bubble">${formattedText}${cardsHtml}</div>
+        <div class="ai-msg-bubble">${imgHtml}${formattedText}${cardsHtml}</div>
         <span class="ai-msg-time">${timeStr}</span>
       </div>
     `;
@@ -3594,7 +3607,7 @@
     if (typing) typing.remove();
   }
 
-  async function sendAiMessage(promptText = null) {
+  async function sendAiMessage(promptText = null, imageUrl = null, canonicalId = null) {
     if (!state.subscription?.is_pro) {
       openPaywallModal('ai');
       return;
@@ -3615,13 +3628,18 @@
     if (sendBtn) sendBtn.disabled = true;
 
     triggerHaptic('impact', 'medium');
-    appendAiMessageToUI('user', text);
+    appendAiMessageToUI('user', text, [], imageUrl);
     showAiTypingIndicator();
 
     try {
       const res = await apiFetch('/api/ai/chat', {
         method: 'POST',
-        body: JSON.stringify({ message: text, language: state.lang || 'uz_latn' })
+        body: JSON.stringify({
+          message: text,
+          language: state.lang || 'uz_latn',
+          image_url: imageUrl || null,
+          canonical_id: canonicalId || null
+        })
       });
 
       hideAiTypingIndicator();

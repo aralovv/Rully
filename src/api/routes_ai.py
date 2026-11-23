@@ -14,6 +14,8 @@ class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = "default"
     language: Optional[str] = "uz_latn"
+    image_url: Optional[str] = None
+    canonical_id: Optional[str] = None
 
 class ClearHistoryRequest(BaseModel):
     session_id: Optional[str] = "default"
@@ -92,7 +94,9 @@ async def chat_with_ai(
         session_id=session_id,
         message=msg,
         is_pro=is_pro,
-        language=lang
+        language=lang,
+        image_url=req.image_url,
+        canonical_id=req.canonical_id
     )
     return result
 

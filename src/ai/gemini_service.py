@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import base64
 import asyncio
 import logging
 from typing import Dict, Any, List, Optional, Tuple
@@ -63,6 +64,35 @@ class GeminiService:
                     break
 
         return None, last_status, last_text
+
+    async def _load_image_base64(self, image_url: str) -> Optional[Tuple[str, str]]:
+        """Loads question image and returns (base64_str, mime_type).
+        Tries local disk first, then remote GitHub/CDN fallback.
+        """
+        if not image_url:
+            return None
+        try:
+            clean_name = os.path.basename(image_url.split("?")[0].replace("\\", "/"))
+            local_path = os.path.join("data", "images", "original", clean_name)
+
+            # 1. Local disk check
+            if os.path.exists(local_path):
+                with open(local_path, "rb") as f:
+                    b64 = base64.b64encode(f.read()).decode("utf-8")
+                    mime = "image/webp" if clean_name.lower().endswith(".webp") else "image/jpeg"
+                    return b64, mime
+
+            # 2. Remote fallback check
+            fetch_url = image_url if (image_url.startswith("http://") or image_url.startswith("https://")) else f"https://raw.githubusercontent.com/aralovv/Rully/main/data/images/original/{clean_name}"
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                r = await client.get(fetch_url)
+                if r.status_code == 200:
+                    b64 = base64.b64encode(r.content).decode("utf-8")
+                    mime = "image/webp" if clean_name.lower().endswith(".webp") else "image/jpeg"
+                    return b64, mime
+        except Exception as e:
+            logger.warning(f"Failed to load image for Gemini vision ({image_url}): {e}")
+        return None
 
     def check_and_increment_rate_limit(self, user_id: int, is_pro: bool) -> tuple[bool, int, int]:
         """
@@ -133,7 +163,9 @@ class GeminiService:
         session_id: str,
         message: str,
         is_pro: bool = False,
-        language: str = "uz_latn"
+        language: str = "uz_latn",
+        image_url: Optional[str] = None,
+        canonical_id: Optional[str] = None
     ) -> Dict[str, Any]:
         lang = normalize_lang(language)
 
@@ -200,13 +232,29 @@ class GeminiService:
             }
 
         # 3. Save User Message
-        self.save_message(user_id, session_id, "user", message)
+        user_meta = json.dumps({"image_url": image_url, "canonical_id": canonical_id}) if (image_url or canonical_id) else None
+        self.save_message(user_id, session_id, "user", message, user_meta)
 
-        # 4. Build Gemini Payload
+        # 4. Build Gemini Payload (with Multimodal Vision if image is present)
+        current_parts: List[Dict[str, Any]] = [{"text": message}]
+        if image_url:
+            img_data = await self._load_image_base64(image_url)
+            if img_data:
+                b64_str, mime_type = img_data
+                current_parts.append({
+                    "inline_data": {
+                        "mime_type": mime_type,
+                        "data": b64_str
+                    }
+                })
+                logger.info(f"Attached multimodal vision image ({mime_type}) to Gemini request")
+
         history = self.get_conversation_history(user_id, session_id, limit=8)
-        # Ensure latest user message is present
+        # Ensure latest user message has multimodal parts attached
         if not history or history[-1]["parts"][0].get("text") != message:
-            history.append({"role": "user", "parts": [{"text": message}]})
+            history.append({"role": "user", "parts": current_parts})
+        else:
+            history[-1]["parts"] = current_parts
 
         contents = history
         tools_def = [{"function_declarations": GEMINI_TOOLS_DECLARATIONS}]
