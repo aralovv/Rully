@@ -14,9 +14,9 @@ from src.db_adapter import get_db_connection
 logger = logging.getLogger(__name__)
 
 GEMINI_MODELS = [
-    "gemini-flash-lite-latest",
     "gemini-3-flash-preview",
     "gemini-flash-latest",
+    "gemini-flash-lite-latest",
     "gemini-3.8-flash",
     "gemini-3.1-flash-lite"
 ]
