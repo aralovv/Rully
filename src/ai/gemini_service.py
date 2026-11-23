@@ -440,8 +440,6 @@ class GeminiService:
             history[-1]["parts"] = current_parts
 
         contents = history
-        tools_def = [{"function_declarations": GEMINI_TOOLS_DECLARATIONS}]
-        
         # Build ground truth & verified scene passport context if question or image is referenced
         gt_context = self._build_ground_truth_context(image_url, canonical_id, lang)
         sys_prompt_text = get_system_prompt(lang)
@@ -461,17 +459,9 @@ class GeminiService:
                 "maxOutputTokens": 1024
             }
         }
-        # Only inject function-calling tools for general queries; if ground truth / visual scene passport is already provided, answer directly in single-pass
-        if not gt_context:
-            payload["tools"] = tools_def
-            payload["toolConfig"] = {
-                "functionCallingConfig": {
-                    "mode": "AUTO"
-                }
-            }
 
         # 5. Call Gemini with automatic fallback & retry
-        async with httpx.AsyncClient(timeout=40.0) as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             try:
                 data, status_code, err_text = await self._call_gemini_with_fallback(client, payload)
                 if not data or status_code != 200:
@@ -493,69 +483,7 @@ class GeminiService:
                 parts = content.get("parts", [])
 
                 question_cards = []
-
-                # Check if Gemini called a tool
-                function_call = next((p.get("functionCall") for p in parts if "functionCall" in p), None)
-                if function_call:
-                    fn_name = function_call.get("name")
-                    fn_args = function_call.get("args", {})
-                    logger.info(f"Gemini requested tool: {fn_name} with args: {fn_args}")
-
-                    # Execute tool with user's language
-                    tool_fn = TOOL_MAPPING.get(fn_name)
-                    if tool_fn:
-                        tool_result = tool_fn(fn_args, user_id, lang)
-                        
-                        # Collect question cards if questions were returned
-                        for k in ["questions", "saved_questions", "mistake_questions"]:
-                            if k in tool_result:
-                                question_cards.extend(tool_result[k])
-
-                        # Sanitize data for LLM so it never sees raw canonical IDs
-                        def _clean_for_llm(data):
-                            if isinstance(data, dict):
-                                return {k: _clean_for_llm(v) for k, v in data.items() if k != "canonical_id"}
-                            elif isinstance(data, list):
-                                return [_clean_for_llm(item) for item in data]
-                            return data
-
-                        gemini_safe_result = _clean_for_llm(tool_result)
-
-                        # Send function response back to Gemini for final user answer
-                        fn_response_content = {
-                            "role": "function",
-                            "parts": [{
-                                "functionResponse": {
-                                    "name": fn_name,
-                                    "response": {"result": gemini_safe_result}
-                                }
-                            }]
-                        }
-                        
-                        # Update contents with model's functionCall and tool's response
-                        updated_contents = list(contents)
-                        updated_contents.append(content)
-                        updated_contents.append(fn_response_content)
-
-                        second_payload = {
-                            "system_instruction": system_instruction,
-                            "contents": updated_contents,
-                            "generationConfig": {
-                                "temperature": 0.35,
-                                "maxOutputTokens": 1024
-                            }
-                        }
-
-                        second_data, second_status, _ = await self._call_gemini_with_fallback(client, second_payload)
-                        if second_data and second_status == 200:
-                            final_parts = second_data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-                            final_text = "".join(p.get("text", "") for p in final_parts)
-                        else:
-                            final_text = "Ma'lumotlar olindi va tahlil qilindi." if lang == "uz_latn" else ("Маълумотлар олинди ва таҳлил қилинди." if lang == "uz_cyrl" else "Данные получены и проанализированы.")
-                    else:
-                        final_text = "Noma'lum vosita chaqirildi."
-                else:
-                    final_text = "".join(p.get("text", "") for p in parts)
+                final_text = "".join(p.get("text", "") for p in parts)
 
                 # Clean any leaked technical identifiers from final text
                 final_text = re.sub(r'\b(?:Canon(?:ical)?\s*(?:yhq)?[:\-]?\s*)?UZ-YHQ-[A-Z0-9]+\b', '', final_text, flags=re.IGNORECASE)
