@@ -13,9 +13,10 @@ from src.db_adapter import get_db_connection
 logger = logging.getLogger(__name__)
 
 GEMINI_MODELS = [
+    "gemini-flash-lite-latest",
+    "gemini-flash-latest",
     "gemini-3.1-flash-lite",
-    "gemini-3.8-flash",
-    "gemini-flash-latest"
+    "gemini-3.8-flash"
 ]
 
 class GeminiService:
