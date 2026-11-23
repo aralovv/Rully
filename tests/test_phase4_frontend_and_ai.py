@@ -25,6 +25,12 @@ def test_cache_control_headers():
     cc_cat = resp_cat.headers.get("Cache-Control", "")
     assert "s-maxage=3600" in cc_cat or "max-age=3600" in cc_cat
 
+    # 3. Practical modules contains user progress -> MUST NOT be public/s-maxage cached
+    resp_amaliy = client.get("/api/amaliy/modules")
+    cc_amaliy = resp_amaliy.headers.get("Cache-Control", "")
+    assert "private" in cc_amaliy or "no-cache" in cc_amaliy
+    assert "s-maxage" not in cc_amaliy
+
 
 def test_script_tags_have_defer_in_index_html():
     with open("static/index.html", "r", encoding="utf-8") as f:

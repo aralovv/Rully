@@ -48,13 +48,6 @@
       "dest": "/api/index.py"
     },
     {
-      "src": "/api/amaliy/modules",
-      "headers": {
-        "Cache-Control": "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400"
-      },
-      "dest": "/api/index.py"
-    },
-    {
       "src": "/admin/?$",
       "headers": {
         "Cache-Control": "public, max-age=0, must-revalidate"

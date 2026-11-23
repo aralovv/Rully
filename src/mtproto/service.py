@@ -17,16 +17,29 @@ from datetime import datetime
 from typing import Optional, Dict, Any, Tuple
 from dotenv import load_dotenv
 
-from telethon import TelegramClient, events
-from telethon.errors import (
-    SessionPasswordNeededError,
-    PhoneCodeInvalidError,
-    PasswordHashInvalidError,
-    PhoneNumberInvalidError,
-    FloodWaitError,
-    ApiIdInvalidError
-)
-from telethon.sessions import StringSession
+try:
+    from telethon import TelegramClient, events
+    from telethon.errors import (
+        SessionPasswordNeededError,
+        PhoneCodeInvalidError,
+        PasswordHashInvalidError,
+        PhoneNumberInvalidError,
+        FloodWaitError,
+        ApiIdInvalidError
+    )
+    from telethon.sessions import StringSession
+    HAS_TELETHON = True
+except ImportError:
+    HAS_TELETHON = False
+    TelegramClient = None
+    events = None
+    StringSession = None
+    SessionPasswordNeededError = Exception
+    PhoneCodeInvalidError = Exception
+    PasswordHashInvalidError = Exception
+    PhoneNumberInvalidError = Exception
+    FloodWaitError = Exception
+    ApiIdInvalidError = Exception
 
 from src.security.crypto import encrypt_data, decrypt_data
 from src.payments.parser import parse_humocard_notification
@@ -118,6 +131,11 @@ class MTProtoManager:
 
     async def initialize_and_start(self):
         """Attempts to start Telethon using existing stored session."""
+        if not HAS_TELETHON:
+            self.connection_status = "NOT_INSTALLED"
+            logger.info("Telethon is not installed in this environment (e.g. Vercel serverless). MTProto worker disabled.")
+            return False
+
         session_str = self.get_stored_session()
         if not session_str:
             self.connection_status = "DISCONNECTED"
@@ -217,6 +235,9 @@ class MTProtoManager:
         api_hash: Optional[str] = None
     ) -> Tuple[bool, str]:
         """Step 1 of web-based MTProto connection: sends code to phone."""
+        if not HAS_TELETHON:
+            return False, "Telethon is not installed in this environment (MTProto runs on Render)."
+
         import re
         clean_phone = re.sub(r"[^\d+]", "", phone_number.strip())
         if not clean_phone.startswith("+"):

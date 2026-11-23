@@ -5,7 +5,12 @@ Extracts questions dynamically from Next.js pre-rendered JSON data routes.
 import time
 import json
 import requests
-from bs4 import BeautifulSoup
+try:
+    from bs4 import BeautifulSoup
+    HAS_BS4 = True
+except ImportError:
+    HAS_BS4 = False
+    BeautifulSoup = None
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 

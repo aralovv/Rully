@@ -36,7 +36,6 @@ from src.admin.routes_admin_questions import router as admin_questions_router
 # System & Lifecycle Services
 from src.database_migrations import run_migrations
 from src.admin.auth_service import ensure_admin_user_exists
-from src.mtproto.service import get_mtproto_manager
 from src.payments.order_manager import expire_stale_orders
 
 logger = logging.getLogger(__name__)
@@ -247,6 +246,10 @@ _extra_origins = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split
 if _extra_origins:
     ALLOWED_ORIGINS.extend(_extra_origins)
 
+_web_app_url = os.getenv("WEB_APP_URL", "").strip()
+if _web_app_url and _web_app_url not in ALLOWED_ORIGINS:
+    ALLOWED_ORIGINS.append(_web_app_url)
+
 # Strict Regex: only trusted rully domains, official telegram origins, and localhost ports
 STRICT_CORS_ORIGIN_REGEX = r"^https?:\/\/(localhost|127\.0\.0\.1|rully[a-zA-Z0-9-]*\.vercel\.app|rully[a-zA-Z0-9-]*\.onrender\.com|web[kz]?\.telegram\.org|t\.me)(:[0-9]+)?$"
 
@@ -268,8 +271,10 @@ async def add_no_cache_header(request: Request, call_next):
         response.headers["Pragma"] = "no-cache"
     elif path.startswith(("/static/css/", "/static/js/", "/static/img/", "/static/images/")):
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    elif path in ("/api/categories", "/api/amaliy/modules"):
+    elif path == "/api/categories":
         response.headers["Cache-Control"] = "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400"
+    elif path.startswith("/api/amaliy/"):
+        response.headers["Cache-Control"] = "private, no-cache, no-store, must-revalidate"
     return response
 
 # Include User Mini App API Routers
