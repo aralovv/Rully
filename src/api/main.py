@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 # Background worker for order expiration
 async def order_expiration_worker():
-    """Runs every 60 seconds to expire stale payment orders."""
+    """Runs periodically (every 15 minutes) to expire stale payment orders without waking up CPU constantly."""
     while True:
         try:
             expired_count = expire_stale_orders()
@@ -51,7 +51,7 @@ async def order_expiration_worker():
                 logger.info(f"Order expiration worker: Expired {expired_count} stale orders.")
         except Exception as e:
             logger.error(f"Error in order expiration worker: {e}")
-        await asyncio.sleep(60)
+        await asyncio.sleep(900)
 
 
 async def periodic_question_sync_worker():
@@ -148,9 +148,10 @@ async def lifespan(app: FastAPI):
 
         mtproto_task = asyncio.create_task(mtproto_worker_loop())
 
-        # 5. Start Telegram Bot polling in background
+        # 5. Start Telegram Bot polling in background (if enabled and configured)
         bot_token = os.getenv("BOT_TOKEN", "").strip()
-        if bot_token and not bot_token.startswith("your_"):
+        enable_bot_polling = os.getenv("ENABLE_BOT_POLLING", "true").lower() in ("true", "1", "yes")
+        if bot_token and not bot_token.startswith("your_") and enable_bot_polling:
             async def bot_worker_loop():
                 global _bot_instance, _dp_instance
                 try:

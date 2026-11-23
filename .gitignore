@@ -31,6 +31,8 @@ scratch/
 /images/
 
 # Temporary SQLite and Backups
+master_database.sqlite
+*.sqlite
 backups/
 data/backups/
 data/master_database.sqlite

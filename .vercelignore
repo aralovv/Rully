@@ -1,11 +1,13 @@
 # Vercel Ignore
 *.sqlite*
+master_database.sqlite
 cloudflared.exe
 backups/
 audit_screenshots/
 .pytest_cache/
 scratch/
 tests/
+src/mtproto/
 *.csv
 *.xlsx
 questions.json
