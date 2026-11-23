@@ -263,10 +263,13 @@ app.add_middleware(
 async def add_no_cache_header(request: Request, call_next):
     response = await call_next(request)
     path = request.url.path
-    if path.startswith("/static") or path in ("/", "/index.html", "/admin", "/admin/"):
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    if path in ("/", "/index.html", "/admin", "/admin/", "/static/index.html", "/static/admin/index.html"):
+        response.headers["Cache-Control"] = "public, max-age=0, must-revalidate"
         response.headers["Pragma"] = "no-cache"
-        response.headers["Expires"] = "0"
+    elif path.startswith(("/static/css/", "/static/js/", "/static/img/", "/static/images/")):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif path in ("/api/categories", "/api/amaliy/modules"):
+        response.headers["Cache-Control"] = "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400"
     return response
 
 # Include User Mini App API Routers

@@ -327,6 +327,21 @@ class GeminiService:
             
             return True, current + 1, max_limit
 
+    def refund_rate_limit(self, user_id: int):
+        """Refund 1 request count if external Gemini API call failed or timed out."""
+        try:
+            with get_db_connection() as conn:
+                c = conn.cursor()
+                c.execute("""
+                UPDATE ai_usage_limits
+                SET request_count = MAX(0, request_count - 1)
+                WHERE user_id = ? AND usage_date = DATE('now')
+                """, (user_id,))
+                conn.commit()
+                logger.info(f"Refunded AI rate limit for user {user_id} due to API failure")
+        except Exception as e:
+            logger.warning(f"Failed to refund AI rate limit for user {user_id}: {e}")
+
     def get_conversation_history(self, user_id: int, session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
         try:
             with get_db_connection() as conn:
@@ -411,7 +426,23 @@ class GeminiService:
                 "cards": []
             }
 
-        # 2. Rate Limit Check (PRO users fair use limit)
+        # 2. Check API key configuration before consuming rate limit
+        if not self.api_key:
+            if lang == "ru":
+                reply = "⚠️ **AI Инструктор настраивается.**\n\nСервис скоро заработает в полном объеме."
+            elif lang == "uz_cyrl":
+                reply = "⚠️ **AI Устоз хизмати созланмоқда.**\n\nТез орада тўлиқ ишга тушади."
+            else:
+                reply = "⚠️ **AI Ustoz xizmati sozlanmoqda.**\n\nTez orada to'liq ishga tushadi."
+            return {
+                "ok": True,
+                "reply": reply,
+                "limit_reached": False,
+                "usage": {"current": 0, "max": 100},
+                "cards": []
+            }
+
+        # 3. Rate Limit Check (PRO users fair use limit)
         allowed, current_count, max_limit = self.check_and_increment_rate_limit(user_id, is_pro)
         if not allowed:
             if lang == "ru":
@@ -424,22 +455,6 @@ class GeminiService:
                 "ok": False,
                 "reply": limit_msg,
                 "limit_reached": True,
-                "usage": {"current": current_count, "max": max_limit},
-                "cards": []
-            }
-
-        # 2. Check API key
-        if not self.api_key:
-            if lang == "ru":
-                reply = "⚠️ **AI Инструктор настраивается.**\n\nСервис скоро заработает в полном объеме."
-            elif lang == "uz_cyrl":
-                reply = "⚠️ **AI Устоз хизмати созланмоқда.**\n\nТез орада тўлиқ ишга тушади."
-            else:
-                reply = "⚠️ **AI Ustoz xizmati sozlanmoqda.**\n\nTez orada to'liq ishga tushadi."
-            return {
-                "ok": True,
-                "reply": reply,
-                "limit_reached": False,
                 "usage": {"current": current_count, "max": max_limit},
                 "cards": []
             }
@@ -493,6 +508,8 @@ class GeminiService:
                 data, status_code, err_text = await self._call_gemini_with_fallback(client, payload)
                 if not data or status_code != 200:
                     logger.error(f"Gemini API error: {status_code} {err_text}")
+                    # Refund rate limit since external API call was unsuccessful
+                    self.refund_rate_limit(user_id)
                     if lang == "ru":
                         err_reply = "К сожалению, произошла ошибка связи с искусственным интеллектом. Пожалуйста, попробуйте еще раз."
                     elif lang == "uz_cyrl":
@@ -533,6 +550,7 @@ class GeminiService:
 
             except Exception as e:
                 logger.exception("AI assistant invocation exception")
+                self.refund_rate_limit(user_id)
                 return {
                     "ok": False,
                     "reply": f"AI xizmatida vaqtinchalik xatolik yuz berdi: {str(e)}",
