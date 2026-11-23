@@ -14,5 +14,11 @@ audit_diagnostics_raw.json
 *.session*
 .git/
 .env*
-images/
-data/
+/images/
+data/backups/
+data/exports/
+data/images/
+data/reports/
+data/sources/
+data/*.csv
+data/canonical_questions.json

@@ -2107,6 +2107,7 @@
 
     const candidates = [
       primaryUrl,
+      `https://rully-app.onrender.com/images/${filename}`,
       `https://fastly.jsdelivr.net/gh/aralovv/Rully@main/data/images/original/${filename}`,
       `https://raw.githubusercontent.com/aralovv/Rully/main/data/images/original/${filename}`,
       `https://cdn.statically.io/gh/aralovv/Rully/main/data/images/original/${filename}`,
@@ -3550,7 +3551,7 @@
     }
 
     const formattedText = formatAiMarkdown(text);
-    const botAvatarHtml = `<img src="/static/images/rully-avatar-128.png" alt="Rully" class="ai-avatar-thumb">`;
+    const botAvatarHtml = `<img src="/static/images/rully-avatar-128.png" alt="Rully" class="ai-avatar-thumb" onerror="this.onerror=null; this.src='https://rully-app.onrender.com/static/images/rully-avatar-128.png';">`;
     const userAvatarHtml = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 15px; height: 15px;"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
 
     msgDiv.innerHTML = `
@@ -3582,7 +3583,7 @@
       typing.className = 'ai-msg ai-msg-bot';
       typing.innerHTML = `
         <div class="ai-msg-avatar">
-          <img src="/static/images/rully-avatar-128.png" alt="Rully" class="ai-avatar-thumb">
+          <img src="/static/images/rully-avatar-128.png" alt="Rully" class="ai-avatar-thumb" onerror="this.onerror=null; this.src='https://rully-app.onrender.com/static/images/rully-avatar-128.png';">
         </div>
         <div class="ai-msg-content">
           <div class="ai-typing-bubble">
@@ -3679,7 +3680,7 @@
           container.innerHTML = `
             <div class="ai-msg ai-msg-bot">
               <div class="ai-msg-avatar">
-                <img src="/static/images/rully-avatar-128.png" alt="Rully" class="ai-avatar-thumb">
+                <img src="/static/images/rully-avatar-128.png" alt="Rully" class="ai-avatar-thumb" onerror="this.onerror=null; this.src='https://rully-app.onrender.com/static/images/rully-avatar-128.png';">
               </div>
               <div class="ai-msg-content">
                 <div class="ai-msg-bubble">

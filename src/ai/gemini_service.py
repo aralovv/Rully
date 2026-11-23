@@ -62,7 +62,7 @@ class GeminiService:
 
                 for attempt in range(2):
                     try:
-                        resp = await client.post(url, json=payload, headers=req_headers, timeout=12.0)
+                        resp = await client.post(url, json=payload, headers=req_headers, timeout=25.0)
                         last_status = resp.status_code
                         last_text = resp.text
 
@@ -440,7 +440,7 @@ class GeminiService:
         }
 
         # 5. Call Gemini with automatic fallback & retry
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=40.0) as client:
             try:
                 data, status_code, err_text = await self._call_gemini_with_fallback(client, payload)
                 if not data or status_code != 200:
