@@ -60,7 +60,7 @@ _categories_cache: Dict[str, Any] = {}
 _categories_cache_time: Dict[str, float] = {}
 
 @router.get("/categories")
-async def list_categories(
+def list_categories(
     lang: Optional[str] = Query(None),
     user: Dict[str, Any] = Depends(get_current_user)
 ):
@@ -85,7 +85,7 @@ async def list_categories(
 
 # 2. Get Single Question
 @router.get("/questions/{canonical_id}")
-async def get_question(
+def get_question(
     canonical_id: str,
     lang: Optional[str] = Query(None),
     user: Dict[str, Any] = Depends(get_current_user),
@@ -110,7 +110,7 @@ class SessionStartRequest(BaseModel):
     language: Optional[str] = None
 
 @router.post("/session/start")
-async def start_session(
+def start_session(
     req: SessionStartRequest,
     user: Dict[str, Any] = Depends(get_current_user),
     db: BotDatabase = Depends(get_db)
@@ -220,7 +220,7 @@ class SubmitAnswerRequest(BaseModel):
     language: Optional[str] = None
 
 @router.post("/session/answer")
-async def submit_answer(
+def submit_answer(
     req: SubmitAnswerRequest,
     user: Dict[str, Any] = Depends(get_current_user),
     db: BotDatabase = Depends(get_db)
@@ -278,7 +278,7 @@ class FinishSessionRequest(BaseModel):
     time_elapsed_seconds: Optional[float] = 0.0
 
 @router.post("/session/finish")
-async def finish_session(
+def finish_session(
     req: FinishSessionRequest,
     user: Dict[str, Any] = Depends(get_current_user),
     db: BotDatabase = Depends(get_db)
@@ -316,8 +316,9 @@ async def finish_session(
         else:
             category_breakdown[cat_name]["incorrect"] += 1
 
-    # Save exam result record if EXAM or graded practice
-    db.save_exam_result(
+    # Save exam result record and finish session atomically via single round-trip batch
+    finish_status = "FAILED_MISTAKES" if (is_exam and incorrect_count > 2) else "COMPLETED"
+    db.finalize_exam_session(
         session_id=req.session_id,
         user_id=user_id,
         total_q=total_q,
@@ -327,11 +328,9 @@ async def finish_session(
         passed=passed,
         time_spent=req.time_elapsed_seconds or 0.0,
         category_breakdown=category_breakdown,
-        unanswered=unanswered_count
+        unanswered=unanswered_count,
+        status=finish_status
     )
-
-    finish_status = "FAILED_MISTAKES" if (is_exam and incorrect_count > 2) else "COMPLETED"
-    db.finish_session(req.session_id, status=finish_status)
     invalidate_auth_cache(user_id)
 
     return {
@@ -351,7 +350,7 @@ async def finish_session(
 
 # 6. Get Existing Session State
 @router.get("/session/{session_id}")
-async def get_session_state(
+def get_session_state(
     session_id: str,
     user: Dict[str, Any] = Depends(get_current_user),
     db: BotDatabase = Depends(get_db)
@@ -370,7 +369,7 @@ async def get_session_state(
 
 # 7. Bookmarks
 @router.get("/bookmarks")
-async def list_bookmarks(
+def list_bookmarks(
     lang: Optional[str] = Query(None),
     user: Dict[str, Any] = Depends(get_current_user),
     db: BotDatabase = Depends(get_db)
@@ -394,7 +393,7 @@ class BookmarkToggleRequest(BaseModel):
     canonical_id: str
 
 @router.post("/bookmarks/toggle")
-async def toggle_bookmark(
+def toggle_bookmark(
     req: BookmarkToggleRequest,
     user: Dict[str, Any] = Depends(get_current_user),
     db: BotDatabase = Depends(get_db)
@@ -404,7 +403,7 @@ async def toggle_bookmark(
 
 # 8. User Mistakes Pool
 @router.get("/mistakes")
-async def list_mistakes(
+def list_mistakes(
     lang: Optional[str] = Query(None),
     user: Dict[str, Any] = Depends(get_current_user),
     db: BotDatabase = Depends(get_db)

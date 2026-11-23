@@ -25,14 +25,23 @@ DB_PATH = "master_database.sqlite"
 def cleanup_bot_test_users():
     def _clean():
         with sqlite3.connect(DB_PATH) as conn:
-            conn.execute("PRAGMA foreign_keys = ON;")
             real_ids = (1956239701, 8515329556, 8809526955)
             conn.execute("DELETE FROM session_answers WHERE session_id IN (SELECT session_id FROM user_sessions WHERE user_id NOT IN (?, ?, ?))", real_ids)
-            conn.execute("DELETE FROM telegram_users WHERE user_id NOT IN (?, ?, ?)", real_ids)
-            conn.execute("DELETE FROM user_sessions WHERE user_id NOT IN (?, ?, ?)", real_ids)
-            conn.execute("DELETE FROM user_mistakes WHERE user_id NOT IN (?, ?, ?)", real_ids)
-            conn.execute("DELETE FROM exam_results WHERE user_id NOT IN (?, ?, ?)", real_ids)
             conn.execute("DELETE FROM session_answers WHERE session_id NOT IN (SELECT session_id FROM user_sessions)")
+            conn.execute("DELETE FROM exam_results WHERE user_id NOT IN (?, ?, ?)", real_ids)
+            conn.execute("DELETE FROM user_mistakes WHERE user_id NOT IN (?, ?, ?)", real_ids)
+            conn.execute("DELETE FROM user_bookmarks WHERE user_id NOT IN (?, ?, ?)", real_ids)
+            conn.execute("DELETE FROM practical_checklist WHERE user_id NOT IN (?, ?, ?)", real_ids)
+            conn.execute("DELETE FROM practical_quiz_results WHERE user_id NOT IN (?, ?, ?)", real_ids)
+            conn.execute("DELETE FROM user_completed_modules WHERE user_id NOT IN (?, ?, ?)", real_ids)
+            conn.execute("DELETE FROM learning_streak WHERE user_id NOT IN (?, ?, ?)", real_ids)
+            conn.execute("DELETE FROM payment_transactions WHERE user_id NOT IN (?, ?, ?)", real_ids)
+            conn.execute("DELETE FROM payment_review_cases WHERE user_id NOT IN (?, ?, ?)", real_ids)
+            conn.execute("DELETE FROM payment_orders WHERE user_id NOT IN (?, ?, ?)", real_ids)
+            conn.execute("DELETE FROM user_sessions WHERE user_id NOT IN (?, ?, ?)", real_ids)
+            conn.execute("DELETE FROM user_subscriptions WHERE user_id NOT IN (?, ?, ?)", real_ids)
+            conn.execute("DELETE FROM user_activity_events WHERE user_id NOT IN (?, ?, ?)", real_ids)
+            conn.execute("DELETE FROM telegram_users WHERE user_id NOT IN (?, ?, ?)", real_ids)
             conn.commit()
     _clean()
     yield
@@ -65,6 +74,8 @@ def test_get_str_interpolation():
 def test_user_registration_and_language_switching(bot_db):
     test_uid = 999001
     with bot_db._get_connection() as conn:
+        conn.execute("DELETE FROM session_answers WHERE session_id IN (SELECT session_id FROM user_sessions WHERE user_id = ?)", (test_uid,))
+        conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (test_uid,))
         conn.execute("DELETE FROM telegram_users WHERE user_id = ?", (test_uid,))
         conn.commit()
     user = bot_db.get_or_create_user(test_uid, "tester", "John", "Doe", default_lang="uz_latn")
@@ -185,6 +196,8 @@ def test_main_menu_keyboard_structure():
 def test_one_time_language_selection_flag(bot_db):
     test_uid = 999099
     with bot_db._get_connection() as conn:
+        conn.execute("DELETE FROM session_answers WHERE session_id IN (SELECT session_id FROM user_sessions WHERE user_id = ?)", (test_uid,))
+        conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (test_uid,))
         conn.execute("DELETE FROM telegram_users WHERE user_id = ?", (test_uid,))
         conn.commit()
 

@@ -5,9 +5,9 @@ Provides bounded in-memory eviction (maxsize) to prevent memory leaks in product
 
 import os
 import time
-from collections import deque
+from collections import deque, OrderedDict
 from threading import Lock
-from typing import Dict, Tuple, Optional
+from typing import Dict, Tuple, Optional, Any, Generic, TypeVar
 
 class SlidingWindowRateLimiter:
     def __init__(self, maxsize: int = 5000):
@@ -56,3 +56,65 @@ class SlidingWindowRateLimiter:
                 self._records.clear()
 
 rate_limiter = SlidingWindowRateLimiter()
+
+K = TypeVar("K")
+V = TypeVar("V")
+
+class BoundedTTLCache(Generic[K, V]):
+    """
+    Thread-safe Bounded LRU Cache with Time-To-Live (TTL) eviction.
+    Protects server RAM from unbounded dictionary growth.
+    """
+    def __init__(self, maxsize: int = 2000, ttl_seconds: float = 60.0):
+        self._cache: OrderedDict[K, Tuple[float, V]] = OrderedDict()
+        self._maxsize = maxsize
+        self._ttl = ttl_seconds
+        self._lock = Lock()
+
+    def get(self, key: K, default: Any = None) -> Optional[V]:
+        now = time.time()
+        with self._lock:
+            if key not in self._cache:
+                return default
+            ts, val = self._cache[key]
+            if now - ts > self._ttl:
+                del self._cache[key]
+                return default
+            self._cache.move_to_end(key)
+            return val
+
+    def set(self, key: K, val: V):
+        now = time.time()
+        with self._lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
+            self._cache[key] = (now, val)
+            while len(self._cache) > self._maxsize:
+                self._cache.popitem(last=False)
+
+    def pop(self, key: K, default: Any = None) -> Optional[V]:
+        with self._lock:
+            if key in self._cache:
+                _, val = self._cache.pop(key)
+                return val
+            return default
+
+    def clear(self):
+        with self._lock:
+            self._cache.clear()
+
+    def prune_expired(self):
+        """Remove all entries whose TTL has passed."""
+        now = time.time()
+        with self._lock:
+            expired_keys = [k for k, (ts, _) in self._cache.items() if now - ts > self._ttl]
+            for k in expired_keys:
+                del self._cache[k]
+
+    def __contains__(self, key: K) -> bool:
+        return self.get(key) is not None
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._cache)
+

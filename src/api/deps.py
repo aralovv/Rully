@@ -8,19 +8,19 @@ from fastapi import Header, Query, HTTPException, Depends
 from typing import Optional, Dict, Any, Tuple
 from src.api.security import verify_telegram_init_data, is_production
 from src.bot.database import BotDatabase
+from src.security.rate_limiter import BoundedTTLCache
 
 def get_db() -> BotDatabase:
     return BotDatabase("master_database.sqlite")
 
-# Fast in-memory user cache (30s TTL) to eliminate repetitive Turso roundtrips
-_user_cache: Dict[int, Tuple[float, Dict[str, Any]]] = {}
-USER_CACHE_TTL = 30.0
+# Fast bounded in-memory user cache (30s TTL, max 2000 items) to eliminate repetitive Turso roundtrips
+_user_cache = BoundedTTLCache[int, Dict[str, Any]](maxsize=2000, ttl_seconds=30.0)
 
 def invalidate_user_cache(user_id: int):
     """Evicts a user from cache when subscription or profile changes."""
     _user_cache.pop(user_id, None)
 
-async def get_current_user(
+def get_current_user(
     x_telegram_init_data: Optional[str] = Header(None, alias="X-Telegram-Init-Data"),
     init_data: Optional[str] = Query(None, alias="initData"),
     db: BotDatabase = Depends(get_db)
@@ -34,9 +34,9 @@ async def get_current_user(
 
         # Default dev user for local testing and direct browser previews only
         dev_id = 8809526955
-        now = time.time()
-        if dev_id in _user_cache and (now - _user_cache[dev_id][0]) < USER_CACHE_TTL:
-            return _user_cache[dev_id][1]
+        cached = _user_cache.get(dev_id)
+        if cached:
+            return cached
 
         user = db.get_or_create_user(
             user_id=dev_id,
@@ -44,7 +44,7 @@ async def get_current_user(
             first_name="RULLY User",
             last_name=""
         )
-        _user_cache[dev_id] = (now, user)
+        _user_cache.set(dev_id, user)
         return user
 
     is_valid, user_data = verify_telegram_init_data(raw_data)
@@ -55,9 +55,9 @@ async def get_current_user(
     if not user_id:
         raise HTTPException(status_code=401, detail="Missing user ID in authentication data")
 
-    now = time.time()
-    if user_id in _user_cache and (now - _user_cache[user_id][0]) < USER_CACHE_TTL:
-        return _user_cache[user_id][1]
+    cached = _user_cache.get(user_id)
+    if cached:
+        return cached
 
     user = db.get_or_create_user(
         user_id=user_id,
@@ -65,5 +65,5 @@ async def get_current_user(
         first_name=user_data.get("first_name", "Haydovchi"),
         last_name=user_data.get("last_name", "")
     )
-    _user_cache[user_id] = (now, user)
+    _user_cache.set(user_id, user)
     return user

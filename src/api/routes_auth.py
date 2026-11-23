@@ -10,13 +10,12 @@ from typing import Optional, Dict, Any, Tuple
 from src.api.deps import get_current_user, get_db
 from src.api.security import verify_telegram_init_data
 from src.bot.database import BotDatabase, SUBSCRIPTION_PLANS
-from src.security.rate_limiter import rate_limiter
+from src.security.rate_limiter import rate_limiter, BoundedTTLCache
 
 router = APIRouter(prefix="/api", tags=["Auth & User"])
 
-# Ultra-fast in-memory cache for auth bootstrap bundles
-_AUTH_BUNDLE_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
-_AUTH_CACHE_TTL = 45.0  # seconds
+# Ultra-fast bounded in-memory cache for auth bootstrap bundles (max 2000 users, 45s TTL)
+_AUTH_BUNDLE_CACHE = BoundedTTLCache[int, Dict[str, Any]](maxsize=2000, ttl_seconds=45.0)
 
 def invalidate_auth_cache(user_id: int):
     _AUTH_BUNDLE_CACHE.pop(user_id, None)
@@ -31,7 +30,7 @@ class SubscriptionActivateRequest(BaseModel):
     plan_id: str = Field(..., description="Plan ID ('pro_14' or 'pro_30')")
 
 @router.post("/auth/telegram")
-async def auth_telegram(req: TelegramAuthRequest, request: Request, db: BotDatabase = Depends(get_db)):
+def auth_telegram(req: TelegramAuthRequest, request: Request, db: BotDatabase = Depends(get_db)):
     client_ip = request.client.host if request.client else "unknown"
     rate_key = f"auth_ip:{client_ip}"
     allowed, _, retry_after = rate_limiter.is_allowed(rate_key, max_requests=30, window_seconds=60)
@@ -55,12 +54,11 @@ async def auth_telegram(req: TelegramAuthRequest, request: Request, db: BotDatab
     if not allowed_u:
         raise HTTPException(status_code=429, detail="Too many authentication requests for this user.")
 
-    now = time.time()
     cached = _AUTH_BUNDLE_CACHE.get(user_id)
-    if cached and (now - cached[0] < _AUTH_CACHE_TTL):
+    if cached:
         return {
             "ok": True,
-            **cached[1]
+            **cached
         }
 
     bundle = db.get_user_full_auth_bundle(
@@ -70,7 +68,7 @@ async def auth_telegram(req: TelegramAuthRequest, request: Request, db: BotDatab
         last_name=user_data.get("last_name", "")
     )
 
-    _AUTH_BUNDLE_CACHE[user_id] = (now, bundle)
+    _AUTH_BUNDLE_CACHE.set(user_id, bundle)
 
     return {
         "ok": True,
@@ -78,7 +76,7 @@ async def auth_telegram(req: TelegramAuthRequest, request: Request, db: BotDatab
     }
 
 @router.get("/user/me")
-async def get_user_me(user: Dict[str, Any] = Depends(get_current_user), db: BotDatabase = Depends(get_db)):
+def get_user_me(user: Dict[str, Any] = Depends(get_current_user), db: BotDatabase = Depends(get_db)):
     user_id = user["user_id"]
     stats = db.get_user_stats(user_id)
     streak = db.get_learning_streak(user_id)
@@ -97,26 +95,26 @@ async def get_user_me(user: Dict[str, Any] = Depends(get_current_user), db: BotD
     }
 
 @router.post("/user/language")
-async def set_language(req: LanguageUpdateRequest, user: Dict[str, Any] = Depends(get_current_user), db: BotDatabase = Depends(get_db)):
+def set_language(req: LanguageUpdateRequest, user: Dict[str, Any] = Depends(get_current_user), db: BotDatabase = Depends(get_db)):
     user_id = user["user_id"]
     db.set_user_language(user_id, req.language)
     return {"ok": True, "language": req.language}
 
 # --- Subscription API Endpoints ---
 @router.get("/subscription/plans")
-async def get_subscription_plans():
+def get_subscription_plans():
     return {
         "plans": list(SUBSCRIPTION_PLANS.values())
     }
 
 @router.get("/subscription/status")
-async def get_subscription_status(user: Dict[str, Any] = Depends(get_current_user), db: BotDatabase = Depends(get_db)):
+def get_subscription_status(user: Dict[str, Any] = Depends(get_current_user), db: BotDatabase = Depends(get_db)):
     sub = db.get_user_subscription(user["user_id"])
     ft = db.get_user_free_tier_status(user["user_id"])
     return {"ok": True, "subscription": sub, "free_tier": ft}
 
 @router.post("/subscription/activate")
-async def activate_subscription(
+def activate_subscription(
     req: SubscriptionActivateRequest,
     user: Dict[str, Any] = Depends(get_current_user),
     db: BotDatabase = Depends(get_db)

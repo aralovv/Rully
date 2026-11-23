@@ -36,7 +36,7 @@ def get_valid_lang(lang: Optional[str], default_lang: str = "uz_latn") -> str:
 
 # 1. Modules List
 @router.get("/modules")
-async def list_modules(
+def list_modules(
     lang: Optional[str] = Query(None),
     user: Dict[str, Any] = Depends(get_current_user),
     db: BotDatabase = Depends(get_db)
@@ -73,7 +73,7 @@ class ModuleToggleRequest(BaseModel):
     module_id: str
 
 @router.post("/modules/toggle")
-async def toggle_module(
+def toggle_module(
     req: ModuleToggleRequest,
     user: Dict[str, Any] = Depends(get_current_user),
     db: BotDatabase = Depends(get_db)
@@ -83,7 +83,7 @@ async def toggle_module(
 
 # 2. Module Detail
 @router.get("/modules/{module_id}")
-async def get_module_detail(
+def get_module_detail(
     module_id: str,
     lang: Optional[str] = Query(None),
     user: Dict[str, Any] = Depends(get_current_user),
@@ -122,7 +122,7 @@ async def get_module_detail(
 
 # 3. Official Autodrome & City Readiness Checklist
 @router.get("/checklist")
-async def get_checklist(
+def get_checklist(
     lang: Optional[str] = Query(None),
     user: Dict[str, Any] = Depends(get_current_user),
     db: BotDatabase = Depends(get_db)
@@ -160,7 +160,7 @@ class ChecklistToggleRequest(BaseModel):
     is_completed: Optional[bool] = None
 
 @router.post("/checklist/toggle")
-async def toggle_checklist(
+def toggle_checklist(
     req: ChecklistToggleRequest,
     user: Dict[str, Any] = Depends(get_current_user),
     db: BotDatabase = Depends(get_db)
@@ -169,7 +169,7 @@ async def toggle_checklist(
     return {"ok": True, "item_id": req.item_id, "is_completed": new_state}
 
 @router.post("/checklist/reset")
-async def reset_checklist(
+def reset_checklist(
     user: Dict[str, Any] = Depends(get_current_user),
     db: BotDatabase = Depends(get_db)
 ):
@@ -178,7 +178,7 @@ async def reset_checklist(
 
 # 4. Situational Decision Tests
 @router.get("/scenarios")
-async def get_scenarios(
+def get_scenarios(
     lang: Optional[str] = Query(None),
     user: Dict[str, Any] = Depends(get_current_user)
 ):
@@ -210,7 +210,7 @@ class ScenarioAnswerRequest(BaseModel):
     language: Optional[str] = None
 
 @router.post("/scenarios/answer")
-async def answer_scenario(
+def answer_scenario(
     req: ScenarioAnswerRequest,
     user: Dict[str, Any] = Depends(get_current_user),
     db: BotDatabase = Depends(get_db)

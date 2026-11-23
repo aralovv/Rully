@@ -6,6 +6,7 @@ Provides drop-in compatibility with standard Python sqlite3 Connection, Cursor, 
 
 import os
 import sqlite3
+import threading
 import logging
 from typing import Optional, List, Dict, Any, Tuple, Union
 from dotenv import load_dotenv
@@ -57,13 +58,18 @@ except ImportError:
     HAS_LIBSQL = False
 
 
-_shared_turso_client = None
+_thread_local = threading.local()
 
 def get_shared_turso_client(url: str, token: str):
-    global _shared_turso_client
-    if _shared_turso_client is None or getattr(_shared_turso_client, "closed", False):
-        _shared_turso_client = libsql_client.create_client_sync(url=url, auth_token=token)
-    return _shared_turso_client
+    """
+    Thread-safe per-thread persistent libSQL client using threading.local().
+    Eliminates socket race conditions when executing sync database operations in FastAPI worker threadpool.
+    """
+    client = getattr(_thread_local, "turso_client", None)
+    if client is None or getattr(client, "closed", False):
+        client = libsql_client.create_client_sync(url=url, auth_token=token)
+        _thread_local.turso_client = client
+    return client
 
 
 class TursoRow:
@@ -130,15 +136,15 @@ class TursoCursor:
         except Exception as e:
             err_msg = str(e).lower()
             if any(term in err_msg for term in ["connection", "closed", "socket", "timeout", "reset", "broken"]):
-                logger.warning(f"Turso client error ({e}), refreshing persistent connection and retrying...")
-                global _shared_turso_client
+                logger.warning(f"Turso client error ({e}), refreshing thread-local persistent connection and retrying...")
                 try:
-                    if _shared_turso_client and not getattr(_shared_turso_client, "closed", False):
-                        _shared_turso_client.close()
+                    old_c = getattr(_thread_local, "turso_client", None)
+                    if old_c and not getattr(old_c, "closed", False):
+                        old_c.close()
                 except Exception:
                     pass
-                _shared_turso_client = libsql_client.create_client_sync(url=TURSO_URL, auth_token=TURSO_TOKEN)
-                self._client = _shared_turso_client
+                _thread_local.turso_client = libsql_client.create_client_sync(url=TURSO_URL, auth_token=TURSO_TOKEN)
+                self._client = _thread_local.turso_client
                 res = self._client.execute(clean_sql, args)
             else:
                 logger.error(f"Turso execute error on [{clean_sql}]: {e}")
@@ -212,6 +218,20 @@ class TursoConnection:
         stmts = [s.strip() for s in script.split(";") if s.strip()]
         return self._client.batch(stmts)
 
+    def batch(self, stmts: List[Union[str, Tuple[str, Any]]]):
+        """Execute a batch of statements in a single round-trip HTTP request."""
+        if not stmts:
+            return []
+        formatted_stmts = []
+        for s in stmts:
+            if isinstance(s, (tuple, list)):
+                sql = s[0].strip().rstrip(";")
+                params = list(s[1]) if len(s) > 1 and s[1] is not None else []
+                formatted_stmts.append((sql, params))
+            else:
+                formatted_stmts.append(s.strip().rstrip(";"))
+        return self._client.batch(formatted_stmts)
+
     def commit(self):
         pass
 
@@ -255,3 +275,28 @@ def get_db_connection(db_path: str = "master_database.sqlite"):
     except Exception:
         pass
     return conn
+
+
+def execute_batch(conn: Union[sqlite3.Connection, TursoConnection], stmts: List[Union[str, Tuple[str, Any]]]) -> List[Any]:
+    """
+    Executes a sequence of SQL statements atomically.
+    Uses Turso libSQL client's native batch() for a single HTTP round-trip when available,
+    or sequential cursor execution with transaction commit for standard SQLite.
+    """
+    if not stmts:
+        return []
+    if hasattr(conn, "batch"):
+        return conn.batch(stmts)
+
+    cur = conn.cursor()
+    results = []
+    for s in stmts:
+        if isinstance(s, (tuple, list)):
+            sql = s[0]
+            params = s[1] if len(s) > 1 and s[1] is not None else ()
+            cur.execute(sql, params)
+        else:
+            cur.execute(s)
+    conn.commit()
+    return results
+

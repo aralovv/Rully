@@ -62,14 +62,20 @@ def cleanup_test_pollution():
     yield
     with sqlite3.connect(DB_PATH) as conn:
         real_ids = (1956239701, 8515329556, 8809526955)
+        conn.execute("DELETE FROM session_answers WHERE session_id IN (SELECT session_id FROM user_sessions WHERE user_id NOT IN (?, ?, ?))", real_ids)
+        conn.execute("DELETE FROM exam_results WHERE user_id NOT IN (?, ?, ?)", real_ids)
+        conn.execute("DELETE FROM user_mistakes WHERE user_id NOT IN (?, ?, ?)", real_ids)
+        conn.execute("DELETE FROM user_bookmarks WHERE user_id NOT IN (?, ?, ?)", real_ids)
+        conn.execute("DELETE FROM learning_streak WHERE user_id NOT IN (?, ?, ?)", real_ids)
+        conn.execute("DELETE FROM user_sessions WHERE user_id NOT IN (?, ?, ?)", real_ids)
+        conn.execute("DELETE FROM user_subscriptions WHERE user_id NOT IN (?, ?, ?)", real_ids)
+        conn.execute("DELETE FROM user_activity_events WHERE user_id NOT IN (?, ?, ?)", real_ids)
         conn.execute("DELETE FROM payment_transactions")
         conn.execute("DELETE FROM payment_orders")
         conn.execute("DELETE FROM payment_events")
         conn.execute("DELETE FROM unmatched_payments")
         conn.execute("DELETE FROM payment_review_cases")
         conn.execute("DELETE FROM telegram_users WHERE user_id NOT IN (?, ?, ?)", real_ids)
-        conn.execute("DELETE FROM user_subscriptions WHERE user_id NOT IN (?, ?, ?)", real_ids)
-        conn.execute("DELETE FROM user_activity_events WHERE user_id NOT IN (?, ?, ?)", real_ids)
         conn.execute("DELETE FROM admin_audit_logs WHERE action IN ('PAYMENT_AUTO_MATCHED', 'LATE_PAYMENT_DETECTED', 'UNMATCHED_PAYMENT_LOGGED')")
         conn.commit()
 

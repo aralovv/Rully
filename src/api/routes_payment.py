@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 
 from src.api.deps import get_current_user
-from src.security.rate_limiter import rate_limiter
+from src.security.rate_limiter import rate_limiter, BoundedTTLCache
 from src.payments.order_manager import (
     create_or_get_payment_order,
     get_user_active_order,
@@ -23,8 +23,8 @@ from src.security.telegram_notifier import send_payment_invoice_to_user, send_or
 
 router = APIRouter(prefix="/api/payment", tags=["User Payment"])
 
-# Per-user debounce lock to eliminate concurrent rapid double-clicks on "Tarifni faollashtirish"
-_user_order_locks: Dict[int, float] = {}
+# Bounded per-user debounce lock (2.5s TTL, max 2000 users) to eliminate rapid double-clicks
+_user_order_locks = BoundedTTLCache[int, float](maxsize=2000, ttl_seconds=2.5)
 
 
 class CreateOrderRequest(BaseModel):
@@ -52,9 +52,7 @@ async def api_create_payment_order(
             detail=f"Too many order creation requests. Please wait {int(retry_after)}s before creating a new order."
         )
 
-    now = time.time()
-    last_click = _user_order_locks.get(user_id, 0.0)
-    if (now - last_click) < 2.5:
+    if _user_order_locks.get(user_id):
         # Rapid double-click within 2.5 seconds:
         # Idempotently return the user's active pending order
         existing = get_user_active_order(user_id)
@@ -65,8 +63,8 @@ async def api_create_payment_order(
                 "order": existing
             }
 
-    _user_order_locks[user_id] = now
-    success, message, order = create_or_get_payment_order(user_id, req.plan_id.strip())
+    _user_order_locks.set(user_id, time.time())
+    success, message, order = await asyncio.to_thread(create_or_get_payment_order, user_id, req.plan_id.strip())
     if not success:
         raise HTTPException(status_code=400, detail=message)
 
@@ -94,7 +92,7 @@ async def api_create_payment_order(
 
 
 @router.get("/orders/active")
-async def api_get_active_order(user: Dict[str, Any] = Depends(get_current_user)):
+def api_get_active_order(user: Dict[str, Any] = Depends(get_current_user)):
     """Retrieves user's currently active pending order, if any."""
     order = get_user_active_order(user["user_id"])
     return {
@@ -105,7 +103,7 @@ async def api_get_active_order(user: Dict[str, Any] = Depends(get_current_user))
 
 
 @router.get("/orders/{order_id}/status")
-async def api_get_order_status(
+def api_get_order_status(
     order_id: str,
     user: Dict[str, Any] = Depends(get_current_user)
 ):

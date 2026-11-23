@@ -7,7 +7,7 @@ import json
 import time
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Any, Tuple, Union
-from src.db_adapter import get_db_connection, is_turso_enabled
+from src.db_adapter import get_db_connection, is_turso_enabled, execute_batch
 
 # --- Subscription Plans Specification ---
 SUBSCRIPTION_PLANS = {
@@ -1039,22 +1039,26 @@ class BotDatabase:
         deadline = (start_t + time_limit_seconds) if time_limit_seconds > 0 else None
 
         with self._get_connection() as conn:
+            # Batch abort of existing session + insert of new session in a single round-trip
+            batch_stmts = [
+                ("UPDATE user_sessions SET status = 'ABORTED' WHERE user_id = ? AND status = 'IN_PROGRESS'", [user_id]),
+                ("""
+                INSERT INTO user_sessions (
+                    session_id, user_id, session_type, category_id, language,
+                    total_questions, current_index, correct_count, incorrect_count,
+                    status, start_time, time_limit_seconds, deadline, question_ids_json,
+                    show_answer, show_explanation, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 'IN_PROGRESS', ?, ?, ?, ?, ?, ?, ?, ?)
+                """, [
+                    session_id, user_id, session_type, category_id, language,
+                    len(question_ids), start_t, time_limit_seconds, deadline,
+                    json.dumps(question_ids), 1 if show_answer else 0, 1 if show_explanation else 0,
+                    now_ts, now_ts
+                ])
+            ]
+            execute_batch(conn, batch_stmts)
+
             c = conn.cursor()
-            # Abort any existing in-progress session for this user
-            c.execute("UPDATE user_sessions SET status = 'ABORTED' WHERE user_id = ? AND status = 'IN_PROGRESS'", (user_id,))
-            c.execute("""
-            INSERT INTO user_sessions (
-                session_id, user_id, session_type, category_id, language,
-                total_questions, current_index, correct_count, incorrect_count,
-                status, start_time, time_limit_seconds, deadline, question_ids_json,
-                show_answer, show_explanation, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 'IN_PROGRESS', ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                session_id, user_id, session_type, category_id, language,
-                len(question_ids), start_t, time_limit_seconds, deadline,
-                json.dumps(question_ids), 1 if show_answer else 0, 1 if show_explanation else 0,
-                now_ts, now_ts
-            ))
             # Also fetch bookmark IDs inside the same connection to save network roundtrip
             c.execute("SELECT canonical_id FROM user_bookmarks WHERE user_id = ?", (user_id,))
             bm_ids = [r["canonical_id"] for r in c.fetchall()]
@@ -1139,9 +1143,9 @@ class BotDatabase:
                                selected_key: str, correct_key: str, is_correct: bool,
                                session_type: str = "EXAM") -> Dict[str, Any]:
         """
-        Atomic single-connection execution for answer submission, mistake tracking,
-        streak update, and exam termination check. Cuts 5-6 Turso network round-trips
-        down to a single connection (<60ms).
+        Atomic execution for answer submission, mistake tracking, streak update,
+        and exam termination check.
+        Uses execute_batch() to group all write operations into a single Turso HTTP round-trip (<60ms).
         """
         now_ts = datetime.utcnow().isoformat()
         today_str = datetime.utcnow().strftime("%Y-%m-%d")
@@ -1158,61 +1162,96 @@ class BotDatabase:
                         "streak": {"current_streak": 0, "today_questions_count": 0},
                         "is_exam_terminated": True
                     }
+            else:
+                c.execute("SELECT status, incorrect_count FROM user_sessions WHERE session_id = ?", (session_id,))
+                sess_row = c.fetchone()
 
-            is_new = False
-            try:
-                c.execute("""
+            # Check if this question was already answered to guarantee idempotency
+            c.execute("SELECT is_correct FROM session_answers WHERE session_id = ? AND canonical_id = ?", (session_id, canonical_id))
+            if c.fetchone() is not None:
+                c.execute("SELECT current_streak, today_questions_count FROM learning_streak WHERE user_id = ?", (user_id,))
+                st_row = c.fetchone()
+                return {
+                    "is_new": False,
+                    "streak": {
+                        "current_streak": st_row["current_streak"] if st_row else 1,
+                        "today_questions_count": st_row["today_questions_count"] if st_row else 1
+                    },
+                    "is_exam_terminated": (sess_row["status"] == "FAILED_MISTAKES") if sess_row else False
+                }
+
+            # Fetch streak state to calculate updated streak
+            c.execute("SELECT current_streak, today_questions_count, last_active_date FROM learning_streak WHERE user_id = ?", (user_id,))
+            st_row = c.fetchone()
+            if st_row:
+                new_today = (st_row["today_questions_count"] or 0) + 1
+                streak_info = {"current_streak": st_row["current_streak"], "today_questions_count": new_today}
+                streak_stmt = (
+                    "UPDATE learning_streak SET today_questions_count = ?, last_active_date = ?, updated_at = ? WHERE user_id = ?",
+                    [new_today, today_str, now_ts, user_id]
+                )
+            else:
+                streak_info = {"current_streak": 1, "today_questions_count": 1}
+                streak_stmt = (
+                    """
+                    INSERT INTO learning_streak (user_id, current_streak, last_active_date, daily_goal_questions, today_questions_count, updated_at)
+                    VALUES (?, 1, ?, 10, 1, ?)
+                    """,
+                    [user_id, today_str, now_ts]
+                )
+
+            # Determine exam termination condition
+            curr_incorrect = (sess_row["incorrect_count"] or 0) if sess_row else 0
+            new_incorrect = curr_incorrect + (0 if is_correct else 1)
+            is_exam_terminated = (session_type == "EXAM" and new_incorrect >= 3)
+
+            # Build batch containing all write operations
+            batch_stmts = [
+                ("""
                 INSERT INTO session_answers (
                     session_id, canonical_id, selected_key, correct_key, is_correct, answered_at
                 ) VALUES (?, ?, ?, ?, ?, ?)
-                """, (session_id, canonical_id, selected_key, correct_key, 1 if is_correct else 0, now_ts))
-                is_new = True
-            except sqlite3.IntegrityError:
-                is_new = False
+                """, [session_id, canonical_id, selected_key, correct_key, 1 if is_correct else 0, now_ts])
+            ]
 
-            streak_info = {"current_streak": 1, "today_questions_count": 1}
-
-            if is_new:
-                if is_correct:
-                    c.execute("UPDATE user_sessions SET correct_count = correct_count + 1, updated_at = ? WHERE session_id = ?", (now_ts, session_id))
-                    c.execute("UPDATE user_mistakes SET is_resolved = 1 WHERE user_id = ? AND canonical_id = ?", (user_id, canonical_id))
-                else:
-                    c.execute("UPDATE user_sessions SET incorrect_count = incorrect_count + 1, updated_at = ? WHERE session_id = ?", (now_ts, session_id))
-                    c.execute("""
+            if is_correct:
+                batch_stmts.append((
+                    "UPDATE user_sessions SET correct_count = correct_count + 1, updated_at = ? WHERE session_id = ?",
+                    [now_ts, session_id]
+                ))
+                batch_stmts.append((
+                    "UPDATE user_mistakes SET is_resolved = 1 WHERE user_id = ? AND canonical_id = ?",
+                    [user_id, canonical_id]
+                ))
+            else:
+                batch_stmts.append((
+                    "UPDATE user_sessions SET incorrect_count = incorrect_count + 1, updated_at = ? WHERE session_id = ?",
+                    [now_ts, session_id]
+                ))
+                batch_stmts.append((
+                    """
                     INSERT INTO user_mistakes (user_id, canonical_id, mistake_count, last_mistake_at, is_resolved)
                     VALUES (?, ?, 1, ?, 0)
                     ON CONFLICT(user_id, canonical_id) DO UPDATE SET
                         mistake_count = mistake_count + 1,
                         last_mistake_at = excluded.last_mistake_at,
                         is_resolved = 0;
-                    """, (user_id, canonical_id, now_ts))
+                    """,
+                    [user_id, canonical_id, now_ts]
+                ))
 
-                # Streak progress inside same connection
-                c.execute("SELECT current_streak, today_questions_count FROM learning_streak WHERE user_id = ?", (user_id,))
-                st_row = c.fetchone()
-                if st_row:
-                    new_today = (st_row["today_questions_count"] or 0) + 1
-                    c.execute("UPDATE learning_streak SET today_questions_count = ?, last_active_date = ?, updated_at = ? WHERE user_id = ?",
-                              (new_today, today_str, now_ts, user_id))
-                    streak_info = {"current_streak": st_row["current_streak"], "today_questions_count": new_today}
-                else:
-                    c.execute("""
-                    INSERT INTO learning_streak (user_id, current_streak, max_streak, today_questions_count, last_active_date, created_at, updated_at)
-                    VALUES (?, 1, 1, 1, ?, ?, ?)
-                    """, (user_id, today_str, now_ts, now_ts))
-                    streak_info = {"current_streak": 1, "today_questions_count": 1}
+            batch_stmts.append(streak_stmt)
 
-            is_exam_terminated = False
-            if session_type == "EXAM":
-                c.execute("SELECT COUNT(*) as incorrect_cnt FROM session_answers WHERE session_id = ? AND is_correct = 0", (session_id,))
-                cnt_row = c.fetchone()
-                if cnt_row and cnt_row["incorrect_cnt"] >= 3:
-                    is_exam_terminated = True
-                    c.execute("UPDATE user_sessions SET status = 'FAILED_MISTAKES', updated_at = ? WHERE session_id = ?", (now_ts, session_id))
+            if is_exam_terminated:
+                batch_stmts.append((
+                    "UPDATE user_sessions SET status = 'FAILED_MISTAKES', updated_at = ? WHERE session_id = ?",
+                    [now_ts, session_id]
+                ))
 
-            conn.commit()
+            execute_batch(conn, batch_stmts)
+
             return {
-                "is_new": is_new,
+                "is_new": True,
                 "streak": streak_info,
                 "is_exam_terminated": is_exam_terminated
             }
@@ -1309,6 +1348,32 @@ class BotDatabase:
                 unanswered
             ))
             conn.commit()
+
+    def finalize_exam_session(self, session_id: str, user_id: int, total_q: int,
+                              correct: int, incorrect: int, pct: float,
+                              passed: bool, time_spent: float, category_breakdown: Dict[str, Any],
+                              unanswered: int = 0, status: str = "COMPLETED") -> Optional[Dict[str, Any]]:
+        """
+        Batches exam result recording and session status update into a single round-trip HTTP request.
+        """
+        now_ts = datetime.utcnow().isoformat()
+        with self._get_connection() as conn:
+            batch_stmts = [
+                ("""
+                INSERT OR REPLACE INTO exam_results (
+                    session_id, user_id, total_questions, correct_count, incorrect_count,
+                    percentage, passed, time_taken_seconds, category_breakdown_json, created_at,
+                    unanswered_count
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, [
+                    session_id, user_id, total_q, correct, incorrect, pct,
+                    1 if passed else 0, time_spent, json.dumps(category_breakdown), now_ts,
+                    unanswered
+                ]),
+                ("UPDATE user_sessions SET status = ?, updated_at = ? WHERE session_id = ?", [status, now_ts, session_id])
+            ]
+            execute_batch(conn, batch_stmts)
+        return self.get_session(session_id)
 
     def get_user_exam_history(self, user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
         with self._get_connection() as conn:
