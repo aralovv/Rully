@@ -14,11 +14,8 @@ from src.db_adapter import get_db_connection
 logger = logging.getLogger(__name__)
 
 GEMINI_MODELS = [
-    "gemini-3-flash-preview",
-    "gemini-flash-latest",
     "gemini-flash-lite-latest",
-    "gemini-3.8-flash",
-    "gemini-3.1-flash-lite"
+    "gemini-3.5-flash-lite"
 ]
 
 _KEY_COOLDOWNS: Dict[str, float] = {}
@@ -74,30 +71,45 @@ class GeminiService:
                     "x-goog-api-key": cur_key
                 }
 
-                try:
-                    resp = await client.post(url, json=payload, headers=req_headers, timeout=12.0)
-                    last_status = resp.status_code
-                    last_text = resp.text
+                for attempt in range(2):
+                    try:
+                        resp = await client.post(url, json=payload, headers=req_headers, timeout=14.0)
+                        last_status = resp.status_code
+                        last_text = resp.text
 
-                    if resp.status_code == 200:
-                        return resp.json(), 200, None
+                        if resp.status_code == 200:
+                            return resp.json(), 200, None
 
-                    if resp.status_code == 429:
-                        logger.warning(f"Gemini {model_name} returned 429 quota on key ...{cur_key[-6:]}. Marking key in cooldown.")
-                        _KEY_COOLDOWNS[cur_key] = now + 600  # 10 min cooldown
-                        key_exhausted = True
-                        break  # Break inner model loop to immediately switch to next API key
+                        if resp.status_code == 429:
+                            logger.warning(f"Gemini {model_name} returned 429 quota on key ...{cur_key[-6:]}")
+                            if last_text and ("quota" in last_text.lower() or "limit" in last_text.lower()):
+                                _KEY_COOLDOWNS[cur_key] = now + 600
+                                key_exhausted = True
+                                break
+                            if attempt == 0:
+                                await asyncio.sleep(1.0)
+                                continue
+                            break
 
-                    if resp.status_code in (503, 404):
-                        logger.warning(f"Gemini {model_name} returned {resp.status_code} with key ...{cur_key[-6:]}, switching model fallback...")
-                        continue
-                except Exception as e:
-                    logger.warning(f"Gemini request exception on {model_name}: {repr(e)}")
-                    last_text = repr(e)
-                    continue
+                        if resp.status_code in (503, 500):
+                            logger.warning(f"Gemini {model_name} returned {resp.status_code} with key ...{cur_key[-6:]} (attempt {attempt+1})")
+                            if attempt == 0:
+                                await asyncio.sleep(1.0)
+                                continue
+                            break
 
-            if key_exhausted:
-                continue
+                        if resp.status_code == 404:
+                            break
+                    except Exception as e:
+                        logger.warning(f"Gemini request exception on {model_name}: {repr(e)}")
+                        last_text = repr(e)
+                        if attempt == 0:
+                            await asyncio.sleep(0.5)
+                            continue
+                        break
+
+                if key_exhausted:
+                    break
 
         return None, last_status, last_text
 
