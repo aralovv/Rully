@@ -132,7 +132,7 @@ async def annotate_single_image(
     client: httpx.AsyncClient,
     api_key: str,
     q: Dict[str, Any],
-    models: List[str] = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-3.1-flash", "gemini-3.1-flash-lite"]
+    models: List[str] = ["gemini-flash-lite-latest", "gemini-flash-latest"]
 ) -> Optional[Dict[str, Any]]:
     # 1. Read image base64
     img_path = q["local_path"]
@@ -174,7 +174,7 @@ async def annotate_single_image(
 
     for model in models:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-        for attempt in range(2):
+        for attempt in range(3):
             try:
                 resp = await client.post(url, json=payload, timeout=45.0)
                 if resp.status_code == 200:
@@ -185,14 +185,16 @@ async def annotate_single_image(
                     parsed["category_name"] = q["category_name"]
                     return parsed
                 elif resp.status_code in (429, 503):
-                    logger.warning(f"Rate limited ({resp.status_code}) on {model} for {q['filename']}, switching model or retrying...")
-                    await asyncio.sleep(2.0)
-                    break # try next model
+                    sleep_sec = 3.0 * (attempt + 1)
+                    logger.warning(f"Spike ({resp.status_code}) on {model} for {q['filename']}, sleeping {sleep_sec}s (attempt {attempt+1})...")
+                    await asyncio.sleep(sleep_sec)
+                    continue
                 else:
                     logger.error(f"Error {resp.status_code} on {model} for {q['filename']}: {resp.text[:200]}")
                     break
             except Exception as e:
                 logger.warning(f"Exception on {model} for {q['filename']}: {e}")
+                await asyncio.sleep(2.0)
                 await asyncio.sleep(1.0)
                 break
     return None
