@@ -30,7 +30,7 @@ class GeminiService:
         raw_keys = os.getenv("GEMINI_API_KEYS", "")
         if raw_keys:
             keys.extend([k.strip() for k in raw_keys.split(",") if k.strip()])
-        for env_var in ["GEMINI_API_KEY_2", "GEMINI_API_KEY", "GEMINI_API_KEY_BACKUP", "GOOGLE_API_KEY"]:
+        for env_var in ["GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_BACKUP", "GOOGLE_API_KEY"]:
             val = os.getenv(env_var, "").strip()
             if val and val not in keys:
                 keys.append(val)
@@ -71,45 +71,35 @@ class GeminiService:
                     "x-goog-api-key": cur_key
                 }
 
-                for attempt in range(2):
-                    try:
-                        resp = await client.post(url, json=payload, headers=req_headers, timeout=14.0)
-                        last_status = resp.status_code
-                        last_text = resp.text
+                try:
+                    resp = await client.post(url, json=payload, headers=req_headers, timeout=22.0)
+                    last_status = resp.status_code
+                    last_text = resp.text
 
-                        if resp.status_code == 200:
-                            return resp.json(), 200, None
+                    if resp.status_code == 200:
+                        return resp.json(), 200, None
 
-                        if resp.status_code == 429:
-                            logger.warning(f"Gemini {model_name} returned 429 quota on key ...{cur_key[-6:]}")
-                            if last_text and ("quota" in last_text.lower() or "limit" in last_text.lower()):
-                                _KEY_COOLDOWNS[cur_key] = now + 600
-                                key_exhausted = True
-                                break
-                            if attempt == 0:
-                                await asyncio.sleep(1.0)
-                                continue
+                    if resp.status_code == 429:
+                        logger.warning(f"Gemini {model_name} returned 429 quota on key ...{cur_key[-6:]}")
+                        if last_text and ("quota" in last_text.lower() or "limit" in last_text.lower()):
+                            _KEY_COOLDOWNS[cur_key] = now + 600
+                            key_exhausted = True
                             break
+                        continue
 
-                        if resp.status_code in (503, 500):
-                            logger.warning(f"Gemini {model_name} returned {resp.status_code} with key ...{cur_key[-6:]} (attempt {attempt+1})")
-                            if attempt == 0:
-                                await asyncio.sleep(1.0)
-                                continue
-                            break
+                    if resp.status_code in (503, 500):
+                        logger.warning(f"Gemini {model_name} returned {resp.status_code} with key ...{cur_key[-6:]}")
+                        continue
 
-                        if resp.status_code == 404:
-                            break
-                    except Exception as e:
-                        logger.warning(f"Gemini request exception on {model_name}: {repr(e)}")
-                        last_text = repr(e)
-                        if attempt == 0:
-                            await asyncio.sleep(0.5)
-                            continue
-                        break
+                    if resp.status_code == 404:
+                        continue
+                except Exception as e:
+                    logger.warning(f"Gemini request exception on {model_name}: {repr(e)}")
+                    last_text = repr(e)
+                    continue
 
-                if key_exhausted:
-                    break
+            if key_exhausted:
+                continue
 
         return None, last_status, last_text
 
@@ -335,7 +325,22 @@ class GeminiService:
                 """, (user_id, session_id, limit))
                 rows = c.fetchall()
                 rows.reverse() # chronological
-                return [{"role": "user" if r["role"] == "user" else "model", "parts": [{"text": r["content"]}]} for r in rows]
+
+                cleaned: List[Dict[str, Any]] = []
+                for r in rows:
+                    role = "user" if r["role"] == "user" else "model"
+                    txt = (r["content"] or "").strip()
+                    if not txt:
+                        continue
+                    if cleaned and cleaned[-1]["role"] == role:
+                        cleaned[-1]["parts"][0]["text"] += f"\n{txt}"
+                    else:
+                        cleaned.append({"role": role, "parts": [{"text": txt}]})
+
+                while cleaned and cleaned[0]["role"] != "user":
+                    cleaned.pop(0)
+
+                return cleaned
         except Exception as e:
             logger.warning(f"Failed to fetch conversation history: {e}")
             return []
@@ -445,12 +450,9 @@ class GeminiService:
                 logger.info(f"Attached multimodal vision image ({mime_type}) to Gemini request")
 
         history = self.get_conversation_history(user_id, session_id, limit=8)
-        # Ensure latest user message has multimodal parts attached
-        if not history or history[-1]["parts"][0].get("text") != message:
-            history.append({"role": "user", "parts": current_parts})
-        else:
-            history[-1]["parts"] = current_parts
-
+        while history and history[-1]["role"] == "user":
+            history.pop()
+        history.append({"role": "user", "parts": current_parts})
         contents = history
         # Build ground truth & verified scene passport context if question or image is referenced
         gt_context = self._build_ground_truth_context(image_url, canonical_id, lang)
