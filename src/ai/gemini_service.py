@@ -94,6 +94,142 @@ class GeminiService:
             logger.warning(f"Failed to load image for Gemini vision ({image_url}): {e}")
         return None
 
+    def _get_scene_annotation(self, filename: Optional[str], canonical_id: Optional[str]) -> Optional[Dict[str, Any]]:
+        """Loads verified visual passport from data/image_scenes.json if available."""
+        json_path = os.path.join("data", "image_scenes.json")
+        if os.path.exists(json_path):
+            try:
+                mtime = os.path.getmtime(json_path)
+                if not hasattr(self, "_scene_cache") or getattr(self, "_scene_cache_mtime", 0) != mtime:
+                    with open(json_path, "r", encoding="utf-8") as f:
+                        self._scene_cache = json.load(f)
+                        self._scene_cache_mtime = mtime
+            except Exception as e:
+                logger.warning(f"Error loading image_scenes.json: {e}")
+                self._scene_cache = getattr(self, "_scene_cache", {})
+        else:
+            self._scene_cache = {}
+
+        if filename and filename in self._scene_cache:
+            return self._scene_cache[filename]
+        if canonical_id:
+            for item in self._scene_cache.values():
+                if item.get("canonical_id") == canonical_id:
+                    return item
+        return None
+
+    def _get_db_ground_truth(self, canonical_id: Optional[str], filename: Optional[str], lang: str) -> Optional[Dict[str, Any]]:
+        """Retrieves official state exam question, correct answer, legal reference and explanation directly from database."""
+        try:
+            with get_db_connection() as conn:
+                c = conn.cursor()
+                resolved_id = canonical_id
+                if not resolved_id and filename:
+                    c.execute("""
+                    SELECT cq.canonical_id
+                    FROM canonical_questions cq
+                    JOIN images i ON cq.primary_image_id = i.id
+                    WHERE i.filename = ? LIMIT 1
+                    """, (filename,))
+                    row = c.fetchone()
+                    if row:
+                        resolved_id = row["canonical_id"] if isinstance(row, dict) else row[0]
+
+                if not resolved_id:
+                    return None
+
+                c.execute("""
+                SELECT cq.canonical_id, cq.correct_option_key, cq.legal_reference, cq.category_name,
+                       ct.question_text, ct.explanation
+                FROM canonical_questions cq
+                LEFT JOIN canonical_translations ct ON cq.canonical_id = ct.canonical_id AND ct.language = ?
+                WHERE cq.canonical_id = ?
+                """, (lang, resolved_id))
+                q_row = c.fetchone()
+                if not q_row:
+                    return None
+
+                correct_key = q_row["correct_option_key"] if isinstance(q_row, dict) else q_row[1]
+                legal_ref = q_row["legal_reference"] if isinstance(q_row, dict) else q_row[2]
+                category_name = q_row["category_name"] if isinstance(q_row, dict) else q_row[3]
+                q_text = q_row["question_text"] if isinstance(q_row, dict) else q_row[4]
+                explanation = q_row["explanation"] if isinstance(q_row, dict) else q_row[5]
+
+                ans_col = f"text_{lang}" if lang in ("uz_latn", "uz_cyrl", "ru") else "text_uz_latn"
+                c.execute(f"""
+                SELECT option_key, {ans_col}
+                FROM canonical_answers
+                WHERE canonical_id = ? AND (is_correct = 1 OR option_key = ?)
+                LIMIT 1
+                """, (resolved_id, correct_key))
+                a_row = c.fetchone()
+                correct_text = (a_row[ans_col] if isinstance(a_row, dict) else a_row[1]) if a_row else ""
+
+                return {
+                    "canonical_id": resolved_id,
+                    "category_name": category_name,
+                    "question_text": q_text,
+                    "correct_key": correct_key,
+                    "correct_text": correct_text,
+                    "legal_reference": legal_ref,
+                    "explanation": explanation
+                }
+        except Exception as e:
+            logger.warning(f"Error fetching DB ground truth: {e}")
+            return None
+
+    def _build_ground_truth_context(self, image_url: Optional[str], canonical_id: Optional[str], lang: str) -> Optional[str]:
+        """Combines verified scene passport and official DB exam ground truth into an authoritative prompt context."""
+        clean_filename = os.path.basename(image_url.split("?")[0].replace("\\", "/")) if image_url else None
+        scene = self._get_scene_annotation(clean_filename, canonical_id)
+        db_gt = self._get_db_ground_truth(canonical_id, clean_filename, lang)
+
+        if not scene and not db_gt:
+            return None
+
+        lines = ["\n[TASDIQLANGAN RASMIY GROUND TRUTH VA VIZUAL SAHNA PASPORTI]:"]
+
+        if db_gt:
+            lines.append(f"• Rasmiy to‘g‘ri javob: {db_gt.get('correct_key')}) {db_gt.get('correct_text')}")
+            if db_gt.get("legal_reference"):
+                lines.append(f"• Rasmiy YHQ qoidasi moddasi: {db_gt.get('legal_reference')}")
+            if db_gt.get("explanation"):
+                lines.append(f"• Rasmiy imtihon tushuntirishi: {db_gt.get('explanation')}")
+
+        if scene:
+            lines.append(f"• Sahna toifasi: {scene.get('sahna_turi') or scene.get('vaziyat_turi', '')}")
+            if scene.get("vizual_muhit_va_yo‘l"):
+                lines.append(f"• Yo‘l tuzilishi va muhit: {scene.get('vizual_muhit_va_yo‘l')}")
+            if scene.get("belgilar_va_chiziqlar"):
+                lines.append(f"• Yo‘l belgilari va chiziqlari: {scene.get('belgilar_va_chiziqlar')}")
+            if scene.get("tartibga_soluvchi_yoki_svetofor"):
+                lines.append(f"• Tartibga soluvchi yoki svetofor: {scene.get('tartibga_soluvchi_yoki_svetofor')}")
+
+            participants = scene.get("ishtirokchilar_va_obyektlar") or scene.get("transport_vositalari") or []
+            if participants:
+                lines.append("• Ishtirokchilar va transport vositalari:")
+                for p in participants:
+                    if isinstance(p, dict):
+                        name = p.get("obyekt") or p.get("mashina") or "Transport vositasi"
+                        pos = p.get("joylashuvi") or ""
+                        intent = p.get("harakat_yonalishi_yoki_traektoriya") or p.get("harakat_yonalishi") or ""
+                        status = p.get("holati_va_huquqi") or p.get("holati") or ""
+                        lines.append(f"  - {name} ({pos}): {intent} -> {status}")
+
+            if scene.get("traektoriyalar_tahlili") and scene.get("traektoriyalar_tahlili") != "Mavjud emas":
+                lines.append(f"• Traektoriyalar tahlili (A, B, C): {scene.get('traektoriyalar_tahlili')}")
+
+            otish = scene.get("otish_tartibi_yoki_yechim") or scene.get("otish_ketmaketligi")
+            if otish:
+                lines.append(f"• O‘tish navbati yoki yechim: {otish}")
+
+        lines.append(
+            "QAT'IY KO‘RSATMA: Yuqoridagi faktlar ushbu savol va rasmning davlat imtihoni mezonlariga mos 100% rasmiy tasdiqlangan haqiqatidir. "
+            "Foydalanuvchiga tushuntirayotganda ushbu ma'lumotlarga qat'iy tayangan holda professional va aniq javob bering, hech narsani taxmin qilib o'ylab topmang!"
+        )
+
+        return "\n".join(lines)
+
     def check_and_increment_rate_limit(self, user_id: int, is_pro: bool) -> tuple[bool, int, int]:
         """
         AI Assistant is an exclusive PRO subscription feature.
@@ -259,8 +395,15 @@ class GeminiService:
         contents = history
         tools_def = [{"function_declarations": GEMINI_TOOLS_DECLARATIONS}]
         
+        # Build ground truth & verified scene passport context if question or image is referenced
+        gt_context = self._build_ground_truth_context(image_url, canonical_id, lang)
+        sys_prompt_text = get_system_prompt(lang)
+        if gt_context:
+            sys_prompt_text += f"\n\n{gt_context}"
+            logger.info(f"Injected official ground truth / scene passport into system instruction for {canonical_id or image_url}")
+
         system_instruction = {
-            "parts": [{"text": get_system_prompt(lang)}]
+            "parts": [{"text": sys_prompt_text}]
         }
 
         payload = {

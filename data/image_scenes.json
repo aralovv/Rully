@@ -1,0 +1,187 @@
+{
+  "da29aaa6fa0f27ba.webp": {
+    "vaziyat_turi": "Tartibga solinadigan chorraha",
+    "belgilar_va_chiziqlar": "Yo‘l chiziqlari 1.1 (butun chiziq) va 1.5 (uzuq chiziq) bilan belgilangan, maxsus yo‘l belgilari ko‘rinmaydi, harakat tartibga soluvchi tomonidan boshqarilmoqda.",
+    "tartibga_soluvchi_yoki_svetofor": "Tartibga soluvchi o‘ng qo‘lini oldinga uzatgan. Bu holatda uning chap yonidan kelayotgan transport vositalariga barcha yo‘nalishlarda, ko‘krak qismidan kelayotganlarga o‘ngga, orqa va o‘ng yonidan kelayotganlarga harakatlanish taqiqlanadi.",
+    "transport_vositalari": [
+      {
+        "mashina": "Ko‘k yengil avtomobil",
+        "joylashuvi": "Tartibga soluvchining chap yonida",
+        "harakat_yonalishi": "To‘g‘riga yoki chapga",
+        "holati": "Ruxsat etiladi, chunki tartibga soluvchining chap yonidan kelmoqda."
+      },
+      {
+        "mashina": "Qizil yengil avtomobil",
+        "joylashuvi": "Tartibga soluvchining chap yonida",
+        "harakat_yonalishi": "To‘g‘riga",
+        "holati": "Ruxsat etiladi, chunki tartibga soluvchining chap yonidan kelmoqda."
+      },
+      {
+        "mashina": "Yashil yengil avtomobil",
+        "joylashuvi": "Tartibga soluvchining ko‘krak qismi ro‘parasida",
+        "harakat_yonalishi": "O‘ngga burilish",
+        "holati": "Ruxsat etiladi, chunki tartibga soluvchining ko‘krak qismidan kelayotganlarga o‘ngga harakatlanishga ruxsat beriladi."
+      },
+      {
+        "mashina": "Sariq yengil avtomobil",
+        "joylashuvi": "Tartibga soluvchining o‘ng yonida",
+        "harakat_yonalishi": "To‘g‘riga",
+        "holati": "Taqiqlanadi, chunki tartibga soluvchining o‘ng yonidan kelayotganlarga harakatlanish taqiqlanadi."
+      },
+      {
+        "mashina": "Oq yengil avtomobil",
+        "joylashuvi": "Tartibga soluvchining orqa tomonida",
+        "harakat_yonalishi": "To‘g‘riga",
+        "holati": "Taqiqlanadi, chunki tartibga soluvchining orqa tomonidan kelayotganlarga harakatlanish taqiqlanadi."
+      }
+    ],
+    "otish_ketmaketligi": "1-navbatda ko‘k va qizil avtomobillar (chap yonidan), 2-navbatda yashil avtomobil (ko‘krak qismidan o‘ngga), sariq va oq avtomobillar to‘xtab turishi shart.",
+    "qoida_asosi": "O‘zbekiston YHQ 38-bandi: Tartibga soluvchining o‘ng qo‘li oldinga uzatilganda, uning chap yonidan kelayotganlarga barcha yo‘nalishda, ko‘krak qismidan kelayotganlarga esa faqat o‘ngga harakatlanishga ruxsat beriladi.",
+    "canonical_id": "CANON-YHQ-0035",
+    "filename": "da29aaa6fa0f27ba.webp",
+    "category_name": "Umumiy qoidalar"
+  },
+  "2ff9ce8bf135272e.webp": {
+    "vaziyat_turi": "Teng ahamiyatli chorraha",
+    "belgilar_va_chiziqlar": "Yo‘l belgilari mavjud emas, yo‘l chiziqlari chorraha markazida kesishadi",
+    "tartibga_soluvchi_yoki_svetofor": "Tartibga soluvchi yoki svetofor mavjud emas",
+    "transport_vositalari": [
+      {
+        "mashina": "Yashil rangli yuk mashinasi (yo‘l xizmati)",
+        "joylashuvi": "Yuqori chap yo‘l qismi",
+        "harakat_yonalishi": "To‘g‘riga",
+        "holati": "Harakatlanishga ruxsat etilgan, ammo qoidaga ko‘ra o‘ng tomondagi transport vositasiga yo‘l berishi shart"
+      },
+      {
+        "mashina": "Qizil rangli yengil avtomobil",
+        "joylashuvi": "Pastki yo‘l qismi",
+        "harakat_yonalishi": "To‘g‘riga",
+        "holati": "Harakatlanishga ruxsat etilgan, o‘ng qo‘l qoidasiga ko‘ra ustunlikka ega"
+      }
+    ],
+    "otish_ketmaketligi": "1-chi: Qizil yengil avtomobil (o‘ng tomonda bo‘lgani uchun), 2-chi: Yashil yuk mashinasi",
+    "qoida_asosi": "O‘zbekiston YHQ 105-bandi: Teng ahamiyatli yo‘llar kesishgan chorrahada relssiz transport vositasi haydovchisi o‘ngdan kelayotgan transport vositasiga yo‘l berishi shart",
+    "canonical_id": "CANON-YHQ-0170",
+    "filename": "2ff9ce8bf135272e.webp",
+    "category_name": "Tartibga soluvchining ishoralari"
+  },
+  "43b26c16f873fbac.webp": {
+    "vaziyat_turi": "Yo‘l belgilarini tahlil qilish va taqiqlash zonalarini aniqlash",
+    "belgilar_va_chiziqlar": "Rasmda 5 ta yo‘l belgisi keltirilgan: 1) 3.28 'To‘xtab turish taqiqlanadi', 2) 3.28 belgisi va 7.17 'Nogironlar' (yoki ish kunlari) qo‘shimcha axborot belgisi, 3) 3.28 belgisi va 7.18 'Nogironlardan tashqari' qo‘shimcha axborot belgisi, 4) 3.29 'Oyning toq kunlarida to‘xtab turish taqiqlanadi', 5) 3.30 'Oyning juft kunlarida to‘xtab turish taqiqlanadi'.",
+    "tartibga_soluvchi_yoki_svetofor": "Ushbu rasmda tartibga soluvchi yoki svetofor mavjud emas, faqat taqiqlovchi yo‘l belgilari tasvirlangan.",
+    "transport_vositalari": [],
+    "otish_ketmaketligi": "Ushbu rasmda harakatlanayotgan transport vositalari yo‘q, shuning uchun o‘tish ketma-ketligi belgilanmagan.",
+    "qoida_asosi": "O‘zbekiston Respublikasi YHQ 1-ilovasi 3-bo‘limi: 3.30 belgisi oyning juft kunlarida to‘xtab turishni taqiqlaydi. 5-raqamli belgi aynan shu qoidani ifodalaydi.",
+    "canonical_id": "CANON-YHQ-0192",
+    "filename": "43b26c16f873fbac.webp",
+    "category_name": "Tartibga soluvchining ishoralari"
+  },
+  "ca3e1bfa59e985a7.webp": {
+    "sahna_turi": "Manyovr va quvib o‘tish",
+    "vizual_muhit_va_yo‘l": "Uch bo‘lakli qatnov qismi, yo‘l chiziqlari 1.5 (uzlukli chiziqlar) bilan ajratilgan, ikki tomonlama harakatlanish mavjud, kunduzgi yorug‘lik sharoiti.",
+    "belgilar_va_chiziqlar": "Yo‘l belgilari yo‘q, qatnov qismida 1.5 yo‘l chiziqlari mavjud.",
+    "tartibga_soluvchi_yoki_svetofor": "Mavjud emas (tartibga solinmagan vaziyat)",
+    "ishtirokchilar_va_obyektlar": [
+      {
+        "obyekt": "Qizil yengil avtomobil",
+        "joylashuvi": "Yo‘lning o‘rta bo‘lagida",
+        "harakat_yonalishi_yoki_traektoriya": "To‘g‘riga harakatlanmoqda",
+        "holati_va_huquqi": "Quvib o‘tishni amalga oshirmoqchi, biroq YHQ 66-bandiga ko‘ra taqiqlangan."
+      },
+      {
+        "obyekt": "Mototsikl",
+        "joylashuvi": "Yo‘lning o‘rta bo‘lagida, qizil avtomobil oldida",
+        "harakat_yonalishi_yoki_traektoriya": "To‘g‘riga harakatlanmoqda",
+        "holati_va_huquqi": "Harakatlanishda davom etmoqda."
+      },
+      {
+        "obyekt": "Ko‘k yuk mashinasi",
+        "joylashuvi": "Yo‘lning o‘ng bo‘lagida",
+        "harakat_yonalishi_yoki_traektoriya": "To‘g‘riga harakatlanmoqda",
+        "holati_va_huquqi": "Harakatlanishda davom etmoqda."
+      }
+    ],
+    "traektoriyalar_tahlili": "Mavjud emas",
+    "otish_tartibi_yoki_yechim": "Uch bo‘lakli yo‘lda o‘rta bo‘lak qarama-qarshi yo‘nalishdagi transport vositalari uchun ham mo‘ljallangan bo‘lishi mumkin. YHQ 66-bandiga asosan, bunday yo‘llarda quvib o‘tish uchun o‘rta bo‘lakka chiqish taqiqlanadi.",
+    "yhq_qoidasi_va_asos": "O‘zbekiston Respublikasi YHQ 10-bobi, 66-bandi: Harakat ikki tomonlama bo‘lgan va chiziqlar bilan belgilangan (1.9 chizig‘i bilan belgilanganidan tashqari) uchta tasmali yo‘llarda, o‘rta tasmani quvib o‘tish yoki aylanib o‘tish uchun egallash taqiqlanadi.",
+    "canonical_id": "CANON-YHQ-0226",
+    "filename": "ca3e1bfa59e985a7.webp",
+    "category_name": "Tartibga soluvchining ishoralari"
+  },
+  "1e44eabece491858.webp": {
+    "sahna_turi": "Teng ahamiyatli chorraha",
+    "vizual_muhit_va_yo‘l": "Ikki qatnov qismli, har bir yo‘nalishda bitta bo‘lakli, asfalt qoplamali, yo‘l chiziqlari mavjud bo‘lmagan, kunduzgi yorug‘lik sharoitidagi chorraha.",
+    "belgilar_va_chiziqlar": "Yo‘l belgilari yo‘q",
+    "tartibga_soluvchi_yoki_svetofor": "Mavjud emas (tartibga solinmagan vaziyat)",
+    "ishtirokchilar_va_obyektlar": [
+      {
+        "obyekt": "Sariq yengil avtomobil",
+        "joylashuvi": "Chorrahaga kirib kelmoqda (pastki qism)",
+        "harakat_yonalishi_yoki_traektoriya": "To‘g‘riga harakatlanmoqda",
+        "holati_va_huquqi": "O‘ngdan kelayotgan ko‘k avtomobilga yo‘l berishi shart"
+      },
+      {
+        "obyekt": "Ko‘k yengil avtomobil",
+        "joylashuvi": "Chorrahada (o‘ng tomonda)",
+        "harakat_yonalishi_yoki_traektoriya": "To‘g‘riga harakatlanmoqda",
+        "holati_va_huquqi": "Sariq avtomobilga nisbatan o‘ng tomonda bo‘lgani uchun ustunlikka ega"
+      },
+      {
+        "obyekt": "Qizil yengil avtomobil",
+        "joylashuvi": "Chorrahada (o‘ng tomonda, ko‘k avtomobil yonida)",
+        "harakat_yonalishi_yoki_traektoriya": "To‘g‘riga harakatlanmoqda",
+        "holati_va_huquqi": "Yashil avtomobilga yo‘l berishi shart"
+      },
+      {
+        "obyekt": "Yashil yengil avtomobil",
+        "joylashuvi": "Chorrahaga kirib kelmoqda (chap qism)",
+        "harakat_yonalishi_yoki_traektoriya": "To‘g‘riga harakatlanmoqda",
+        "holati_va_huquqi": "Qizil avtomobilga nisbatan o‘ng tomonda bo‘lgani uchun ustunlikka ega"
+      }
+    ],
+    "traektoriyalar_tahlili": "Mavjud emas",
+    "otish_tartibi_yoki_yechim": "1. Yashil avtomobil (o‘ng tomoni bo‘sh), 2. Ko‘k va qizil avtomobillar (o‘zaro yo‘l berish qoidasi asosida), 3. Sariq avtomobil (ko‘k avtomobilga yo‘l berib, oxirida o‘tadi).",
+    "yhq_qoidasi_va_asos": "O‘zbekiston Respublikasi YHQ 15-bob, 105-band: Teng ahamiyatli yo‘llar kesishgan chorrahada relssiz transport vositasi haydovchisi o‘ngdan kelayotgan transport vositasiga yo‘l berishi shart.",
+    "canonical_id": "CANON-YHQ-0242",
+    "filename": "1e44eabece491858.webp",
+    "category_name": "Tartibga soluvchining ishoralari"
+  },
+  "f4a16654d4899896.webp": {
+    "sahna_turi": "Tartibga soluvchili chorraha",
+    "vizual_muhit_va_yo‘l": "Asfalt qoplamali ko‘p bo‘lakli chorraha, tramvay yo‘llari mavjud, kunduzgi yorug‘lik sharoiti.",
+    "belgilar_va_chiziqlar": "Yo‘l belgilari yo‘q",
+    "tartibga_soluvchi_yoki_svetofor": "Tartibga soluvchining o‘ng qo‘li oldinga uzatilgan. Bu holatda tartibga soluvchining chap yonidan kelayotgan tramvayga chapga, relssiz transport vositalariga (avtomobil va mototsikl) barcha yo‘nalishlarda harakatlanishga ruxsat beriladi.",
+    "ishtirokchilar_va_obyektlar": [
+      {
+        "obyekt": "Qizil yengil avtomobil",
+        "joylashuvi": "Chorrahaga kirish qismida, chap bo‘lakda",
+        "harakat_yonalishi_yoki_traektoriya": "To‘g‘riga yoki boshqa yo‘nalishga harakatlanishga tayyor",
+        "holati_va_huquqi": "Ruxsat berilgan (tartibga soluvchining chap yonida bo‘lgani uchun)"
+      },
+      {
+        "obyekt": "Ko‘k yengil avtomobil",
+        "joylashuvi": "Chorrahaga kirish qismida, o‘rta bo‘lakda",
+        "harakat_yonalishi_yoki_traektoriya": "To‘g‘riga yoki boshqa yo‘nalishga harakatlanishga tayyor",
+        "holati_va_huquqi": "Ruxsat berilgan (tartibga soluvchining chap yonida bo‘lgani uchun)"
+      },
+      {
+        "obyekt": "Mototsikl",
+        "joylashuvi": "Chorrahaga kirish qismida, o‘ng bo‘lakda",
+        "harakat_yonalishi_yoki_traektoriya": "To‘g‘riga yoki boshqa yo‘nalishga harakatlanishga tayyor",
+        "holati_va_huquqi": "Ruxsat berilgan (tartibga soluvchining chap yonida bo‘lgani uchun)"
+      },
+      {
+        "obyekt": "Sariq tramvay",
+        "joylashuvi": "Tramvay yo‘lida",
+        "harakat_yonalishi_yoki_traektoriya": "To‘g‘riga yoki chapga harakatlanishga tayyor",
+        "holati_va_huquqi": "Ruxsat berilgan (tartibga soluvchining chap yonida bo‘lgani uchun)"
+      }
+    ],
+    "traektoriyalar_tahlili": "Mavjud emas",
+    "otish_tartibi_yoki_yechim": "Tartibga soluvchining o‘ng qo‘li oldinga uzatilgan holatida, uning chap yonida turgan barcha relssiz transport vositalari (avtomobillar va mototsikl) barcha yo‘nalishlarda harakatlanishi mumkin.",
+    "yhq_qoidasi_va_asos": "O‘zbekiston Respublikasi YHQ 7-bob, 38-band: Tartibga soluvchining o‘ng qo‘li oldinga uzatilganda: chap yonidan tramvayga chapga, relssiz transport vositalariga barcha yo‘nalishlarda harakatlanishga ruxsat beriladi.",
+    "canonical_id": "CANON-YHQ-0431",
+    "filename": "f4a16654d4899896.webp",
+    "category_name": "Tartibga soluvchining ishoralari"
+  }
+}

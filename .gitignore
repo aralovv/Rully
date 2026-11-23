@@ -48,4 +48,5 @@ desktop.ini
 
 .vercel
 .env*
-scripts/
+scripts/*
+!scripts/generate_deep_scene_annotations.py
