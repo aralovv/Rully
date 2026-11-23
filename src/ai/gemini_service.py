@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import time
 import base64
 import asyncio
 import logging
@@ -14,10 +15,13 @@ logger = logging.getLogger(__name__)
 
 GEMINI_MODELS = [
     "gemini-flash-lite-latest",
+    "gemini-3-flash-preview",
     "gemini-flash-latest",
-    "gemini-3.1-flash-lite",
-    "gemini-3.8-flash"
+    "gemini-3.8-flash",
+    "gemini-3.1-flash-lite"
 ]
+
+_KEY_COOLDOWNS: Dict[str, float] = {}
 
 class GeminiService:
     def __init__(self):
@@ -29,7 +33,7 @@ class GeminiService:
         raw_keys = os.getenv("GEMINI_API_KEYS", "")
         if raw_keys:
             keys.extend([k.strip() for k in raw_keys.split(",") if k.strip()])
-        for env_var in ["GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_BACKUP", "GOOGLE_API_KEY"]:
+        for env_var in ["GEMINI_API_KEY_2", "GEMINI_API_KEY", "GEMINI_API_KEY_BACKUP", "GOOGLE_API_KEY"]:
             val = os.getenv(env_var, "").strip()
             if val and val not in keys:
                 keys.append(val)
@@ -48,11 +52,21 @@ class GeminiService:
         """Calls Gemini API with automatic key rotation and model fallback on 429/503 spikes."""
         last_status = None
         last_text = None
-        active_keys = self.api_keys
-        if not active_keys:
+        now = time.time()
+        
+        # Sort active keys so non-cooldown keys are tried first
+        all_keys = self.api_keys
+        if not all_keys:
             return None, 500, "No Gemini API keys configured"
 
+        active_keys = sorted(all_keys, key=lambda k: 1 if _KEY_COOLDOWNS.get(k, 0) > now else 0)
+
         for cur_key in active_keys:
+            if _KEY_COOLDOWNS.get(cur_key, 0) > now:
+                logger.info(f"Key ...{cur_key[-6:]} in cooldown until {_KEY_COOLDOWNS[cur_key]:.0f}, skipping...")
+                continue
+
+            key_exhausted = False
             for model_name in GEMINI_MODELS:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={cur_key}"
                 req_headers = {
@@ -60,26 +74,30 @@ class GeminiService:
                     "x-goog-api-key": cur_key
                 }
 
-                for attempt in range(2):
-                    try:
-                        resp = await client.post(url, json=payload, headers=req_headers, timeout=25.0)
-                        last_status = resp.status_code
-                        last_text = resp.text
+                try:
+                    resp = await client.post(url, json=payload, headers=req_headers, timeout=12.0)
+                    last_status = resp.status_code
+                    last_text = resp.text
 
-                        if resp.status_code == 200:
-                            return resp.json(), 200, None
+                    if resp.status_code == 200:
+                        return resp.json(), 200, None
 
-                        if resp.status_code in (429, 503):
-                            logger.warning(f"Gemini {model_name} returned {resp.status_code} with key ...{cur_key[-6:]} (attempt {attempt+1}).")
-                            if attempt == 0:
-                                await asyncio.sleep(0.5)
-                                continue
-                            break
-                        break
-                    except Exception as e:
-                        logger.warning(f"Gemini request exception on {model_name}: {e}")
-                        last_text = str(e)
-                        break
+                    if resp.status_code == 429:
+                        logger.warning(f"Gemini {model_name} returned 429 quota on key ...{cur_key[-6:]}. Marking key in cooldown.")
+                        _KEY_COOLDOWNS[cur_key] = now + 600  # 10 min cooldown
+                        key_exhausted = True
+                        break  # Break inner model loop to immediately switch to next API key
+
+                    if resp.status_code in (503, 404):
+                        logger.warning(f"Gemini {model_name} returned {resp.status_code} with key ...{cur_key[-6:]}, switching model fallback...")
+                        continue
+                except Exception as e:
+                    logger.warning(f"Gemini request exception on {model_name}: {repr(e)}")
+                    last_text = repr(e)
+                    continue
+
+            if key_exhausted:
+                continue
 
         return None, last_status, last_text
 
@@ -438,17 +456,19 @@ class GeminiService:
         payload = {
             "system_instruction": system_instruction,
             "contents": contents,
-            "tools": tools_def,
-            "toolConfig": {
-                "functionCallingConfig": {
-                    "mode": "AUTO"
-                }
-            },
             "generationConfig": {
                 "temperature": 0.35,
                 "maxOutputTokens": 1024
             }
         }
+        # Only inject function-calling tools for general queries; if ground truth / visual scene passport is already provided, answer directly in single-pass
+        if not gt_context:
+            payload["tools"] = tools_def
+            payload["toolConfig"] = {
+                "functionCallingConfig": {
+                    "mode": "AUTO"
+                }
+            }
 
         # 5. Call Gemini with automatic fallback & retry
         async with httpx.AsyncClient(timeout=40.0) as client:
