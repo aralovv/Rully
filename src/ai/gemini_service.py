@@ -24,45 +24,62 @@ class GeminiService:
         pass
 
     @property
-    def api_key(self):
-        val = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        return val.strip() if val else None
+    def api_keys(self) -> List[str]:
+        keys = []
+        raw_keys = os.getenv("GEMINI_API_KEYS", "")
+        if raw_keys:
+            keys.extend([k.strip() for k in raw_keys.split(",") if k.strip()])
+        for env_var in ["GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_BACKUP", "GOOGLE_API_KEY"]:
+            val = os.getenv(env_var, "").strip()
+            if val and val not in keys:
+                keys.append(val)
+        return keys
+
+    @property
+    def api_key(self) -> Optional[str]:
+        keys = self.api_keys
+        return keys[0] if keys else None
 
     async def _call_gemini_with_fallback(
         self,
         client: httpx.AsyncClient,
         payload: Dict[str, Any]
     ) -> Tuple[Optional[Dict[str, Any]], Optional[int], Optional[str]]:
-        """Calls Gemini API with automatic fallback across models and retry on temporary 503/429 spikes."""
+        """Calls Gemini API with automatic key rotation and model fallback on 429/503 spikes."""
         last_status = None
         last_text = None
+        active_keys = self.api_keys
+        if not active_keys:
+            return None, 500, "No Gemini API keys configured"
 
-        for model_name in GEMINI_MODELS:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.api_key}"
-            req_headers = {
-                "Content-Type": "application/json",
-                "x-goog-api-key": self.api_key
-            }
+        for cur_key in active_keys:
+            for model_name in GEMINI_MODELS:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={cur_key}"
+                req_headers = {
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": cur_key
+                }
 
-            for attempt in range(2):
-                try:
-                    resp = await client.post(url, json=payload, headers=req_headers, timeout=12.0)
-                    last_status = resp.status_code
-                    last_text = resp.text
+                for attempt in range(2):
+                    try:
+                        resp = await client.post(url, json=payload, headers=req_headers, timeout=12.0)
+                        last_status = resp.status_code
+                        last_text = resp.text
 
-                    if resp.status_code == 200:
-                        return resp.json(), 200, None
+                        if resp.status_code == 200:
+                            return resp.json(), 200, None
 
-                    if resp.status_code in (429, 503):
-                        logger.warning(f"Gemini model {model_name} returned {resp.status_code} (attempt {attempt+1}).")
-                        if attempt == 0:
-                            await asyncio.sleep(0.5)
-                            continue
-                    break
-                except Exception as e:
-                    logger.warning(f"Gemini request exception on {model_name}: {e}")
-                    last_text = str(e)
-                    break
+                        if resp.status_code in (429, 503):
+                            logger.warning(f"Gemini {model_name} returned {resp.status_code} with key ...{cur_key[-6:]} (attempt {attempt+1}).")
+                            if attempt == 0:
+                                await asyncio.sleep(0.5)
+                                continue
+                            break
+                        break
+                    except Exception as e:
+                        logger.warning(f"Gemini request exception on {model_name}: {e}")
+                        last_text = str(e)
+                        break
 
         return None, last_status, last_text
 
