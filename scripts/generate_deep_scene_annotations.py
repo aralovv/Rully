@@ -132,7 +132,7 @@ async def annotate_single_image(
     client: httpx.AsyncClient,
     api_key: str,
     q: Dict[str, Any],
-    model: str = "gemini-3.1-flash-lite"
+    models: List[str] = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-3.1-flash", "gemini-3.1-flash-lite"]
 ) -> Optional[Dict[str, Any]]:
     # 1. Read image base64
     img_path = q["local_path"]
@@ -158,7 +158,6 @@ async def annotate_single_image(
         explanation=q["explanation"]
     )
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
     payload = {
         "contents": [{
             "role": "user",
@@ -173,31 +172,35 @@ async def annotate_single_image(
         }
     }
 
-    for attempt in range(3):
-        try:
-            resp = await client.post(url, json=payload, timeout=30.0)
-            if resp.status_code == 200:
-                raw_json = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-                parsed = json.loads(raw_json)
-                parsed["canonical_id"] = q["canonical_id"]
-                parsed["filename"] = q["filename"]
-                parsed["category_name"] = q["category_name"]
-                return parsed
-            elif resp.status_code in (429, 503):
-                logger.warning(f"Rate limited ({resp.status_code}) on {q['filename']}, sleeping 2s...")
-                await asyncio.sleep(2.0)
-            else:
-                logger.error(f"Error {resp.status_code} on {q['filename']}: {resp.text[:200]}")
+    for model in models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        for attempt in range(2):
+            try:
+                resp = await client.post(url, json=payload, timeout=45.0)
+                if resp.status_code == 200:
+                    raw_json = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+                    parsed = json.loads(raw_json)
+                    parsed["canonical_id"] = q["canonical_id"]
+                    parsed["filename"] = q["filename"]
+                    parsed["category_name"] = q["category_name"]
+                    return parsed
+                elif resp.status_code in (429, 503):
+                    logger.warning(f"Rate limited ({resp.status_code}) on {model} for {q['filename']}, switching model or retrying...")
+                    await asyncio.sleep(2.0)
+                    break # try next model
+                else:
+                    logger.error(f"Error {resp.status_code} on {model} for {q['filename']}: {resp.text[:200]}")
+                    break
+            except Exception as e:
+                logger.warning(f"Exception on {model} for {q['filename']}: {e}")
+                await asyncio.sleep(1.0)
                 break
-        except Exception as e:
-            logger.warning(f"Exception on {q['filename']} (attempt {attempt+1}): {e}")
-            await asyncio.sleep(1.0)
     return None
 
 async def main():
     parser = argparse.ArgumentParser(description="Generate deep visual scene annotations for all traffic images")
-    parser.add_argument("--limit", type=int, default=15, help="Number of images to annotate in this batch")
-    parser.add_argument("--delay", type=float, default=0.5, help="Seconds to sleep between requests")
+    parser.add_argument("--limit", type=int, default=1000, help="Number of images to annotate in this batch")
+    parser.add_argument("--delay", type=float, default=0.25, help="Seconds to sleep between requests")
     parser.add_argument("--category", type=str, default=None, help="Filter by category substring")
     args = parser.parse_args()
 
@@ -221,25 +224,33 @@ async def main():
     logger.info(f"Pending to annotate: {len(pending)}")
 
     to_process = pending[:args.limit]
-    logger.info(f"Starting batch of {len(to_process)} images...")
+    total_to_process = len(to_process)
+    logger.info(f"Starting batch of {total_to_process} images...")
 
-    async with httpx.AsyncClient() as client:
+    start_time = time.time()
+    async with httpx.AsyncClient(timeout=50.0) as client:
         count = 0
         for idx, q in enumerate(to_process):
-            logger.info(f"[{idx+1}/{len(to_process)}] Annotating {q['filename']} ({q['canonical_id']} • {q['category_name']})...")
             annot = await annotate_single_image(client, api_key, q)
             if annot:
                 existing[q["filename"]] = annot
                 save_annotations(existing)
                 count += 1
-                logger.info(f"  -> SUCCESS! Annotated {q['filename']}. Total saved: {len(existing)}")
             else:
                 logger.warning(f"  -> FAILED for {q['filename']}")
+            
+            # Progress update every 5 images or on last
+            if (idx + 1) % 5 == 0 or (idx + 1) == total_to_process:
+                elapsed = time.time() - start_time
+                avg_speed = elapsed / (idx + 1)
+                remaining_sec = avg_speed * (total_to_process - (idx + 1))
+                percent = ((idx + 1) / total_to_process) * 100
+                logger.info(f"[{idx+1}/{total_to_process}] ({percent:.1f}%) | Total saved: {len(existing)} | Avg: {avg_speed:.2f}s/img | Est. remaining: {remaining_sec/60:.1f}m")
             
             if args.delay > 0:
                 await asyncio.sleep(args.delay)
 
-    logger.info(f"Batch completed! Successfully processed {count}/{len(to_process)} images. Total annotations in {OUTPUT_FILE}: {len(existing)}")
+    logger.info(f"Batch completed! Successfully processed {count}/{total_to_process} images. Total annotations in {OUTPUT_FILE}: {len(existing)}")
 
 if __name__ == "__main__":
     asyncio.run(main())
