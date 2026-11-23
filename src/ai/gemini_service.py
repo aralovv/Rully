@@ -100,14 +100,25 @@ class GeminiService:
                     mime = "image/webp" if clean_name.lower().endswith(".webp") else "image/jpeg"
                     return b64, mime
 
-            # 2. Remote fallback check
-            fetch_url = image_url if (image_url.startswith("http://") or image_url.startswith("https://")) else f"https://raw.githubusercontent.com/aralovv/Rully/main/data/images/original/{clean_name}"
-            async with httpx.AsyncClient(timeout=8.0) as client:
-                r = await client.get(fetch_url)
-                if r.status_code == 200:
-                    b64 = base64.b64encode(r.content).decode("utf-8")
-                    mime = "image/webp" if clean_name.lower().endswith(".webp") else "image/jpeg"
-                    return b64, mime
+            # 2. Remote fallback check (prioritize fast Render edge CDN and jsDelivr over throttled GitHub raw)
+            candidates = []
+            if image_url.startswith("http://") or image_url.startswith("https://"):
+                candidates.append(image_url)
+            candidates.extend([
+                f"https://rully-app.onrender.com/images/{clean_name}",
+                f"https://fastly.jsdelivr.net/gh/aralovv/Rully@main/data/images/original/{clean_name}",
+                f"https://raw.githubusercontent.com/aralovv/Rully/main/data/images/original/{clean_name}"
+            ])
+            async with httpx.AsyncClient(timeout=6.0) as client:
+                for candidate in candidates:
+                    try:
+                        r = await client.get(candidate)
+                        if r.status_code == 200 and len(r.content) > 0:
+                            b64 = base64.b64encode(r.content).decode("utf-8")
+                            mime = "image/webp" if clean_name.lower().endswith(".webp") else "image/jpeg"
+                            return b64, mime
+                    except Exception:
+                        continue
         except Exception as e:
             logger.warning(f"Failed to load image for Gemini vision ({image_url}): {e}")
         return None
