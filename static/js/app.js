@@ -492,10 +492,16 @@
       finalScore = Math.min(finalScore, 68);
     }
 
-    if (mistakes >= 15 || accuracy <= 30) {
+    if (accuracy <= 30) {
       finalScore = Math.min(finalScore, 8);
-    } else if (mistakes >= 10) {
-      finalScore = Math.min(finalScore, 60);
+    }
+
+    if (mistakes >= 40) {
+      finalScore = Math.min(finalScore, 20);
+    } else if (mistakes >= 25) {
+      finalScore = Math.min(finalScore, 35);
+    } else if (mistakes >= 15) {
+      finalScore = Math.min(finalScore, 55);
     }
 
     if (totalAns < 60) {
@@ -684,6 +690,7 @@
         </div>
         <p class="diag-pillar-desc">${t('pillar_acc_desc')}</p>
         <span class="diag-pillar-metric-tag">${s.correct_answers || 0} / ${s.total_questions_answered || 0} ta to‘g‘ri javob (${s.accuracy || 0}%)</span>
+        ${(s.total_questions_answered || 0) < 35 ? `<div class="diag-pillar-subhint" style="margin-top: 6px; font-size: 11px; color: var(--amber, #f59e0b); line-height: 1.4;">ℹ️ ${t('pillar_acc_warmup_hint')}</div>` : ''}
       </div>
 
       <!-- Pillar 3: Coverage -->

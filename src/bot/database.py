@@ -251,10 +251,15 @@ def compute_driver_readiness(
     else:
         final_score = raw_score
 
-    if unresolved_mistakes >= 15 or accuracy <= 30.0:
+    if accuracy <= 30.0:
         final_score = min(final_score, 8.0)
-    elif unresolved_mistakes >= 10:
-        final_score = min(final_score, 60.0)
+
+    if unresolved_mistakes >= 40:
+        final_score = min(final_score, 20.0)
+    elif unresolved_mistakes >= 25:
+        final_score = min(final_score, 35.0)
+    elif unresolved_mistakes >= 15:
+        final_score = min(final_score, 55.0)
 
     if total_answered < 60:
         final_score = min(final_score, 30.0)
@@ -354,6 +359,7 @@ class BotDatabase:
             CREATE TABLE IF NOT EXISTS session_answers (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT NOT NULL,
+                user_id INTEGER,
                 canonical_id TEXT NOT NULL,
                 selected_key TEXT NOT NULL,
                 correct_key TEXT NOT NULL,
@@ -530,6 +536,11 @@ class BotDatabase:
                 conn.commit()
             except sqlite3.OperationalError:
                 pass
+            try:
+                c.execute("ALTER TABLE session_answers ADD COLUMN user_id INTEGER DEFAULT NULL")
+                conn.commit()
+            except sqlite3.OperationalError:
+                pass
 
             # Performance indexes
             c.execute("CREATE INDEX IF NOT EXISTS idx_bookmarks_user ON user_bookmarks(user_id);")
@@ -539,6 +550,7 @@ class BotDatabase:
             c.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_status ON user_sessions(user_id, status);")
             c.execute("CREATE INDEX IF NOT EXISTS idx_exam_results_user ON exam_results(user_id);")
             c.execute("CREATE INDEX IF NOT EXISTS idx_answers_session ON session_answers(session_id);")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_session_answers_user_recent ON session_answers(user_id, id DESC);")
 
             conn.commit()
 
@@ -1209,9 +1221,9 @@ class BotDatabase:
             batch_stmts = [
                 ("""
                 INSERT INTO session_answers (
-                    session_id, canonical_id, selected_key, correct_key, is_correct, answered_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                """, [session_id, canonical_id, selected_key, correct_key, 1 if is_correct else 0, now_ts])
+                    session_id, user_id, canonical_id, selected_key, correct_key, is_correct, answered_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, [session_id, user_id, canonical_id, selected_key, correct_key, 1 if is_correct else 0, now_ts])
             ]
 
             if is_correct:

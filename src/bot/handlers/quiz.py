@@ -160,8 +160,7 @@ async def cb_submit_answer(callback: CallbackQuery, bot: Bot,
     if not is_correct:
         db.record_mistake(user_id, canonical_id)
     else:
-        if session["session_type"] == "MISTAKES":
-            db.resolve_mistake(user_id, canonical_id)
+        db.resolve_mistake(user_id, canonical_id)
 
     # Check auto-termination on 3rd mistake in EXAM mode (Uzbekistan DYHXX VMQ 408: max 2 mistakes)
     if session["session_type"] == "EXAM":

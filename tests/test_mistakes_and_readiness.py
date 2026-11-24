@@ -226,3 +226,101 @@ def test_mistakes_bank_strict_isolation_on_unanswered(test_db):
         c.execute("DELETE FROM user_sessions WHERE session_id = ?", (session_id,))
         c.execute("DELETE FROM telegram_users WHERE user_id = ?", (user_id,))
         conn.commit()
+
+
+def test_process_session_answer_resolves_mistakes_in_exam_and_custom(test_db):
+    user_id = 999777
+    with test_db._get_connection() as conn:
+        c = conn.cursor()
+        c.execute("SELECT canonical_id FROM canonical_questions LIMIT 2")
+        qids = [r["canonical_id"] for r in c.fetchall()]
+    assert len(qids) >= 2, "Need at least 2 canonical questions in database for test"
+
+    qid_exam, qid_custom = qids[0], qids[1]
+    test_db.get_or_create_user(user_id, "tester_mistake_res", "Test", "User")
+
+    try:
+        # 1. Test in EXAM mode
+        test_db.record_mistake(user_id, qid_exam)
+        assert qid_exam in test_db.get_user_mistakes(user_id)
+
+        session_exam = test_db.create_session(user_id, session_type="EXAM", language="uz_latn", question_ids=[qid_exam])
+        res_exam = test_db.process_session_answer(
+            session_id=session_exam["session_id"],
+            user_id=user_id,
+            canonical_id=qid_exam,
+            selected_key="A",
+            correct_key="A",
+            is_correct=True,
+            session_type="EXAM"
+        )
+        assert res_exam["is_new"] is True
+        assert qid_exam not in test_db.get_user_mistakes(user_id)
+
+        # 2. Test in CUSTOM mode
+        test_db.record_mistake(user_id, qid_custom)
+        assert qid_custom in test_db.get_user_mistakes(user_id)
+
+        session_custom = test_db.create_session(user_id, session_type="CUSTOM", language="uz_latn", question_ids=[qid_custom])
+        res_custom = test_db.process_session_answer(
+            session_id=session_custom["session_id"],
+            user_id=user_id,
+            canonical_id=qid_custom,
+            selected_key="B",
+            correct_key="B",
+            is_correct=True,
+            session_type="CUSTOM"
+        )
+        assert res_custom["is_new"] is True
+        assert qid_custom not in test_db.get_user_mistakes(user_id)
+
+    finally:
+        with test_db._get_connection() as conn:
+            c = conn.cursor()
+            c.execute("DELETE FROM session_answers WHERE session_id IN (SELECT session_id FROM user_sessions WHERE user_id = ?)", (user_id,))
+            c.execute("DELETE FROM user_mistakes WHERE user_id = ?", (user_id,))
+            c.execute("DELETE FROM user_sessions WHERE user_id = ?", (user_id,))
+            c.execute("DELETE FROM telegram_users WHERE user_id = ?", (user_id,))
+            conn.commit()
+
+
+def test_graduated_readiness_mistake_tiers():
+    # Student with good track record: 5 exams, 4 passed (80%), 200 questions, 85% accuracy
+    # Under old logic, 16 active mistakes would crush score to <= 8.0%.
+    # Under new graduated logic:
+    # 1. 16 mistakes (>= 15) must be capped at 55.0%, and significantly higher than 8.0%!
+    score_16 = compute_driver_readiness(
+        total_exams=5,
+        passed_exams=4,
+        pass_rate=80.0,
+        total_answered=200,
+        accuracy=85.0,
+        unique_questions=150,
+        unresolved_mistakes=16
+    )
+    assert 8.0 < score_16 <= 55.0, f"Expected 16 mistakes capped at 55%, got {score_16}%"
+
+    # 2. 26 mistakes (>= 25) must be capped at 35.0%
+    score_26 = compute_driver_readiness(
+        total_exams=5,
+        passed_exams=4,
+        pass_rate=80.0,
+        total_answered=200,
+        accuracy=85.0,
+        unique_questions=150,
+        unresolved_mistakes=26
+    )
+    assert 8.0 < score_26 <= 35.0, f"Expected 26 mistakes capped at 35%, got {score_26}%"
+
+    # 3. 42 mistakes (>= 40) must be capped at 20.0%
+    score_42 = compute_driver_readiness(
+        total_exams=5,
+        passed_exams=4,
+        pass_rate=80.0,
+        total_answered=200,
+        accuracy=85.0,
+        unique_questions=150,
+        unresolved_mistakes=42
+    )
+    assert score_42 <= 20.0, f"Expected 42 mistakes capped at 20%, got {score_42}%"
+
