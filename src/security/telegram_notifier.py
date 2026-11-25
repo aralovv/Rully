@@ -251,6 +251,10 @@ async def send_mtproto_status_alert(status: str, detail: str = "", force: bool =
         icon = "🔴"
         title = "MTProto: Qayta Avtorizatsiya Talab Qilinadi"
         instruction = "Telegram sessiyasi bekor qilingan. Iltimos, <code>python connect_mtproto.py</code> orqali qayta ulang."
+    elif status == "NOT_INSTALLED":
+        icon = "🚨"
+        title = "MTProto: Telethon O'rnatilmagan"
+        instruction = "Serverda <code>telethon</code> kutubxonasi topilmadi. Build Command <code>pip install -r requirements-render.txt</code> ekanini tekshiring."
     elif status == "DISCONNECTED":
         icon = "🟡"
         title = "MTProto: Aloqa Uzildi"

@@ -129,16 +129,36 @@ class MTProtoManager:
             ))
             conn.commit()
 
+    def _sync_status_to_db(self, status: str, last_error: Optional[str] = None) -> None:
+        """Persists live worker status and last error to mtproto_accounts without modifying session."""
+        if os.getenv("VERCEL"):
+            return
+        try:
+            with self._get_connection() as conn:
+                c = conn.cursor()
+                c.execute("""
+                    UPDATE mtproto_accounts
+                    SET connection_status = ?, last_error = ?, updated_at = ?
+                    WHERE id = (SELECT id FROM mtproto_accounts ORDER BY id DESC LIMIT 1)
+                """, (status, last_error, datetime.utcnow().isoformat()))
+                conn.commit()
+        except Exception as dbe:
+            logger.warning(f"Could not sync mtproto status to db: {dbe}")
+
     async def initialize_and_start(self):
         """Attempts to start Telethon using existing stored session."""
         if not HAS_TELETHON:
             self.connection_status = "NOT_INSTALLED"
+            self.last_error = "Telethon package is not installed in runtime environment."
+            self._sync_status_to_db("NOT_INSTALLED", self.last_error)
             logger.info("Telethon is not installed in this environment (e.g. Vercel serverless). MTProto worker disabled.")
             return False
 
         session_str = self.get_stored_session()
         if not session_str:
             self.connection_status = "DISCONNECTED"
+            self.last_error = "No stored MTProto session found."
+            self._sync_status_to_db("DISCONNECTED", self.last_error)
             return False
 
         try:
@@ -148,6 +168,8 @@ class MTProtoManager:
 
             if not await self.client.is_user_authorized():
                 self.connection_status = "AUTH_REQUIRED"
+                self.last_error = "Session unauthorized; re-authentication required."
+                self._sync_status_to_db("AUTH_REQUIRED", self.last_error)
                 return False
 
             me = await self.client.get_me()
@@ -179,6 +201,7 @@ class MTProtoManager:
             logger.error(f"Failed to start MTProto client: {e}")
             self.connection_status = "ERROR"
             self.last_error = str(e)
+            self._sync_status_to_db("ERROR", str(e)[:250])
             return False
 
     def _register_message_handlers(self):

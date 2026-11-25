@@ -108,6 +108,18 @@ async def lifespan(app: FastAPI):
                     logger.info("Initializing and connecting MTProto client from stored session...")
                     connected = await manager.initialize_and_start()
                     if not connected:
+                        if manager.connection_status == "NOT_INSTALLED":
+                            logger.error(
+                                "MTProto cannot start because Telethon is not installed. "
+                                "Ensure Render Build Command uses requirements-render.txt."
+                            )
+                            await send_mtproto_status_alert(
+                                "NOT_INSTALLED",
+                                "Render muhitida Telethon kutubxonasi topilmadi (Build Commandni tekshiring)."
+                            )
+                            await asyncio.sleep(300)
+                            continue
+
                         logger.warning(
                             f"MTProto session not ready or login required. Status: {manager.connection_status}. "
                             f"Waiting {retry_delay}s before retry..."
@@ -117,7 +129,13 @@ async def lifespan(app: FastAPI):
                                 "AUTH_REQUIRED",
                                 "Telegram sessiyasi bekor qilingan yoki 2FA talab qilinmoqda. connect_mtproto.py orqali qayta ulang."
                             )
+                        elif manager.connection_status == "ERROR":
+                            await send_mtproto_status_alert(
+                                "ERROR",
+                                f"MTProto ulanish xatoligi: {(manager.last_error or '')[:120]}"
+                            )
                         await asyncio.sleep(retry_delay)
+                        retry_delay = min(retry_delay * 2, 60)
                         continue
 
                     logger.info("MTProto successfully CONNECTED! Listening for Humocardbot messages...")
@@ -129,6 +147,8 @@ async def lifespan(app: FastAPI):
                     )
                     if manager.client:
                         await manager.client.run_until_disconnected()
+                    manager.connection_status = "DISCONNECTED"
+                    manager._sync_status_to_db("DISCONNECTED", "MTProto client disconnected")
                     logger.warning("MTProto client disconnected. Reconnecting in 5s...")
                     await send_mtproto_status_alert(
                         "DISCONNECTED",
