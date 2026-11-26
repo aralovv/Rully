@@ -9,7 +9,10 @@ from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, Depends, Query
 
 from src.admin.deps import get_current_admin
-from src.mtproto.service import get_mtproto_manager
+try:
+    from src.mtproto.service import get_mtproto_manager
+except ImportError:
+    get_mtproto_manager = None
 from src.payments.order_manager import get_active_orders_count
 
 router = APIRouter(prefix="/api/admin/system", tags=["Admin System Health & Logs"])
@@ -90,7 +93,17 @@ async def get_system_health(current_admin: dict = Depends(get_current_admin)):
             counts[tbl] = c.fetchone()[0]
 
     db_latency_ms = round((time.time() - t0) * 1000, 2)
-    mtproto = get_mtproto_manager().get_status()
+    mtproto = (
+        get_mtproto_manager().get_status()
+        if get_mtproto_manager is not None
+        else {
+            "connection_status": "SERVERLESS_OFFLOADED",
+            "monitored_bot": "Humocardbot",
+            "last_event_at": None,
+            "last_payment_at": None,
+            "last_error": None,
+        }
+    )
     active_orders = get_active_orders_count()
 
     is_overall_healthy = integrity_ok and fk_violations == 0

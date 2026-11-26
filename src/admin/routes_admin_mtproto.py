@@ -13,10 +13,22 @@ from pydantic import BaseModel, Field
 from typing import Optional
 
 from src.admin.deps import get_current_admin
-from src.mtproto.service import get_mtproto_manager
+try:
+    from src.mtproto.service import get_mtproto_manager
+except ImportError:
+    get_mtproto_manager = None
 
 router = APIRouter(prefix="/api/admin/mtproto", tags=["Admin MTProto Integration"])
 logger = logging.getLogger(__name__)
+
+
+def _require_mtproto():
+    if get_mtproto_manager is None:
+        raise HTTPException(
+            status_code=503,
+            detail="MTProto session daemon is hosted on the standalone Render server, not Vercel serverless."
+        )
+    return get_mtproto_manager()
 
 
 class PhoneRequest(BaseModel):
@@ -40,6 +52,17 @@ class SimulateNotificationRequest(BaseModel):
 @router.get("/status")
 async def get_mtproto_status(current_admin: dict = Depends(get_current_admin)):
     """Returns MTProto connection health, monitored bot status, and telemetry."""
+    if get_mtproto_manager is None:
+        return {
+            "ok": True,
+            "status": {
+                "connection_status": "SERVERLESS_OFFLOADED",
+                "monitored_bot": "Humocardbot",
+                "last_event_at": None,
+                "last_payment_at": None,
+                "last_error": None
+            }
+        }
     manager = get_mtproto_manager()
     status = manager.get_status()
     return {"ok": True, "status": status}
@@ -48,11 +71,8 @@ async def get_mtproto_status(current_admin: dict = Depends(get_current_admin)):
 @router.post("/send-code")
 async def request_mtproto_code(req: PhoneRequest, current_admin: dict = Depends(get_current_admin)):
     """Initiates MTProto connection by requesting a Telegram authentication code."""
-    manager = get_mtproto_manager()
+    manager = _require_mtproto()
     success, message = await manager.request_phone_code(req.phone_number, req.api_id, req.api_hash)
-    if not success:
-        raise HTTPException(status_code=400, detail=message)
-    return {"ok": True, "message": message}
     if not success:
         raise HTTPException(status_code=400, detail=message)
     return {"ok": True, "message": message}
@@ -61,7 +81,7 @@ async def request_mtproto_code(req: PhoneRequest, current_admin: dict = Depends(
 @router.post("/sign-in")
 async def submit_mtproto_code(req: CodeRequest, current_admin: dict = Depends(get_current_admin)):
     """Submits the Telegram verification code."""
-    manager = get_mtproto_manager()
+    manager = _require_mtproto()
     success, message, requires_2fa = await manager.submit_phone_code(req.code)
     if requires_2fa:
         return {"ok": False, "requires_2fa": True, "message": message}
@@ -73,7 +93,7 @@ async def submit_mtproto_code(req: CodeRequest, current_admin: dict = Depends(ge
 @router.post("/sign-in-2fa")
 async def submit_mtproto_2fa(req: Password2FARequest, current_admin: dict = Depends(get_current_admin)):
     """Submits the Two-Step Verification password if enabled on the Telegram account."""
-    manager = get_mtproto_manager()
+    manager = _require_mtproto()
     success, message = await manager.submit_2fa_password(req.password)
     if not success:
         raise HTTPException(status_code=400, detail=message)
@@ -83,7 +103,7 @@ async def submit_mtproto_2fa(req: Password2FARequest, current_admin: dict = Depe
 @router.post("/disconnect")
 async def disconnect_mtproto(current_admin: dict = Depends(get_current_admin)):
     """Disconnects the active MTProto session and removes stored credentials."""
-    manager = get_mtproto_manager()
+    manager = _require_mtproto()
     success, message = await manager.disconnect()
     return {"ok": success, "message": message}
 
@@ -97,6 +117,6 @@ async def simulate_humocard_notification(
     Simulates a Humocardbot notification through the payment parser and matching engine.
     Indispensable for automated testing, end-to-end audit, and administrator testing.
     """
-    manager = get_mtproto_manager()
+    manager = _require_mtproto()
     result = await manager.simulate_notification(req.raw_message)
     return result

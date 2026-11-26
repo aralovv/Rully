@@ -379,8 +379,12 @@ async def favicon():
 @app.get("/healthz")
 @app.get("/api/ping")
 async def health_check():
-    from src.mtproto.service import get_mtproto_manager
-    mtproto = get_mtproto_manager()
+    mtproto_status = "serverless-disabled"
+    try:
+        from src.mtproto.service import get_mtproto_manager
+        mtproto_status = get_mtproto_manager().connection_status
+    except ImportError:
+        pass
     return {
         "status": "healthy",
         "pong": True,
@@ -392,7 +396,7 @@ async def health_check():
         "turso_configured": bool(os.getenv("TURSO_DATABASE_URL")),
         "gemini_api_key_set": bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")),
         "gemini_key_len": len((os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "")),
-        "mtproto_status": mtproto.connection_status,
+        "mtproto_status": mtproto_status,
         "bot_active": _bot_instance is not None
     }
 
