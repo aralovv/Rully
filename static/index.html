@@ -1,1071 +1,318 @@
 <!DOCTYPE html>
-<html lang="uz">
+<html lang="uz" data-theme="light">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
-  <title>RULLY — O‘zbekiston Haydovchilik Imtihoni</title>
-  <link rel="stylesheet" href="/static/css/rully.css?v=2.4.2">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <title>RULLY — O‘zbekiston Haydovchilik Imtihoni 2.0</title>
+  <link rel="stylesheet" href="/static/css/rully.css?v=2.0.0">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <script>
-    (function () {
-      function checkTelegram() {
-        try {
-          var tg = window.Telegram && window.Telegram.WebApp;
-          if (tg && tg.initData && tg.initData.length > 5) return true;
-          var hash = window.location.hash || '';
-          if (hash.indexOf('tgWebAppData=') !== -1) return true;
-          var search = window.location.search || '';
-          if (search.indexOf('tgWebAppData=') !== -1) return true;
-          var cached = null;
-          try { cached = sessionStorage.getItem('rully_tg_init_data'); } catch (e) {}
-          if (cached && cached.length > 5 && cached !== 'dev_user_8809526955') return true;
-        } catch (e) {}
-        return false;
-      }
-      if (!checkTelegram()) {
-        window.__NOT_TELEGRAM__ = true;
-        document.documentElement.style.display = 'none';
-        window.addEventListener('DOMContentLoaded', function () {
-          document.body.innerHTML = '';
-          document.documentElement.style.display = 'none';
-        });
-      }
-    })();
-  </script>
 </head>
 <body>
+  <!-- Main Application Shell -->
+  <div class="app-shell" id="app-shell">
 
-  <!-- RULLY Cobalt Engine Start Loading Screen -->
-  <div id="rully-loading-screen" class="rully-loading-screen" aria-hidden="false">
-    <div class="loading-bg-glow"></div>
-    
-    <div class="loading-cockpit-stage">
-      <!-- Steering wheel container with calibration animation -->
-      <div class="steering-wheel-rig" id="steering-wheel-rig">
-        <!-- Circular speedometer arc around the steering wheel -->
-        <svg class="steering-arc-svg" viewBox="0 0 280 280">
-          <circle class="arc-bg" cx="140" cy="140" r="126" />
-          <circle class="arc-progress" id="steering-arc-progress" cx="140" cy="140" r="126" />
-          <defs>
-            <linearGradient id="steering-arc-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stop-color="#00d2ff"/>
-              <stop offset="50%" stop-color="#0ea5e9"/>
-              <stop offset="100%" stop-color="#10b981"/>
-            </linearGradient>
-          </defs>
-        </svg>
-
-        <!-- The Cobalt steering wheel -->
-        <div class="wheel-disc-wrap">
-          <img src="/static/img/cobalt_wheel.webp" alt="RULLY Steering Wheel" class="cobalt-wheel-img" id="cobalt-wheel-img" />
-          <div class="bowtie-glow"></div>
+    <!-- Desktop Left Sidebar (>= 1024px) -->
+    <aside class="desktop-sidebar" aria-label="Primary Navigation">
+      <div class="sidebar-brand">
+        <div class="brand-mark">R</div>
+        <div class="brand-text-wrap">
+          <span class="brand-name">RULLY</span>
+          <span class="brand-sub" data-i18n="rully_tagline">O‘zbekiston Avtotest 2.0</span>
         </div>
       </div>
 
-      <!-- Telemetry Status & Progress Info -->
-      <div class="loading-telemetry">
-        <div class="loading-brand-title" data-i18n="loading_brand">Rully — Avtotest tayyorlov</div>
-        <div class="loading-status-text" id="loading-status-text" data-i18n="loading_status_engine">Dvigatel ishga tushmoqda...</div>
-        <div class="loading-progress-track">
-          <div class="loading-progress-bar" id="loading-progress-bar"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Sticky Digital Cockpit Header -->
-  <header class="app-header">
-    <div class="header-driver">
-      <div class="driver-avatar-ring">
-        <div class="driver-avatar-core" id="user-avatar">R</div>
-      </div>
-      <div class="driver-meta">
-        <span class="driver-name" id="user-name">...</span>
-      </div>
-    </div>
-    <div class="header-telemetry-controls">
-      <button class="cockpit-channel-btn" id="header-channel-btn" aria-label="Telegram Kanal: @rully_avtotest" title="@rully_avtotest">
-        <span class="r-icon sm" id="channel-icon-slot"></span>
+      <button type="button" class="sidebar-cta-exam" id="sidebar-exam-btn">
+        <span class="r-icon sm" id="sidebar-exam-icon"></span>
+        <span data-i18n="btn_start_exam">Imtihonni boshlash</span>
       </button>
-      <button class="cockpit-lang-pill" id="header-lang-btn" aria-label="Tilni tanlash">
-        <span class="r-icon sm" id="lang-icon-slot"></span>
-        <span id="header-lang-label">UZ</span>
-      </button>
-    </div>
-  </header>
 
-  <!-- Main View Area -->
-  <main class="main-container">
+      <nav class="sidebar-nav">
+        <button type="button" class="sidebar-nav-item active" data-tab="home">
+          <span class="r-icon sm" id="snav-icon-home"></span>
+          <span data-i18n="nav_home">Asosiy</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-tab="tests">
+          <span class="r-icon sm" id="snav-icon-tests"></span>
+          <span data-i18n="nav_tests">Nazariya</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-tab="amaliy">
+          <span class="r-icon sm" id="snav-icon-amaliy"></span>
+          <span data-i18n="nav_amaliy">Avtodrom</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-tab="ai">
+          <span class="r-icon sm" id="snav-icon-ai"></span>
+          <span data-i18n="nav_ai">AI Ustoz</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-tab="profile">
+          <span class="r-icon sm" id="snav-icon-profile"></span>
+          <span data-i18n="nav_profile">Profil</span>
+        </button>
+      </nav>
 
-    <!-- VIEW 1: COCKPIT HOME (BOSHQARUV) -->
-    <section class="view-pane active" id="view-home">
-
-      <!-- UNIFIED HERO EXAM & TELEMETRY SECTION (ONE COMMON BLUR & LOCK) -->
-      <div class="hero-exam-cockpit-wrap" id="hero-exam-cockpit-wrap">
-        <!-- Cockpit Readiness Speedometer Cluster -->
-        <div class="cockpit-cluster-card">
-          <div class="speedometer-row">
-            <div class="speedometer-visual-wrap">
-              <svg class="arc-svg" viewBox="0 0 140 90">
-                <path d="M 15 80 A 55 55 0 0 1 125 80" fill="none" stroke="rgba(255, 255, 255, 0.08)" stroke-width="8" stroke-linecap="round"/>
-                <path id="speedometer-arc-fill" d="M 15 80 A 55 55 0 0 1 125 80" fill="none" stroke="url(#arc-gradient)" stroke-width="8" stroke-linecap="round" stroke-dasharray="172.8" stroke-dashoffset="172.8" style="transition: stroke-dashoffset 0.8s cubic-bezier(0.16, 1, 0.3, 1);"/>
-                <defs>
-                  <linearGradient id="arc-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" stop-color="#0ea5e9"/>
-                    <stop offset="60%" stop-color="#10b981"/>
-                    <stop offset="100%" stop-color="#34d399"/>
-                  </linearGradient>
-                </defs>
-              </svg>
-              <div class="speedometer-center-val" id="stat-readiness-pct">0%</div>
-              <div class="speedometer-lbl" data-i18n="speedometer_lbl">Tayyorgarlik</div>
-            </div>
-
-            <div class="readiness-details-col">
-              <h2 class="readiness-title" id="readiness-headline" data-i18n="hero_title">Nazariy Imtihon</h2>
-              <p class="readiness-subtext" id="readiness-description" data-i18n="readiness_subtext_start">
-                Standart 20 ta savol • 25 daqiqa • O‘tish bali: 18
-              </p>
-            </div>
+      <div class="sidebar-footer">
+        <div class="sidebar-goal-box" id="sidebar-goal-box" role="button" tabindex="0">
+          <div class="sidebar-goal-row">
+            <span data-i18n="daily_goal_label">Kunlik maqsad</span>
+            <span class="font-mono" id="sidebar-goal-val">0 / 20</span>
           </div>
+          <div class="progress-track">
+            <div class="progress-fill" id="sidebar-goal-bar" style="width: 0%;"></div>
+          </div>
+        </div>
 
-          <button class="btn-apex-primary" id="btn-hero-start-exam">
-            <span class="r-icon" id="btn-exam-icon-slot"></span>
-            <span data-i18n="btn_start_exam">Imtihon simulyatsiyasini boshlash</span>
+        <div class="sidebar-controls-row">
+          <button type="button" class="icon-pill-btn" id="sidebar-theme-btn" aria-label="Mavzuni almashtirish">
+            <span class="r-icon sm"></span>
+          </button>
+          <button type="button" class="icon-pill-btn" id="sidebar-lang-btn" aria-label="Tilni tanlash">
+            <span class="font-mono" id="sidebar-lang-code">UZ</span>
           </button>
         </div>
+      </div>
+    </aside>
 
-        <!-- Cockpit Telemetry Stats Bar -->
-        <div class="cockpit-stats-bar" id="cockpit-stats-bar">
-          <div class="telemetry-stat-card">
-            <div class="stat-metric-val emerald" id="stat-pass-rate-val">0%</div>
-            <div class="stat-metric-lbl" data-i18n="stat_pass_rate">O‘tish ko‘rsatkichi</div>
-          </div>
-          <div class="telemetry-stat-card">
-            <div class="stat-metric-val cyan" id="stat-tests-val">0</div>
-            <div class="stat-metric-lbl" data-i18n="stat_tests_taken">Topshirilgan</div>
-          </div>
-          <div class="telemetry-stat-card">
-            <div class="stat-metric-val amber" id="stat-accuracy-val">0%</div>
-            <div class="stat-metric-lbl" data-i18n="stat_accuracy">Aniqlik</div>
-          </div>
-        </div>
-
-        <!-- Unified Central Lock Overlay for Free Tier -->
-        <div class="hero-cockpit-lock-overlay" id="hero-cockpit-lock-overlay" style="display: none;">
-          <div class="hero-lock-badge-pill">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            <span data-i18n="lock_pro_badge">PRO OBUNA</span>
-          </div>
+    <!-- Mobile Sticky Header (< 1024px) -->
+    <header class="mobile-header">
+      <div class="header-brand-left">
+        <div class="avatar-circle" id="mobile-avatar">R</div>
+        <div class="header-user-meta">
+          <span class="header-user-name" id="mobile-user-name">RULLY</span>
+          <span class="header-user-sub" id="mobile-user-sub">O‘zbekiston Avtotest 2.0</span>
         </div>
       </div>
-
-      <!-- Tactical 2x2 Grid -->
-      <h3 class="cockpit-section-heading">
-        <span class="r-icon sm" id="heading-grid-icon"></span>
-        <span data-i18n="section_quick_start">Tezkor amallar paneli</span>
-      </h3>
-      <div class="tactical-quad-grid">
-        <div class="tactical-tile emerald" id="quick-amaliy">
-          <div class="tile-top-row">
-            <div class="tile-icon-box" id="tile-icon-amaliy"></div>
-            <span class="r-icon sm" style="color: var(--text-muted);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="9 18 15 12 9 6"/></svg></span>
-          </div>
-          <div>
-            <div class="tile-title" data-i18n="card_amaliy_title">Amaliy Avtodrom</div>
-            <div class="tile-caption" data-i18n="card_amaliy_desc">10 ta darslik va amaliy cheklist</div>
-          </div>
-        </div>
-
-        <div class="tactical-tile cyan" id="quick-categories">
-          <div class="tile-top-row">
-            <div class="tile-icon-box" id="tile-icon-categories"></div>
-            <span class="r-icon sm" style="color: var(--text-muted);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="9 18 15 12 9 6"/></svg></span>
-          </div>
-          <div>
-            <div class="tile-title" data-i18n="card_categories_title">YHQ Mavzulari</div>
-            <div class="tile-caption" data-i18n="card_categories_desc">43 ta toifa bo‘yicha mashq</div>
-          </div>
-        </div>
-
-        <div class="tactical-tile amber" id="quick-mistakes">
-          <div class="tile-top-row">
-            <div class="tile-icon-box" id="tile-icon-mistakes"></div>
-            <span class="pro-lock-badge" id="badge-mistakes-lock">🔒 PRO</span>
-            <span class="r-icon sm" style="color: var(--text-muted);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="9 18 15 12 9 6"/></svg></span>
-          </div>
-          <div>
-            <div class="tile-title" data-i18n="card_mistakes_title">Xatolar Banki</div>
-            <div class="tile-caption" data-i18n="card_mistakes_desc">Yiqilgan savollarni qayta topshirish</div>
-          </div>
-        </div>
-
-        <div class="tactical-tile purple" id="quick-cheatsheet">
-          <div class="tile-top-row">
-            <div class="tile-icon-box" id="tile-icon-cheatsheet"></div>
-            <span class="pro-lock-badge" id="badge-cheatsheet-lock">🔒 PRO</span>
-            <span class="r-icon sm" style="color: var(--text-muted);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="9 18 15 12 9 6"/></svg></span>
-          </div>
-          <div>
-            <div class="tile-title" data-i18n="card_cheatsheet_title">Shpargalka</div>
-            <div class="tile-caption" data-i18n="card_cheatsheet_desc">Kalit so‘zlar va meʼyorlar</div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- VIEW 2: THEORY & 41 CATEGORIES -->
-    <section class="view-pane" id="view-tests">
-      <!-- ARALASH SAVOLLAR CARD -->
-      <div class="custom-quiz-launch-card" id="btn-open-custom-quiz-settings">
-        <div class="custom-quiz-launch-left">
-          <div class="custom-quiz-icon-box">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
-          </div>
-          <div class="custom-quiz-info">
-            <div class="custom-quiz-title" data-i18n="custom_quiz_card_title">Aralash savollar</div>
-            <div class="custom-quiz-caption" data-i18n="custom_quiz_card_desc">O‘zingizga mos parametrlar bo‘yicha sinov</div>
-          </div>
-        </div>
-        <button class="btn-custom-quiz-open" id="btn-trigger-settings-inline" aria-label="Sozlash">
-          <span class="r-icon sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+      <div class="header-controls">
+        <button type="button" class="icon-pill-btn" id="mobile-channel-btn" aria-label="Telegram Kanal">
+          <span class="r-icon sm" id="channel-icon-slot"></span>
+        </button>
+        <button type="button" class="icon-pill-btn" id="mobile-theme-btn" aria-label="Mavzuni almashtirish">
+          <span class="r-icon sm"></span>
+        </button>
+        <button type="button" class="icon-pill-btn" id="mobile-lang-btn" aria-label="Tilni tanlash">
+          <span class="font-mono" id="mobile-lang-code">UZ</span>
         </button>
       </div>
+    </header>
 
-      <!-- SAQLANGAN SAVOLLAR (SAVED QUESTIONS) LAUNCH CARD -->
-      <div class="saved-questions-launch-card" id="btn-open-saved-questions">
-        <div class="saved-questions-launch-left">
-          <div class="saved-questions-icon-box">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
-          </div>
-          <div class="saved-questions-info">
-            <div class="saved-questions-title" data-i18n="saved_questions_card_title">Saqlangan savollar</div>
-            <div class="saved-questions-caption" id="saved-questions-caption-text" data-i18n="saved_questions_card_desc">To‘g‘ri javoblar va izohlar to‘plami</div>
-          </div>
-        </div>
-        <div class="saved-questions-badge-pill" id="saved-questions-badge-pill">
-          <span id="saved-questions-count">0</span>
-          <span class="r-icon xs" style="display: flex; align-items: center;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></span>
-        </div>
-      </div>
+    <!-- Primary SPA Content Workspace -->
+    <main class="main-workspace">
+      <section class="view-container active" id="view-home"></section>
+      <section class="view-container" id="view-tests"></section>
+      <section class="view-container" id="view-amaliy"></section>
+      <section class="view-container" id="view-ai"></section>
+      <section class="view-container" id="view-profile"></section>
+      <section class="view-container" id="view-quiz"></section>
+      <section class="view-container" id="view-results"></section>
+    </main>
 
-      <div class="cockpit-search-wrap">
-        <span class="r-icon sm search-input-icon" id="search-bar-icon-slot"></span>
-        <input type="text" class="cockpit-search-input" id="category-search-input" data-i18n-placeholder="search_category" placeholder="Mavzuni qidirish (belgilar, tezlik, chorraha)...">
-      </div>
-
-      <div id="categories-section">
-        <div id="categories-list"></div>
-      </div>
-    </section>
-
-    <!-- VIEW 3: PRACTICAL SECTION (AVTODROM VA AMALIYOT) -->
-    <section class="view-pane" id="view-amaliy">
-      <h3 class="cockpit-section-heading">
-        <span class="r-icon sm" id="amaliy-heading-icon"></span>
-        <span data-i18n="nav_amaliy">Avtodrom va Amaliyot</span>
-      </h3>
-
-      <div class="cockpit-cluster-card" style="padding: 16px 20px; margin-bottom: 16px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-          <span style="font-size: 13px; font-weight: 800; color: var(--text-high);" data-i18n="modules_readiness">Avtodrom mashqlari o‘zlashtirilishi</span>
-          <span style="font-size: 16px; font-weight: 900; color: var(--apex-emerald);" id="modules-pct-text">0%</span>
-        </div>
-        <div class="quiz-progress-track" style="border-radius: var(--radius-full); overflow: hidden; height: 6px;">
-          <div class="quiz-progress-fill" id="modules-progress-bar" style="width: 0%;"></div>
-        </div>
-      </div>
-
-      <div id="modules-list"></div>
-    </section>
-
-    <!-- VIEW 3: AI COPILOT / AI USTOZ -->
-    <section class="view-pane" id="view-ai">
-      <div class="ai-view-wrapper">
-        <!-- AI Top Header -->
-        <div class="ai-top-header">
-          <div class="ai-header-left">
-            <div class="ai-avatar-box">
-              <img src="/static/images/rully-avatar-128.png" alt="Rully" class="ai-avatar-header-img" onerror="this.onerror=null; this.src='https://rully-app.onrender.com/static/images/rully-avatar-128.png';">
-              <span class="ai-status-dot"></span>
-            </div>
-            <div class="ai-header-meta">
-              <h3 class="ai-header-title" data-i18n="ai_header_title">AI Ustoz</h3>
-            </div>
-          </div>
-          <button type="button" class="btn-ai-clear" id="btn-ai-clear" data-i18n-title="ai_btn_clear" title="Suhbatni tozalash">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-          </button>
-        </div>
-
-        <!-- Locked Paywall Overlay for Non-PRO Users -->
-        <div class="ai-locked-overlay" id="ai-pro-locked-box" style="display: none;">
-          <div class="ai-locked-card">
-            <div class="ai-locked-crown-badge">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14v2H5v-2z"/>
-              </svg>
-            </div>
-            <h3 class="ai-locked-title" data-i18n="ai_pro_locked_banner_title">AI Ustoz — Faqat RULLY PRO obunachilar uchun</h3>
-            <p class="ai-locked-desc" data-i18n="ai_pro_locked_banner_desc">
-              Yo‘l harakati qoidalari, murakkab chorrahalar va testdagi xatolaringizni sun’iy intellekt orqali chuqur tahlil qilish uchun PRO tarifni faollashtiring.
-            </p>
-            <div class="ai-locked-perks">
-              <div class="ai-perk-row"><span>⚡</span> <span data-i18n="ai_perk_1">YHQ qoidalari bo‘yicha 24/7 shaxsiy instruktor</span></div>
-              <div class="ai-perk-row"><span>🚦</span> <span data-i18n="ai_perk_2">Murakkab chorrahalar va belgilarning batafsil tahlili</span></div>
-              <div class="ai-perk-row"><span>📊</span> <span data-i18n="ai_perk_3">Testdagi xatolaringiz sababini tushuntirib berish</span></div>
-            </div>
-            <button type="button" class="btn-sub-action ai-locked-action-btn" id="btn-ai-pro-activate">
-              <span data-i18n="ai_pro_locked_btn">PRO tarifni faollashtirish</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Chat Messages Area -->
-        <div class="ai-chat-body" id="ai-chat-messages">
-          <div class="ai-msg ai-msg-bot">
-            <div class="ai-msg-avatar">
-              <img src="/static/images/rully-avatar-128.png" alt="Rully" class="ai-avatar-thumb" onerror="this.onerror=null; this.src='https://rully-app.onrender.com/static/images/rully-avatar-128.png';">
-            </div>
-            <div class="ai-msg-content">
-              <div class="ai-msg-bubble" id="ai-welcome-bubble" data-i18n-html="ai_welcome_bubble">
-                Assalomu alaykum! Men <strong>Rully AI Ustoz</strong>man. 🚗<br><br>
-                O‘zbekiston Yo‘l Harakati Qoidalari (YHQ), chorrahalar, belgilar va imtihon sirlari bo‘yicha har qanday savolingizga javob beraman.<br><br>
-                Sizni qiynayotgan qoidalar va testdagi xatolaringizni birgalikda tahlil qilamiz!
-              </div>
-              <span class="ai-msg-time" data-i18n="ai_msg_time_now">Hozir</span>
-            </div>
-          </div>
-
-          <!-- Quick Suggestion Chips -->
-          <div class="ai-chips-wrap" id="ai-quick-chips">
-            <button type="button" class="ai-chip-btn" data-prompt="Chorrahada teng huquqli yo‘llarda kim birinchi o‘tadi?">
-              🚗 Chorrahalarda o‘tish tartibi
-            </button>
-            <button type="button" class="ai-chip-btn" data-prompt="Eng ko‘p adashtiradigan yo‘l belgilari va ularning farqlarini tushuntirib ber">
-              🛑 Yo‘l belgilari va chiziqlar
-            </button>
-            <button type="button" class="ai-chip-btn" data-prompt="Tartibga soluvchi (regulyirovshik) ishoralarini qanday oson tushunish va eslab qolish mumkin?">
-              🚦 Tartibga soluvchi (regulyirovshik)
-            </button>
-            <button type="button" class="ai-chip-btn" data-prompt="Mening testlardagi xatolarimni tahlil qilib ber va maslahat ber">
-              📊 Xatolarim tahlili
-            </button>
-          </div>
-        </div>
-
-        <!-- Chat Input Bar -->
-        <div class="ai-input-bar">
-          <div class="ai-input-wrap">
-            <textarea class="ai-text-input" id="ai-input-field" data-i18n-placeholder="ai_input_placeholder" placeholder="YHQ yoki savol haqida so‘rang..." rows="1"></textarea>
-            <button type="button" class="ai-send-btn" id="btn-ai-send" data-i18n-title="ai_send_label" aria-label="Yuborish">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-            </button>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- VIEW 4: DRIVER PROFILE & SETTINGS (PROFIL) -->
-    <section class="view-pane" id="view-profile">
-      <h3 class="cockpit-section-heading">
-        <span class="r-icon sm" id="profile-heading-icon"></span>
-        <span data-i18n="profile_title">Mening Profilim va Sozlamalar</span>
-      </h3>
-
-      <div class="category-row-card" style="margin-bottom: 22px; cursor: default;">
-        <div class="cat-row-left">
-          <div class="driver-avatar-ring">
-            <div class="driver-avatar-core" style="font-size: 18px;">R</div>
-          </div>
-          <div class="cat-info-block">
-            <div class="cat-name-txt" id="profile-name">...</div>
-            <div class="cat-count-txt" id="profile-tg-id"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- SUBSCRIPTION & TARIFF CARD (PROFIL BO'LIMIDA) -->
-      <div class="subscription-profile-card" id="card-subscription-profile">
-        <div class="sub-card-header">
-          <div class="sub-card-tag">
-            <span class="r-icon sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></span>
-            <span data-i18n="sub_title">Ta’rif va Obuna</span>
-          </div>
-          <div class="sub-status-pill free" id="profile-sub-status-pill" style="display: none;">
-            <span id="profile-sub-status-text"></span>
-          </div>
-        </div>
-
-        <p class="sub-card-desc" id="profile-sub-desc">
-          Davlat imtihoni, xatolar banki, aralash testda 30-100 talik savollar va shpargalkadan to‘liq foydalanish uchun PRO tarifga o‘ting.
-        </p>
-
-        <!-- Interactive Plan Selection Chips in Profile -->
-        <div class="sub-plans-grid" id="profile-sub-plans-grid">
-          <div class="sub-plan-box active" data-plan="pro_14" id="plan-chip-14">
-            <div class="plan-box-top">
-              <span class="plan-duration" data-i18n="sub_plan_14_title">14 kunlik PRO</span>
-              <span class="plan-check-pip"></span>
-            </div>
-            <div class="plan-price" data-i18n="sub_plan_14_price">14 000 so‘m</div>
-            <div class="plan-daily" data-i18n="sub_plan_14_daily">Kuniga 1 000 so‘m</div>
-          </div>
-
-          <div class="sub-plan-box" data-plan="pro_30" id="plan-chip-30">
-            <div class="plan-popular-ribbon" data-i18n="sub_popular_badge">Eng ommabop</div>
-            <div class="plan-box-top">
-              <span class="plan-duration" data-i18n="sub_plan_30_title">30 kunlik PRO</span>
-              <span class="plan-check-pip"></span>
-            </div>
-            <div class="plan-price" data-i18n="sub_plan_30_price">25 000 so‘m</div>
-            <div class="plan-daily" data-i18n="sub_plan_30_daily">Kuniga ~830 so‘m (17% arzon)</div>
-          </div>
-        </div>
-
-        <button class="btn-sub-action" id="btn-profile-subscribe">
-          <span id="btn-profile-sub-text" data-i18n="sub_btn_activate">PRO tarifni faollashtirish</span>
-        </button>
-      </div>
-
-      <!-- Mistakes Bank Card -->
-      <div class="cockpit-cluster-card" style="background: linear-gradient(145deg, #161a2e 0%, #0c0f1c 100%); border-color: rgba(99, 102, 241, 0.35); margin-bottom: 22px;">
-        <div class="cluster-header">
-          <span class="cluster-tag" style="background: rgba(99, 102, 241, 0.15); color: #a5b4fc; border-color: rgba(99, 102, 241, 0.3);">
-            <span class="r-icon sm" id="mistakes-tag-icon"></span>
-            <span data-i18n="card_mistakes_title">Xatolar banki</span>
-          </span>
-        </div>
-        <h4 class="readiness-title"><span id="mistakes-pool-count">0</span> <span data-i18n="mistakes_unresolved_suffix">ta hal qilinmagan xato mavjud</span></h4>
-        <p class="readiness-subtext" style="margin-bottom: 18px;" data-i18n="mistakes_card_desc">
-          Nazariy imtihonda adashmaslik uchun avval xato qilgan barcha savollaringizni to‘liq bartaraf eting.
-        </p>
-        <button class="btn-apex-primary" id="btn-practice-all-mistakes" style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);">
-          <span class="r-icon" id="mistakes-btn-icon"></span>
-          <span data-i18n="btn_practice_mistakes">Xatolarni yechish</span>
-          <span class="pro-lock-badge" id="badge-practice-mistakes-lock">🔒 PRO</span>
-        </button>
-      </div>
-
-      <!-- Exam History Table -->
-      <h4 class="cockpit-section-heading" style="font-size: 14.5px; margin-top: 24px;">
-        <span class="r-icon sm" id="history-heading-icon"></span>
-        <span data-i18n="history_section_title">Topshirilgan sinovlar tarixi</span>
-      </h4>
-      <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 24px;">
-        <thead>
-          <tr style="border-bottom: 1px solid var(--border-hairline); color: var(--text-muted); text-align: left;">
-            <th style="padding: 10px 8px;" data-i18n="date_col">Sana</th>
-            <th style="padding: 10px 8px;" data-i18n="score_col">Ball</th>
-            <th style="padding: 10px 8px;" data-i18n="status_col">Xulosa</th>
-          </tr>
-        </thead>
-        <tbody id="history-table-body"></tbody>
-      </table>
-
-      <!-- Language Selector -->
-      <h4 class="cockpit-section-heading" style="font-size: 14px;" data-i18n="language_select_title">Interfeys tilini tanlang:</h4>
-
-      <div class="lang-selector-tile active" data-lang="uz_latn">
-        <div class="lang-tile-left">
-          <span style="font-size: 20px;">🇺🇿</span>
-          <span class="lang-name-label">O‘zbekcha (Lotin)</span>
-        </div>
-        <div class="lang-radio-pip"></div>
-      </div>
-
-      <div class="lang-selector-tile" data-lang="uz_cyrl">
-        <div class="lang-tile-left">
-          <span style="font-size: 20px;">🇺🇿</span>
-          <span class="lang-name-label">Ўзбекча (Кирилл)</span>
-        </div>
-        <div class="lang-radio-pip"></div>
-      </div>
-
-      <div class="lang-selector-tile" data-lang="ru">
-        <div class="lang-tile-left">
-          <span style="font-size: 20px;">🇷🇺</span>
-          <span class="lang-name-label">Русский язык</span>
-        </div>
-        <div class="lang-radio-pip"></div>
-      </div>
-
-      <!-- PLATFORM RULES & ABOUT SECTION (PROFILDA TIL TANLASHDAN KEYIN) -->
-      <div class="profile-rules-tile" id="btn-open-rules" role="button" tabindex="0">
-        <div class="rules-tile-left">
-          <div class="rules-tile-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-              <line x1="16" y1="13" x2="8" y2="13"></line>
-              <line x1="16" y1="17" x2="8" y2="17"></line>
-              <polyline points="10 9 9 9 8 9"></polyline>
-            </svg>
-          </div>
-          <div class="rules-tile-info">
-            <div class="rules-tile-title" data-i18n="rules_tile_title">Platforma haqida va Qoidalar</div>
-            <div class="rules-tile-desc" data-i18n="rules_tile_desc">Foydalanish shartlari, YHQ meʼyorlari va xavfsizlik</div>
-          </div>
-        </div>
-        <div class="rules-tile-arrow">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-        </div>
-      </div>
-
-      <!-- VERSION INDICATOR (INTERACTIVE CHANGELOG TRIGGER) -->
-      <div class="version-badge-wrap">
-        <button type="button" class="version-trigger-btn" id="btn-open-changelog" title="Versiya tarixi va o‘zgarishlar">
-          <span class="version-tag-pill">v2.1</span>
-          <span class="version-text-label" data-i18n="version_label">RULLY Avtotest v2.1 (O‘zbekiston Respublikasi Davlat Standarti)</span>
-        </button>
-      </div>
-    </section>
-
-  </main>
-
-  <!-- FULL SCREEN FOCUSED QUIZ PLAYER OVERLAY -->
-  <div class="quiz-overlay" id="quiz-overlay">
-    <!-- UNIFIED STICKY HUD & QUESTION MATRIX HEADER -->
-    <div class="quiz-sticky-header" id="quiz-sticky-header">
-      <div class="quiz-hud-topbar">
-        <button class="quiz-hud-close" id="btn-close-quiz" aria-label="Imtihondan chiqish">
-          <span class="r-icon sm" id="close-quiz-icon-slot"></span>
-        </button>
-        <div class="quiz-hud-counter" id="quiz-counter-text">01 / 20</div>
-        <div class="quiz-hud-clock" id="quiz-timer-pill">
-          <span class="r-icon sm" id="clock-timer-icon-slot"></span>
-          <span id="quiz-timer-val">25:00</span>
-        </div>
-      </div>
-
-      <!-- OFFICIAL TERMINAL QUESTION NUMBER MATRIX (EXAM & ARALASH TEST) -->
-      <div class="exam-matrix-nav" id="exam-matrix-nav" style="display: none;"></div>
-
-      <div class="quiz-progress-track" id="quiz-progress-track">
-        <div class="quiz-progress-fill" id="quiz-progress-fill"></div>
-      </div>
-    </div>
-
-    <div class="quiz-container">
-      <div class="question-meta-row" id="quiz-meta-row">
-        <span class="category-indicator-pill" id="quiz-cat-name">Yo‘l belgilari</span>
-        <button class="btn-bookmark-action" id="btn-quiz-bookmark" aria-label="Savolni saqlash">
-          <span class="r-icon sm" id="bookmark-icon-slot"></span>
-        </button>
-      </div>
-
-      <div class="question-viewport-frame" id="quiz-image-wrap" style="display: none;">
-        <div class="img-loading-spinner" id="quiz-image-spinner">
-          <div class="spinner-mini"></div>
-        </div>
-        <img src="" alt="Yo‘l harakati qoidasi rasmi" class="question-viewport-img" id="quiz-image">
-        <div class="image-retry-box" id="quiz-image-retry" style="display: none;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 20px; height: 20px;"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-          <span data-i18n="btn_retry_image">Rasmni qayta yuklash</span>
-        </div>
-        <span class="zoom-hint-pill" id="quiz-zoom-hint" style="display: none;">
-          <span class="r-icon sm" id="zoom-icon-slot"></span>
-          <span data-i18n="image_zoom_hint">Kattalashtirish</span>
-        </span>
-      </div>
-
-      <div class="question-prompt-text" id="quiz-question-text">Yuklanmoqda...</div>
-
-      <div class="options-stack" id="quiz-options-list"></div>
-
-      <div class="statutory-card" id="quiz-feedback-box">
-        <div class="statutory-header" id="feedback-title-text">
-          <span class="r-icon sm" id="feedback-status-icon-slot"></span>
-          <span>To‘g‘ri javob!</span>
-        </div>
-        <div class="statutory-clause" id="feedback-clause-text"></div>
-        <div class="statutory-desc" id="feedback-desc-text"></div>
-      </div>
-
-      <!-- STANDARD BOTTOM ACTIONS (HIDDEN IN EXAM MODE) -->
-      <div class="quiz-bottom-actions" id="quiz-standard-actions">
-        <button class="btn-cockpit-secondary" id="btn-quiz-prev">
-          <span class="r-icon sm" id="prev-btn-icon-slot"></span>
-          <span data-i18n="btn_prev">Oldingisi</span>
-        </button>
-        <button class="btn-apex-primary" id="btn-quiz-next">
-          <span data-i18n="btn_next">Keyingisi</span>
-          <span class="r-icon sm" id="next-btn-icon-slot"></span>
-        </button>
-      </div>
-
-      <!-- EXAM BOTTOM FINISH ACTION (ONLY IN EXAM MODE) -->
-      <div class="exam-bottom-actions" id="exam-finish-bar" style="display: none;">
-        <button class="btn-finish-exam" id="btn-exam-finish">
-          <span class="r-icon sm" id="exam-finish-icon-slot"></span>
-          <span data-i18n="btn_finish_quiz">Imtihonni yakunlash</span>
-        </button>
-      </div>
-    </div>
-  </div>
-
-
-  <!-- EXAM RESULTS COCKPIT MODAL -->
-  <div class="results-cockpit-modal" id="results-modal">
-    <div class="results-cockpit-card">
-      <div class="result-icon-container passed" id="result-icon-box"></div>
-      <h3 class="result-verdict-title passed" id="result-title">TABRIKLAYMIZ!</h3>
-      <p class="result-verdict-desc" id="result-subtitle">Siz nazariy imtihondan muvaffaqiyatli o‘tdingiz!</p>
-
-      <div class="score-dial-badge" id="result-score-circle">
-        <div class="score-dial-pct" id="result-score-pct">0%</div>
-        <div class="score-dial-ratio" id="result-score-fraction"></div>
-      </div>
-
-      <div class="metrics-horizontal-strip">
-        <div class="strip-item">
-          <span class="strip-val" id="result-time-spent">0 daq</span>
-          <span class="strip-lbl" data-i18n="lbl_time">Vaqt</span>
-        </div>
-        <div class="strip-item">
-          <span class="strip-val" style="color: var(--apex-emerald);" id="result-correct-count">0</span>
-          <span class="strip-lbl" data-i18n="lbl_correct">To‘g‘ri</span>
-        </div>
-        <div class="strip-item">
-          <span class="strip-val" style="color: var(--crimson-stop);" id="result-incorrect-count">0</span>
-          <span class="strip-lbl" data-i18n="lbl_incorrect">Xato</span>
-        </div>
-        <div class="strip-item">
-          <span class="strip-val" style="color: var(--text-secondary);" id="result-unanswered-count">0</span>
-          <span class="strip-lbl" data-i18n="lbl_unanswered">Javobsiz</span>
-        </div>
-      </div>
-
-      <button class="btn-apex-primary" id="btn-result-retake" style="margin-bottom: 10px;">
-        <span class="r-icon sm" id="retake-icon-slot"></span>
-        <span data-i18n="btn_retake">Qayta topshirish</span>
+    <!-- Mobile Bottom Navigation Dock (< 1024px) -->
+    <nav class="mobile-dock" aria-label="Mobile Navigation">
+      <button type="button" class="dock-item active" data-tab="home">
+        <span class="r-icon sm" id="nav-icon-home"></span>
+        <span class="dock-label" data-i18n="nav_home">Asosiy</span>
       </button>
-      <button class="btn-cockpit-secondary" id="btn-result-home" style="width: 100%;">
-        <span class="r-icon sm" id="back-home-icon-slot"></span>
-        <span data-i18n="btn_back_home">Asosiy panelga qaytish</span>
+      <button type="button" class="dock-item" data-tab="tests">
+        <span class="r-icon sm" id="nav-icon-tests"></span>
+        <span class="dock-label" data-i18n="nav_tests">Nazariya</span>
       </button>
-    </div>
-  </div>
-
-
-  <!-- MODULE DETAIL SLIDE-OVER SHEET -->
-  <div class="module-sheet-modal" id="module-detail-modal">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-      <span class="module-badge-tag" id="module-detail-badge">Baza</span>
-      <button class="quiz-hud-close" id="btn-close-module" aria-label="Yopish">
-        <span class="r-icon sm" id="close-module-icon-slot"></span>
+      <button type="button" class="dock-item" data-tab="ai">
+        <span class="r-icon sm" id="nav-icon-ai"></span>
+        <span class="dock-label" data-i18n="nav_ai">AI Ustoz</span>
       </button>
-    </div>
-    <h3 class="readiness-title" id="module-detail-title" style="font-size: 20px;">Modul nomi</h3>
-    <p class="readiness-subtext" id="module-detail-desc" style="margin-bottom: 16px;"></p>
-
-    <div class="disqualification-danger-box">
-      <div class="danger-box-title">
-        <span class="r-icon sm" id="danger-trap-icon-slot"></span>
-        <span data-i18n="disqualification_warning">Imtihondan chetlatish holati:</span>
-      </div>
-      <div class="danger-box-txt" id="module-trap-text"></div>
-    </div>
-
-    <h4 class="cockpit-section-heading" data-i18n="step_by_step_guide" style="font-size: 14.5px;">Bosqichma-bosqich qo‘llanma:</h4>
-    <div id="module-steps-list"></div>
-
-    <h4 class="cockpit-section-heading" data-i18n="common_mistakes_title" style="font-size: 14.5px; margin-top: 22px;">Ko‘p uchraydigan xatolar:</h4>
-    <ul id="module-mistakes-list" style="padding-left: 20px; margin-bottom: 24px;"></ul>
-
-    <!-- ACTION BUTTONS -->
-    <div class="module-sheet-actions" style="margin-top: 20px; display: flex; flex-direction: column; gap: 10px;">
-      <button class="btn-apex-primary" id="btn-toggle-module-mastered" style="width: 100%;">
-        <span class="r-icon sm" id="module-mastered-icon"></span>
-        <span id="module-mastered-btn-text" data-i18n="module_btn_mastered">Modulni o‘zlashtirdim</span>
+      <button type="button" class="dock-item" data-tab="amaliy">
+        <span class="r-icon sm" id="nav-icon-amaliy"></span>
+        <span class="dock-label" data-i18n="nav_amaliy">Avtodrom</span>
       </button>
-    </div>
-  </div>
-
-  <!-- LIGHTBOX IMAGE ZOOM MODAL -->
-  <div class="image-zoom-overlay" id="lightbox-modal">
-    <img src="" alt="Kattalashtirilgan rasm" class="image-zoom-display" id="lightbox-img">
-  </div>
-
-  <!-- SAVED QUESTIONS REVIEW MODAL (SAQLANGAN SAVOLLAR: TEST EMAS, JAVOB VA IZOH) -->
-  <div class="saved-modal-overlay" id="saved-questions-modal">
-    <div class="saved-modal-sheet">
-      <div class="saved-modal-header">
-        <div class="saved-header-meta">
-          <div class="saved-badge-tag">
-            <span class="r-icon xs" style="color: #f59e0b;"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></span>
-            <span id="saved-modal-count-badge">0 ta savol</span>
-          </div>
-          <h3 class="saved-modal-title" data-i18n="saved_modal_title">Saqlangan savollar</h3>
-          <p class="saved-modal-subtitle" data-i18n="saved_modal_subtitle">Savol, to‘g‘ri javob va YHQ qoidalari izohi</p>
-        </div>
-        <button class="btn-saved-close" id="btn-close-saved-modal" aria-label="Yopish">
-          <span class="r-icon sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>
-        </button>
-      </div>
-
-      <div class="saved-search-wrap" id="saved-search-wrap" style="display: none;">
-        <span class="r-icon sm search-input-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span>
-        <input type="text" class="saved-search-input" id="saved-filter-input" placeholder="Savol yoki qoidani qidirish..." data-i18n-placeholder="saved_search_placeholder">
-        <button type="button" class="saved-search-clear" id="saved-search-clear" style="display: none;">✕</button>
-      </div>
-
-      <div class="saved-modal-body" id="saved-modal-body"></div>
-    </div>
-  </div>
-
-  <!-- CUSTOM QUIZ SETTINGS MODAL (ARALASH TEST SOZLAMALARI) -->
-  <div class="custom-settings-modal-overlay" id="custom-quiz-settings-modal">
-    <div class="custom-settings-sheet">
-      <div class="custom-settings-header">
-        <div class="custom-settings-heading">
-          <span class="r-icon" style="color: var(--apex-emerald);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
-          <span data-i18n="custom_settings_title">Aralash test sozlamalari</span>
-        </div>
-        <button class="btn-settings-close" id="btn-close-settings-modal" aria-label="Yopish">
-          <span class="r-icon sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>
-        </button>
-      </div>
-
-      <!-- Option 1: Savollar soni -->
-      <div class="setting-group">
-        <label class="setting-group-label" data-i18n="setting_q_count">Savollar soni:</label>
-        <div class="setting-chips-row" id="chips-q-count">
-          <button type="button" class="setting-chip" data-val="10">10</button>
-          <button type="button" class="setting-chip active" data-val="20">20</button>
-          <button type="button" class="setting-chip is-locked" data-val="30">30<span class="chip-lock-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span></button>
-          <button type="button" class="setting-chip is-locked" data-val="50">50<span class="chip-lock-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span></button>
-          <button type="button" class="setting-chip is-locked" data-val="100">100<span class="chip-lock-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span></button>
-        </div>
-      </div>
-
-      <!-- Option 2: Vaqt chegarasi (Telegram Style Slider) -->
-      <div class="setting-group">
-        <div class="setting-group-header">
-          <label class="setting-group-label" data-i18n="setting_time_limit">Vaqt chegarasi:</label>
-          <span class="setting-slider-val-badge" id="slider-time-val-badge">20 daqiqa</span>
-        </div>
-        <div class="telegram-slider-container">
-          <input type="range" min="0" max="6" step="1" value="3" class="telegram-range-slider" id="time-limit-slider" aria-label="Vaqt chegarasi" style="--slider-pct: 50%;">
-          <div class="slider-tick-labels" id="slider-tick-labels">
-            <span data-idx="0">5d</span>
-            <span data-idx="1">10d</span>
-            <span data-idx="2">15d</span>
-            <span data-idx="3" class="active">20d</span>
-            <span data-idx="4">25d</span>
-            <span data-idx="5">30d</span>
-            <span data-idx="6">∞</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Option 3: Izoh ko'rsatilsinmi -->
-      <div class="setting-toggle-row">
-        <div class="setting-toggle-meta">
-          <div class="setting-toggle-title" data-i18n="setting_show_explanation">Izoh ko‘rsatilsinmi?</div>
-          <div class="setting-toggle-desc" data-i18n="setting_show_explanation_desc">Har bir javobdan so‘ng modda va qoida izohi chiqadi</div>
-        </div>
-        <label class="cockpit-toggle-switch">
-          <input type="checkbox" id="toggle-show-explanation" checked>
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-
-      <!-- Option 4: Noto'g'ri javob belgilaganda to'g'risini ko'rsatish -->
-      <div class="setting-toggle-row">
-        <div class="setting-toggle-meta">
-          <div class="setting-toggle-title" data-i18n="setting_show_answer">Noto‘g‘ri belgilanganda to‘g‘risini ko‘rsatish</div>
-          <div class="setting-toggle-desc" data-i18n="setting_show_answer_desc">Xato variant tanlanganda to‘g‘ri javob darhol ko‘rinadi</div>
-        </div>
-        <label class="cockpit-toggle-switch">
-          <input type="checkbox" id="toggle-show-answer" checked>
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-
-      <!-- Launch CTA Button -->
-      <button class="btn-apex-primary" id="btn-start-custom-quiz" style="margin-top: 14px;">
-        <span class="r-icon sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></span>
-        <span data-i18n="btn_start_custom_quiz">Testni boshlash</span>
+      <button type="button" class="dock-item" data-tab="profile">
+        <span class="r-icon sm" id="nav-icon-profile"></span>
+        <span class="dock-label" data-i18n="nav_profile">Profil</span>
       </button>
+    </nav>
+  </div>
+
+  <!-- External Production Browser Gate -->
+  <div class="web-gate-wrap hidden" id="web-gate-container"></div>
+
+  <!-- ================= MODALS & SHEETS ================= -->
+
+  <!-- Readiness Diagnostic Modal -->
+  <div class="modal-overlay" id="readiness-diagnostic-modal" role="dialog" aria-modal="true">
+    <div class="modal-sheet">
+      <div class="modal-head">
+        <h3 class="modal-title" data-i18n="readiness_modal_title">Tayyorgarlik Mezonlari & AI Diagnostika</h3>
+        <button type="button" class="icon-pill-btn" data-close-modal="readiness-diagnostic-modal" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body" id="readiness-modal-body"></div>
     </div>
   </div>
 
-  <!-- TEST SECRETS & CHEATSHEET INTERACTIVE MODAL (FULL SCREEN) -->
-  <div class="secrets-modal-overlay" id="test-secrets-modal">
-    <div class="secrets-modal-sheet">
-      <!-- Modal Header -->
-      <div class="secrets-modal-header">
-        <div class="secrets-header-meta">
-          <div class="secrets-badge-tag">
-            <span class="r-icon sm" style="color: #c084fc;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg></span>
-            <span data-i18n="secrets_badge_analysis">1 327 ta savol tahlili</span>
-          </div>
-          <h3 class="secrets-modal-title" data-i18n="secrets_modal_title">Imtihon Shpargalkasi</h3>
-          <p class="secrets-modal-subtitle" data-i18n="secrets_modal_subtitle">Statistik qonuniyatlar, kalit so‘zlar va mantiqiy meʼyorlar</p>
-        </div>
-        <button class="btn-secrets-close" id="btn-close-secrets-modal" aria-label="Yopish">
-          <span class="r-icon sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>
-        </button>
+  <!-- Daily Goal Customization Modal -->
+  <div class="modal-overlay" id="daily-goal-modal" role="dialog" aria-modal="true">
+    <div class="modal-sheet">
+      <div class="modal-head">
+        <h3 class="modal-title" data-i18n="daily_goal_label">Kunlik maqsad</h3>
+        <button type="button" class="icon-pill-btn" data-close-modal="daily-goal-modal" aria-label="Close">✕</button>
       </div>
-
-      <!-- Quick Search Bar -->
-      <div class="secrets-search-wrap">
-        <span class="r-icon sm search-input-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span>
-        <input type="text" class="secrets-search-input" id="secrets-filter-input" placeholder="Kalit so‘z yoki qoidani qidirish (tramvay, tezlik, zebra...)" data-i18n-placeholder="secrets_search_placeholder">
-        <button type="button" class="secrets-search-clear" id="secrets-search-clear" style="display: none;">✕</button>
-      </div>
-
-      <!-- 2 Focused Tabs -->
-      <div class="secrets-tab-nav" id="secrets-tab-nav">
-        <button type="button" class="secrets-tab-btn active" data-tab="keywords">
-          <span class="tab-emoji">🔑</span>
-          <span data-i18n="secrets_tab_keys">Kalit so‘zlar</span>
-        </button>
-        <button type="button" class="secrets-tab-btn" data-tab="rules">
-          <span class="tab-emoji">🚦</span>
-          <span data-i18n="secrets_tab_rules">Mantiqiy qoidalar & Meʼyorlar</span>
-        </button>
-      </div>
-
-      <!-- Scrollable Tab Content Container -->
-      <div class="secrets-modal-body" id="secrets-modal-body">
-      </div>
+      <div class="modal-body" id="daily-goal-modal-body"></div>
     </div>
   </div>
 
-  <!-- RULLY PRO PAYWALL MODAL -->
-  <div class="modal-backdrop" id="subscription-paywall-modal">
-    <div class="paywall-sheet">
-      <div class="paywall-handle-bar"></div>
-      
-      <div class="paywall-header">
-        <button class="btn-modal-close" id="btn-close-paywall-modal" aria-label="Yopish">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-        <div class="paywall-crown-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14v2H5v-2z"/>
-          </svg>
-        </div>
-        <h3 class="paywall-title" data-i18n="sub_paywall_title">RULLY PRO Imkoniyatlari</h3>
-        <p class="paywall-subtitle" data-i18n="sub_paywall_subtitle">Ushbu bo‘limdan to‘liq foydalanish uchun PRO tarifni faollashtiring</p>
+  <!-- Post-Session Review Modal -->
+  <div class="modal-overlay" id="session-review-modal" role="dialog" aria-modal="true">
+    <div class="modal-sheet">
+      <div class="modal-head">
+        <h3 class="modal-title" data-i18n="review_title">Sessiya tahlili</h3>
+        <button type="button" class="icon-pill-btn" data-close-modal="session-review-modal" aria-label="Close">✕</button>
       </div>
+      <div class="modal-body" id="session-review-body"></div>
+    </div>
+  </div>
 
-      <div class="paywall-features-list">
-        <div class="paywall-feat-item">
-          <div class="paywall-feat-icon emerald">✓</div>
-          <div class="paywall-feat-text" data-i18n="sub_feature_exam">Davlat Nazariy Imtihoni — 20 talik real vaqt simulyatsiyasi</div>
-        </div>
-        <div class="paywall-feat-item">
-          <div class="paywall-feat-icon amber">✓</div>
-          <div class="paywall-feat-text" data-i18n="sub_feature_mistakes">Xatolar Banki — Yiqilgan savollarni to‘liq bartaraf etish</div>
-        </div>
-        <div class="paywall-feat-item">
-          <div class="paywall-feat-icon gold">⚡</div>
-          <div class="paywall-feat-text" data-i18n="sub_feature_ai">AI Ustoz — YHQ va testlarni sun’iy intellekt bilan tahlil qilish</div>
-        </div>
-        <div class="paywall-feat-item">
-          <div class="paywall-feat-icon blue">✓</div>
-          <div class="paywall-feat-text" data-i18n="sub_feature_custom">Aralash Test — 30, 50, 100 talik kengaytirilgan testlar</div>
-        </div>
-        <div class="paywall-feat-item">
-          <div class="paywall-feat-icon purple">✓</div>
-          <div class="paywall-feat-text" data-i18n="sub_feature_cheatsheet">Imtihon Shpargalkasi — 1 327 savol sirlari va meʼyorlari</div>
-        </div>
-        <div class="paywall-feat-item">
-          <div class="paywall-feat-icon cyan">✓</div>
-          <div class="paywall-feat-text" data-i18n="sub_feature_stats">Batafsil Statistika — Tayyorgarlik darajasi va o‘tish ehtimoli</div>
-        </div>
+  <!-- Practical Module Detail Modal -->
+  <div class="modal-overlay" id="module-detail-modal" role="dialog" aria-modal="true">
+    <div class="modal-sheet">
+      <div class="modal-head">
+        <h3 class="modal-title" id="module-detail-title">Modul</h3>
+        <button type="button" class="icon-pill-btn" data-close-modal="module-detail-modal" aria-label="Close">✕</button>
       </div>
+      <div class="modal-body" id="module-detail-body"></div>
+    </div>
+  </div>
 
-      <!-- Plan Selector Cards in Modal -->
-      <div class="sub-plans-grid paywall-grid" id="modal-sub-plans-grid">
-        <div class="sub-plan-box active" data-plan="pro_14" id="modal-plan-chip-14">
-          <div class="plan-box-top">
-            <span class="plan-duration" data-i18n="sub_plan_14_title">14 kunlik PRO</span>
-            <span class="plan-check-pip"></span>
-          </div>
-          <div class="plan-price" data-i18n="sub_plan_14_price">14 000 so‘m</div>
-          <div class="plan-daily" data-i18n="sub_plan_14_daily">Kuniga 1 000 so‘m</div>
-        </div>
-
-        <div class="sub-plan-box" data-plan="pro_30" id="modal-plan-chip-30">
-          <div class="plan-popular-ribbon" data-i18n="sub_popular_badge">Eng ommabop</div>
-          <div class="plan-box-top">
-            <span class="plan-duration" data-i18n="sub_plan_30_title">30 kunlik PRO</span>
-            <span class="plan-check-pip"></span>
-          </div>
-          <div class="plan-price" data-i18n="sub_plan_30_price">25 000 so‘m</div>
-          <div class="plan-daily" data-i18n="sub_plan_30_daily">Kuniga ~830 so‘m (17% arzon)</div>
-        </div>
+  <!-- Cheatsheet Modal -->
+  <div class="modal-overlay" id="cheatsheet-modal" role="dialog" aria-modal="true">
+    <div class="modal-sheet">
+      <div class="modal-head">
+        <h3 class="modal-title" data-i18n="secrets_modal_title">Imtihon Shpargalkasi</h3>
+        <button type="button" class="icon-pill-btn" data-close-modal="cheatsheet-modal" aria-label="Close">✕</button>
       </div>
+      <div class="modal-body" id="cheatsheet-modal-body"></div>
+    </div>
+  </div>
 
-      <button class="btn-sub-action paywall-btn" id="btn-modal-activate-sub">
-        <span id="btn-modal-sub-text">14 kunlik PRO faollashtirish (14 000 so‘m)</span>
-      </button>
-      
-      <div class="paywall-safe-footer">
-        🔒 Xavfsiz to‘lov • Istalgan vaqtda uzaytirish mumkin
+  <!-- Info / Rules / Changelog Modal -->
+  <div class="modal-overlay" id="info-modal" role="dialog" aria-modal="true">
+    <div class="modal-sheet">
+      <div class="modal-head">
+        <h3 class="modal-title" id="info-modal-title">RULLY 2.0</h3>
+        <button type="button" class="icon-pill-btn" data-close-modal="info-modal" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body" id="info-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Language Picker Modal -->
+  <div class="modal-overlay" id="lang-modal" role="dialog" aria-modal="true">
+    <div class="modal-sheet">
+      <div class="modal-head">
+        <h3 class="modal-title" data-i18n="language_select_title">Interfeys tilini tanlang:</h3>
+        <button type="button" class="icon-pill-btn" data-close-modal="lang-modal" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="list-stack">
+          <button type="button" class="seg-pill" data-modal-lang="uz_latn">O‘zbekcha (Lotin)</button>
+          <button type="button" class="seg-pill" data-modal-lang="uz_cyrl">Ўзбекча (Кирилл)</button>
+          <button type="button" class="seg-pill" data-modal-lang="ru">Русский язык</button>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- PAYMENT INVOICE MODAL -->
-  <div class="custom-settings-modal-overlay" id="payment-invoice-modal" style="z-index: 10000;">
-    <div class="custom-settings-sheet paywall-sheet" style="max-height: 92vh;">
-      <div class="paywall-header">
-        <button class="btn-modal-close" id="btn-close-invoice-modal" aria-label="Yopish">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-        <div class="paywall-crown-icon" style="background: rgba(59, 130, 246, 0.2); color: #3B82F6; border-color: rgba(59, 130, 246, 0.4);">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
-        </div>
-        <h3 class="paywall-title">To‘lov ma’lumotlari</h3>
-        <p class="paywall-subtitle">Ko‘rsatilgan bank kartasiga to‘lov summasini o‘tkazing</p>
+  <!-- Paywall Modal -->
+  <div class="modal-overlay" id="paywall-modal" role="dialog" aria-modal="true">
+    <div class="modal-sheet">
+      <div class="modal-head">
+        <h3 class="modal-title" data-i18n="sub_paywall_title">RULLY PRO Imkoniyatlari</h3>
+        <button type="button" class="icon-pill-btn" data-close-modal="paywall-modal" aria-label="Close">✕</button>
       </div>
+      <div class="modal-body" id="paywall-modal-body"></div>
+    </div>
+  </div>
 
-      <!-- Live Countdown Timer -->
-      <div class="invoice-timer-card">
-        <div class="invoice-timer-left">
-          <span class="timer-dot-pulse"></span>
+  <!-- HUMO Invoice Modal -->
+  <div class="modal-overlay" id="invoice-modal" role="dialog" aria-modal="true">
+    <div class="modal-sheet">
+      <div class="modal-head">
+        <h3 class="modal-title">HUMO To‘lov</h3>
+        <button type="button" class="icon-pill-btn" data-close-modal="invoice-modal" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="surface-card" style="display:flex;justify-content:space-between;align-items:center;">
           <span>To‘lov kutish vaqti:</span>
+          <strong class="font-mono" id="invoice-countdown-timer" style="color:var(--color-primary);">15:00</strong>
         </div>
-        <div class="invoice-timer-countdown font-mono" id="invoice-countdown-timer">15:00</div>
-      </div>
-
-      <!-- Card & Amount Box -->
-      <div class="invoice-details-box">
-        <div class="invoice-row">
-          <span class="invoice-label">Tarif:</span>
-          <strong id="inv-plan-name">30 kunlik PRO</strong>
-        </div>
-        <div class="invoice-row">
-          <span class="invoice-label">Karta egasi:</span>
-          <strong id="inv-cardholder-name">ANVARJON ARALOV</strong>
-        </div>
-        <div class="invoice-row">
-          <span class="invoice-label">Karta raqami:</span>
-          <div class="invoice-copyable">
-            <span class="font-mono text-high font-bold tracking-wider" id="inv-card-number">9860 0000 0000 5370</span>
-            <button type="button" class="btn-copy-chip" id="btn-copy-card" title="Nusxalash" aria-label="Nusxalash">
-              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-            </button>
+        <div class="surface-card list-stack">
+          <div style="display:flex;justify-content:space-between;gap:8px;"><span>Tarif:</span><strong id="inv-plan-name">30 kunlik PRO</strong></div>
+          <div style="display:flex;justify-content:space-between;gap:8px;"><span>Karta egasi:</span><strong id="inv-cardholder-name">ANVARJON ARALOV</strong></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+            <span>Karta raqami:</span>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <strong class="font-mono" id="inv-card-number">9860 0000 0000 5370</strong>
+              <button type="button" class="btn btn-sm btn-secondary" id="btn-copy-card">Nusxa</button>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+            <span>Summa:</span>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <strong class="font-mono" style="color:var(--color-emerald);font-size:17px;" id="inv-total-amount">25 000</strong>
+              <button type="button" class="btn btn-sm btn-secondary" id="btn-copy-amount">Nusxa</button>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--color-amber);font-weight:600;">
+            Avtomatik faollashish uchun aynan ko‘rsatilgan summani o‘tkazing!
           </div>
         </div>
-
-        <div class="invoice-divider"></div>
-
-        <div class="invoice-total-row">
-          <div class="invoice-total-label">To‘lov summasi:</div>
-          <div class="invoice-total-amount">
-            <span class="font-mono font-bold text-emerald" id="inv-total-amount">25 000</span>
-            <span class="total-curr font-bold text-emerald">so‘m</span>
-            <button type="button" class="btn-copy-chip" id="btn-copy-amount" title="Nusxalash" aria-label="Nusxalash">
-              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-            </button>
-          </div>
+        <div style="font-size:12px;color:var(--text-muted);text-align:center;" class="font-mono">
+          Order: <span id="inv-order-ref">-</span>
         </div>
-
-        <div class="invoice-amount-notice">
-          ⚠️ <b>Muhim:</b> To‘lov avtomatik tasdiqlanishi uchun aynan <b>belgilangan miqdorni</b> (bir so‘m ham adashmasdan) o‘tkazish shart!
-        </div>
-      </div>
-
-      <!-- Auto Verification Banner -->
-      <div class="invoice-auto-banner">
-        <div class="spinner-mini"></div>
-        <div>
-          <strong>Avtomatik faollashish</strong>
-          <p>Pul kartaga tushishi bilan PRO imkoniyatlar hisobingizda darhol ishga tushadi.</p>
-        </div>
-      </div>
-
-      <div class="paywall-safe-footer font-mono text-xs">
-        Buyurtma kodi: <span id="inv-order-ref">ORD-20261118-0000</span>
       </div>
     </div>
   </div>
 
-  <!-- READINESS 5-PILLAR DIAGNOSTIC MODAL -->
-  <div class="custom-modal-overlay" id="readiness-diagnostic-modal">
-    <div class="custom-modal-sheet">
-      <div class="custom-modal-handle"></div>
-      <div class="custom-modal-header">
-        <div class="custom-modal-meta">
-          <div class="custom-badge-tag" style="background: rgba(14, 165, 233, 0.15); color: #38bdf8; border-color: rgba(14, 165, 233, 0.3);">
-            <span data-i18n="readiness_diagnostic_btn">5 ta mezon tahlili</span>
-          </div>
-          <h3 class="custom-modal-title" data-i18n="readiness_modal_title">Tayyorgarlik Mezonlari & AI Diagnostika</h3>
-          <p class="custom-modal-subtitle" data-i18n="readiness_modal_subtitle">O‘zbekiston DYHXX davlat imtihoni andozasi bo‘yicha 5 ta mezon</p>
+  <!-- Confirmation Dialog Modal -->
+  <div class="modal-overlay" id="confirm-modal" role="dialog" aria-modal="true">
+    <div class="modal-sheet" style="max-width:400px;">
+      <div class="modal-head">
+        <h3 class="modal-title" id="confirm-modal-title">Tasdiqlash</h3>
+      </div>
+      <div class="modal-body">
+        <p id="confirm-modal-text" style="font-size:13.5px;color:var(--text-secondary);"></p>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button type="button" class="btn btn-secondary btn-sm" id="confirm-cancel-btn" data-i18n="btn_cancel">Bekor qilish</button>
+          <button type="button" class="btn btn-primary btn-sm" id="confirm-ok-btn" data-i18n="btn_confirm">Ha, yakunlash</button>
         </div>
       </div>
-
-      <div class="custom-modal-body" id="readiness-modal-body"></div>
     </div>
   </div>
 
-  <!-- PLATFORM RULES & ABOUT MODAL -->
-  <div class="custom-modal-overlay" id="platform-rules-modal">
-    <div class="custom-modal-sheet">
-      <div class="custom-modal-handle"></div>
-      <div class="custom-modal-header">
-        <div class="custom-modal-meta">
-          <h3 class="custom-modal-title" data-i18n="rules_modal_title">Platforma Haqida va Qoidalar</h3>
-          <p class="custom-modal-subtitle" data-i18n="rules_modal_subtitle">O‘zbekiston Respublikasi YHQ & Davlat Standartlari</p>
-        </div>
+  <!-- Image Zoom Lightbox Modal -->
+  <div class="modal-overlay" id="image-lightbox-modal" role="dialog" aria-modal="true">
+    <div class="modal-sheet" style="max-width:760px;">
+      <div class="modal-head">
+        <h3 class="modal-title" id="lightbox-caption" style="font-size:13.5px;font-weight:600;">Rasm</h3>
+        <button type="button" class="icon-pill-btn" data-close-modal="image-lightbox-modal" aria-label="Close">✕</button>
       </div>
-
-      <div class="custom-modal-body" id="rules-modal-body"></div>
+      <div class="modal-body" style="align-items:center;">
+        <img id="lightbox-img" src="" alt="Zoomed road sign diagram" style="max-width:100%;max-height:70dvh;object-fit:contain;border-radius:12px;">
+      </div>
     </div>
   </div>
 
-  <!-- VERSION HISTORY & CHANGELOG MODAL -->
-  <div class="custom-modal-overlay" id="version-history-modal">
-    <div class="custom-modal-sheet">
-      <div class="custom-modal-handle"></div>
-      <div class="custom-modal-header">
-        <div class="custom-modal-meta">
-          <div class="custom-badge-tag" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border-color: rgba(16, 185, 129, 0.3);">
-            <span data-i18n="changelog_modal_tag">Yangilanishlar daftari</span>
-          </div>
-          <h3 class="custom-modal-title" data-i18n="changelog_modal_title">Versiyalar Tarixi & O‘zgarishlar</h3>
-          <p class="custom-modal-subtitle" data-i18n="changelog_modal_subtitle">RULLY platformasining barcha versiyalari va yangiliklari</p>
-        </div>
-      </div>
+  <div class="hud-toast" id="hud-toast" role="status" aria-live="polite"></div>
 
-      <div class="custom-modal-body" id="changelog-modal-body"></div>
-    </div>
-  </div>
-
-  <!-- FIXED BOTTOM COCKPIT NAVIGATION BAR -->
-  <nav class="cockpit-bottom-nav">
-    <button class="nav-bar-item active" id="nav-home" data-tab="home">
-      <span class="nav-item-icon" id="nav-icon-home"></span>
-      <span class="nav-item-title" data-i18n="nav_home">Asosiy</span>
-    </button>
-    <button class="nav-bar-item" id="nav-tests" data-tab="tests">
-      <span class="nav-item-icon" id="nav-icon-tests"></span>
-      <span class="nav-item-title" data-i18n="nav_tests">Nazariya</span>
-    </button>
-    <button class="nav-bar-item" id="nav-ai" data-tab="ai">
-      <span class="nav-item-icon" id="nav-icon-ai"></span>
-      <span class="nav-item-title" data-i18n="nav_ai">AI Ustoz</span>
-    </button>
-    <button class="nav-bar-item" id="nav-amaliy" data-tab="amaliy">
-      <span class="nav-item-icon" id="nav-icon-amaliy"></span>
-      <span class="nav-item-title" data-i18n="nav_amaliy">Avtodrom</span>
-    </button>
-    <button class="nav-bar-item" id="nav-profile" data-tab="profile">
-      <span class="nav-item-icon" id="nav-icon-profile"></span>
-      <span class="nav-item-title" data-i18n="nav_profile">Profil</span>
-    </button>
-  </nav>
-
-  <!-- Application Scripts -->
-  <script defer src="/static/js/icons.js?v=2.4.1"></script>
-  <script defer src="/static/js/translations.js?v=2.4.2"></script>
-  <script defer src="/static/js/cheatsheet_data.js?v=2.4.1"></script>
-  <script defer src="/static/js/app.js?v=2.5.4"></script>
+  <!-- Modular Application Scripts (with required defer attributes & ?v=2.0.0 cache-busting) -->
+  <script defer src="/static/js/icons.js?v=2.0.0"></script>
+  <script defer src="/static/js/translations.js?v=2.0.0"></script>
+  <script defer src="/static/js/cheatsheet_data.js?v=2.0.0"></script>
+  <script defer src="/static/js/core/state.js?v=2.0.0"></script>
+  <script defer src="/static/js/core/theme.js?v=2.0.0"></script>
+  <script defer src="/static/js/core/hud.js?v=2.0.0"></script>
+  <script defer src="/static/js/core/api.js?v=2.0.0"></script>
+  <script defer src="/static/js/views/home.js?v=2.0.0"></script>
+  <script defer src="/static/js/views/prepare.js?v=2.0.0"></script>
+  <script defer src="/static/js/views/quiz.js?v=2.0.0"></script>
+  <script defer src="/static/js/views/amaliy.js?v=2.0.0"></script>
+  <script defer src="/static/js/views/ai.js?v=2.0.0"></script>
+  <script defer src="/static/js/views/profile.js?v=2.0.0"></script>
+  <script defer src="/static/js/app.js?v=2.0.0"></script>
 </body>
 </html>

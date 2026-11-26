@@ -288,7 +288,11 @@ app.add_middleware(
 
 @app.middleware("http")
 async def add_no_cache_header(request: Request, call_next):
+    import time as _time
+    t0 = _time.perf_counter()
     response = await call_next(request)
+    elapsed_ms = round((_time.perf_counter() - t0) * 1000.0, 2)
+    response.headers["X-Process-Time-Ms"] = str(elapsed_ms)
     path = request.url.path
     if path in ("/", "/index.html", "/admin", "/admin/", "/static/index.html", "/static/admin/index.html"):
         response.headers["Cache-Control"] = "public, max-age=0, must-revalidate"
@@ -382,6 +386,7 @@ async def health_check():
         "pong": True,
         "service": "rully-miniapp-api",
         "version": "2.1.0",
+        "platform_version": "2.0.0",
         "environment": "vercel" if IS_VERCEL else "standalone-cloud",
         "canonical_db": "master_database.sqlite",
         "turso_configured": bool(os.getenv("TURSO_DATABASE_URL")),

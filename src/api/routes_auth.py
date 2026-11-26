@@ -26,6 +26,9 @@ class TelegramAuthRequest(BaseModel):
 class LanguageUpdateRequest(BaseModel):
     language: str = Field(..., pattern="^(uz_latn|uz_cyrl|ru)$")
 
+class DailyGoalRequest(BaseModel):
+    daily_goal: int = Field(..., ge=5, le=100)
+
 class SubscriptionActivateRequest(BaseModel):
     plan_id: str = Field(..., description="Plan ID ('pro_14' or 'pro_30')")
 
@@ -99,7 +102,15 @@ def get_user_me(user: Dict[str, Any] = Depends(get_current_user), db: BotDatabas
 def set_language(req: LanguageUpdateRequest, user: Dict[str, Any] = Depends(get_current_user), db: BotDatabase = Depends(get_db)):
     user_id = user["user_id"]
     db.set_user_language(user_id, req.language)
+    invalidate_auth_cache(user_id)
     return {"ok": True, "language": req.language}
+
+@router.post("/user/daily-goal")
+def set_daily_goal(req: DailyGoalRequest, user: Dict[str, Any] = Depends(get_current_user), db: BotDatabase = Depends(get_db)):
+    user_id = user["user_id"]
+    updated = db.set_daily_goal(user_id, req.daily_goal)
+    invalidate_auth_cache(user_id)
+    return {"ok": True, "daily_goal_questions": updated}
 
 # --- Subscription API Endpoints ---
 @router.get("/subscription/plans")

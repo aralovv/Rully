@@ -9,7 +9,7 @@ import sys
 import sqlite3
 import random
 import time
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Set
 from dataclasses import dataclass, asdict, field
 from src.bot.category_localization import localize_category, localize_legal_reference
 from src.db_adapter import get_db_connection, is_turso_enabled
@@ -438,6 +438,117 @@ class AvtotestProductEngine:
             "total_questions": len(questions),
             "questions": questions
         }
+
+    # 9. Systematic Bilet Tickets (67 Official Billets covering all canonical questions)
+    TICKET_SIZE = 20
+
+    def _ordered_all_ids(self) -> List[str]:
+        if self._all_canonical_ids:
+            return self._all_canonical_ids
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT canonical_id FROM canonical_questions ORDER BY canonical_id")
+            return [r["canonical_id"] for r in c.fetchall()]
+
+    def get_total_question_count(self) -> int:
+        return len(self._ordered_all_ids())
+
+    def get_ticket_count(self) -> int:
+        total = len(self._ordered_all_ids())
+        return (total + self.TICKET_SIZE - 1) // self.TICKET_SIZE if total > 0 else 0
+
+    def get_ticket_question_ids(self, ticket_number: int) -> List[str]:
+        if ticket_number < 1:
+            return []
+        all_ids = self._ordered_all_ids()
+        start = (ticket_number - 1) * self.TICKET_SIZE
+        if start >= len(all_ids):
+            return []
+        return all_ids[start : start + self.TICKET_SIZE]
+
+    def get_tickets_summary(self, language: str = "uz_latn") -> List[Dict[str, Any]]:
+        all_ids = self._ordered_all_ids()
+        tickets = []
+        total_tickets = (len(all_ids) + self.TICKET_SIZE - 1) // self.TICKET_SIZE
+        for idx in range(total_tickets):
+            num = idx + 1
+            chunk = all_ids[idx * self.TICKET_SIZE : (idx + 1) * self.TICKET_SIZE]
+            # Find dominant category for ticket labeling
+            cat_counts: Dict[str, int] = {}
+            for qid in chunk:
+                q_meta = self._cache_questions.get(qid)
+                if q_meta:
+                    cname = localize_category(q_meta["category_name"], language)
+                    cat_counts[cname] = cat_counts.get(cname, 0) + 1
+            primary_topic = max(cat_counts.items(), key=lambda kv: kv[1])[0] if cat_counts else ""
+            tickets.append({
+                "ticket_number": num,
+                "question_count": len(chunk),
+                "primary_topic": primary_topic,
+                "first_canonical_id": chunk[0] if chunk else None,
+                "last_canonical_id": chunk[-1] if chunk else None,
+            })
+        return tickets
+
+    def get_ticket_questions(self, ticket_number: int, language: str = "uz_latn") -> List[QuestionItem]:
+        qids = self.get_ticket_question_ids(ticket_number)
+        return [q for q in (self.get_question(qid, language=language) for qid in qids) if q]
+
+    # 10. Smart Adaptive Practice Selection (Mistakes -> Weak Categories -> Unseen Bank)
+    def get_adaptive_question_ids(
+        self,
+        count: int = 20,
+        unresolved_mistakes: Optional[List[str]] = None,
+        weak_category_ids: Optional[List[int]] = None,
+        solved_correct_ids: Optional[Set[str]] = None,
+    ) -> List[str]:
+        all_ids = self._ordered_all_ids()
+        if not all_ids:
+            return []
+
+        count = max(1, min(int(count or 20), len(all_ids)))
+        selected: List[str] = []
+        seen: Set[str] = set()
+        solved_set = solved_correct_ids or set()
+        valid_set = set(all_ids)
+
+        def add_candidates(pool: List[str], cap: int):
+            added = 0
+            for qid in pool:
+                if len(selected) >= count or added >= cap:
+                    break
+                if qid in valid_set and qid not in seen:
+                    seen.add(qid)
+                    selected.append(qid)
+                    added += 1
+
+        # Bucket 1: Unresolved mistakes (up to ~40%)
+        mistakes_pool = list(unresolved_mistakes or [])
+        random.shuffle(mistakes_pool)
+        add_candidates(mistakes_pool, max(1, int(count * 0.40)))
+
+        # Bucket 2: Unsolved or missed questions from weak categories (up to ~45%)
+        weak_pool: List[str] = []
+        for cid_cat in (weak_category_ids or []):
+            cat_qids = list(self._by_category.get(cid_cat, []))
+            unsolved_in_cat = [q for q in cat_qids if q not in solved_set]
+            random.shuffle(unsolved_in_cat)
+            weak_pool.extend(unsolved_in_cat)
+        add_candidates(weak_pool, max(2, int(count * 0.45)))
+
+        # Bucket 3: Unseen questions across entire bank
+        unseen_pool = [q for q in all_ids if q not in solved_set and q not in seen]
+        random.shuffle(unseen_pool)
+        add_candidates(unseen_pool, count - len(selected))
+
+        # Bucket 4: General remainder if user solved nearly everything
+        if len(selected) < count:
+            rest = [q for q in all_ids if q not in seen]
+            random.shuffle(rest)
+            add_candidates(rest, count - len(selected))
+
+        random.shuffle(selected)
+        return selected
 
 
 def run_interactive_demo():

@@ -6,7 +6,7 @@ import sqlite3
 import json
 import time
 from datetime import datetime, timedelta
-from typing import Optional, Dict, List, Any, Tuple, Union
+from typing import Optional, Dict, List, Any, Tuple, Union, Set
 from src.db_adapter import get_db_connection, is_turso_enabled, execute_batch
 
 # --- Subscription Plans Specification ---
@@ -290,10 +290,39 @@ def compute_driver_readiness(
 
 
 class BotDatabase:
+    _ticket_schema_ready: bool = False
+
     def __init__(self, db_path: str = "master_database.sqlite"):
         self.db_path = db_path
         if not is_turso_enabled():
             self._init_bot_schema()
+
+    def _ensure_ticket_progress_table(self, conn) -> None:
+        if BotDatabase._ticket_schema_ready:
+            return
+        try:
+            execute_batch(conn, [
+                """
+                CREATE TABLE IF NOT EXISTS user_ticket_progress (
+                    user_id INTEGER NOT NULL,
+                    ticket_number INTEGER NOT NULL,
+                    total_questions INTEGER NOT NULL DEFAULT 20,
+                    best_correct INTEGER NOT NULL DEFAULT 0,
+                    best_percentage REAL NOT NULL DEFAULT 0.0,
+                    attempts_count INTEGER NOT NULL DEFAULT 1,
+                    is_passed INTEGER NOT NULL DEFAULT 0,
+                    last_session_id TEXT,
+                    last_attempted_at TEXT NOT NULL,
+                    PRIMARY KEY (user_id, ticket_number),
+                    FOREIGN KEY (user_id) REFERENCES telegram_users(user_id) ON DELETE CASCADE
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_ticket_progress_user ON user_ticket_progress(user_id)",
+                "CREATE INDEX IF NOT EXISTS idx_session_answers_user_canon ON session_answers(user_id, canonical_id, is_correct)",
+            ])
+            BotDatabase._ticket_schema_ready = True
+        except Exception:
+            pass
 
     def _get_connection(self):
         return get_db_connection(self.db_path)
@@ -542,6 +571,23 @@ class BotDatabase:
             except sqlite3.OperationalError:
                 pass
 
+            # 13. Ticket (Bilet) Progress
+            c.execute("""
+            CREATE TABLE IF NOT EXISTS user_ticket_progress (
+                user_id INTEGER NOT NULL,
+                ticket_number INTEGER NOT NULL,
+                total_questions INTEGER NOT NULL DEFAULT 20,
+                best_correct INTEGER NOT NULL DEFAULT 0,
+                best_percentage REAL NOT NULL DEFAULT 0.0,
+                attempts_count INTEGER NOT NULL DEFAULT 1,
+                is_passed INTEGER NOT NULL DEFAULT 0,
+                last_session_id TEXT,
+                last_attempted_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, ticket_number),
+                FOREIGN KEY (user_id) REFERENCES telegram_users(user_id) ON DELETE CASCADE
+            );
+            """)
+
             # Performance indexes
             c.execute("CREATE INDEX IF NOT EXISTS idx_bookmarks_user ON user_bookmarks(user_id);")
             c.execute("CREATE INDEX IF NOT EXISTS idx_checklist_user ON practical_checklist(user_id);")
@@ -551,8 +597,11 @@ class BotDatabase:
             c.execute("CREATE INDEX IF NOT EXISTS idx_exam_results_user ON exam_results(user_id);")
             c.execute("CREATE INDEX IF NOT EXISTS idx_answers_session ON session_answers(session_id);")
             c.execute("CREATE INDEX IF NOT EXISTS idx_session_answers_user_recent ON session_answers(user_id, id DESC);")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_ticket_progress_user ON user_ticket_progress(user_id);")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_session_answers_user_canon ON session_answers(user_id, canonical_id, is_correct);")
 
             conn.commit()
+            BotDatabase._ticket_schema_ready = True
 
     # --- User Management ---
     def get_or_create_user(self, user_id: int, username: Optional[str] = None,
@@ -681,6 +730,7 @@ class BotDatabase:
                         yesterday_str = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
                         if last_date != yesterday_str:
                             strk_val = 1
+                        today_count = 0
                     streak = {
                         "current_streak": strk_val,
                         "last_active_date": last_date,
@@ -1192,22 +1242,43 @@ class BotDatabase:
                     "is_exam_terminated": (sess_row["status"] == "FAILED_MISTAKES") if sess_row else False
                 }
 
-            # Fetch streak state to calculate updated streak
-            c.execute("SELECT current_streak, today_questions_count, last_active_date FROM learning_streak WHERE user_id = ?", (user_id,))
+            # Fetch streak state to calculate updated consecutive-day streak & daily count
+            c.execute("SELECT current_streak, today_questions_count, last_active_date, daily_goal_questions FROM learning_streak WHERE user_id = ?", (user_id,))
             st_row = c.fetchone()
+            yesterday_str = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
             if st_row:
-                new_today = (st_row["today_questions_count"] or 0) + 1
-                streak_info = {"current_streak": st_row["current_streak"], "today_questions_count": new_today}
+                last_date = st_row["last_active_date"]
+                prev_streak = st_row["current_streak"] or 1
+                goal_q = st_row["daily_goal_questions"] or 20
+                if last_date == today_str:
+                    new_streak = prev_streak
+                    new_today = (st_row["today_questions_count"] or 0) + 1
+                elif last_date == yesterday_str:
+                    new_streak = prev_streak + 1
+                    new_today = 1
+                else:
+                    new_streak = 1
+                    new_today = 1
+
+                streak_info = {
+                    "current_streak": new_streak,
+                    "today_questions_count": new_today,
+                    "daily_goal_questions": goal_q
+                }
                 streak_stmt = (
-                    "UPDATE learning_streak SET today_questions_count = ?, last_active_date = ?, updated_at = ? WHERE user_id = ?",
-                    [new_today, today_str, now_ts, user_id]
+                    "UPDATE learning_streak SET current_streak = ?, today_questions_count = ?, last_active_date = ?, updated_at = ? WHERE user_id = ?",
+                    [new_streak, new_today, today_str, now_ts, user_id]
                 )
             else:
-                streak_info = {"current_streak": 1, "today_questions_count": 1}
+                streak_info = {
+                    "current_streak": 1,
+                    "today_questions_count": 1,
+                    "daily_goal_questions": 20
+                }
                 streak_stmt = (
                     """
                     INSERT INTO learning_streak (user_id, current_streak, last_active_date, daily_goal_questions, today_questions_count, updated_at)
-                    VALUES (?, 1, ?, 10, 1, ?)
+                    VALUES (?, 1, ?, 20, 1, ?)
                     """,
                     [user_id, today_str, now_ts]
                 )
@@ -1405,92 +1476,42 @@ class BotDatabase:
     def get_user_stats(self, user_id: int) -> Dict[str, Any]:
         with self._get_connection() as conn:
             c = conn.cursor()
-            # Total exams taken
-            c.execute("SELECT COUNT(*), SUM(passed) FROM exam_results WHERE user_id = ?", (user_id,))
-            row = c.fetchone()
-            total_exams = row[0] or 0
-            passed_exams = row[1] or 0
-
-            # Total questions answered
             c.execute("""
-            SELECT COUNT(*), SUM(is_correct)
-            FROM session_answers sa
-            JOIN user_sessions us ON sa.session_id = us.session_id
-            WHERE us.user_id = ?
-            """, (user_id,))
-            ans_row = c.fetchone()
-            total_ans = ans_row[0] or 0
-            correct_ans = ans_row[1] or 0
+            SELECT
+              (SELECT COUNT(*) FROM exam_results WHERE user_id = ?) AS total_exams,
+              (SELECT COALESCE(SUM(passed), 0) FROM exam_results WHERE user_id = ?) AS passed_exams,
+              (SELECT COUNT(*) FROM session_answers sa JOIN user_sessions us ON sa.session_id = us.session_id WHERE us.user_id = ?) AS total_ans,
+              (SELECT COALESCE(SUM(is_correct), 0) FROM session_answers sa JOIN user_sessions us ON sa.session_id = us.session_id WHERE us.user_id = ?) AS correct_ans,
+              (SELECT COALESCE(SUM(CASE WHEN is_resolved = 0 THEN 1 ELSE 0 END), 0) FROM user_mistakes WHERE user_id = ?) AS unresolved_mistakes,
+              (SELECT COALESCE(SUM(CASE WHEN is_resolved = 1 THEN 1 ELSE 0 END), 0) FROM user_mistakes WHERE user_id = ?) AS resolved_mistakes,
+              (SELECT COUNT(DISTINCT sa.canonical_id) FROM session_answers sa JOIN user_sessions us ON sa.session_id = us.session_id WHERE us.user_id = ?) AS unique_qs,
+              (SELECT COUNT(DISTINCT cq.category_id) FROM session_answers sa JOIN user_sessions us ON sa.session_id = us.session_id LEFT JOIN canonical_questions cq ON sa.canonical_id = cq.canonical_id WHERE us.user_id = ?) AS categories_tested,
+              (SELECT COUNT(DISTINCT sa.canonical_id) FROM session_answers sa JOIN user_sessions us ON sa.session_id = us.session_id WHERE us.user_id = ? AND sa.is_correct = 1) AS unique_correct,
+              (SELECT COALESCE(current_streak, 0) FROM learning_streak WHERE user_id = ?) AS current_streak,
+              (SELECT COUNT(*) FROM (SELECT passed FROM exam_results WHERE user_id = ? ORDER BY id DESC LIMIT 5)) AS recent_exams_count,
+              (SELECT COALESCE(SUM(passed), 0) FROM (SELECT passed FROM exam_results WHERE user_id = ? ORDER BY id DESC LIMIT 5)) AS recent_exams_passed,
+              (SELECT COALESCE(AVG(time_taken_seconds), 0) FROM (SELECT time_taken_seconds FROM exam_results WHERE user_id = ? AND time_taken_seconds > 0 ORDER BY id DESC LIMIT 5)) AS recent_avg_exam_time,
+              (SELECT COUNT(*) FROM (SELECT sa.is_correct FROM session_answers sa JOIN user_sessions us ON sa.session_id = us.session_id WHERE us.user_id = ? ORDER BY sa.id DESC LIMIT 40)) AS recent_ans_total,
+              (SELECT COALESCE(SUM(is_correct), 0) FROM (SELECT sa.is_correct FROM session_answers sa JOIN user_sessions us ON sa.session_id = us.session_id WHERE us.user_id = ? ORDER BY sa.id DESC LIMIT 40)) AS recent_ans_correct
+            """, tuple([user_id] * 15))
+            row = dict(c.fetchone() or {})
 
-            # Active & resolved mistakes count
-            c.execute("""
-            SELECT 
-                SUM(CASE WHEN is_resolved = 0 THEN 1 ELSE 0 END),
-                SUM(CASE WHEN is_resolved = 1 THEN 1 ELSE 0 END)
-            FROM user_mistakes WHERE user_id = ?
-            """, (user_id,))
-            m_row = c.fetchone()
-            mistakes_cnt = (m_row[0] or 0) if m_row else 0
-            resolved_cnt = (m_row[1] or 0) if m_row else 0
-
-            # Unique canonical questions tested & categories tested
-            c.execute("""
-            SELECT 
-                COUNT(DISTINCT sa.canonical_id),
-                COUNT(DISTINCT cq.category_id)
-            FROM session_answers sa
-            JOIN user_sessions us ON sa.session_id = us.session_id
-            LEFT JOIN canonical_questions cq ON sa.canonical_id = cq.canonical_id
-            WHERE us.user_id = ?
-            """, (user_id,))
-            u_row = c.fetchone()
-            unique_qs = (u_row[0] or 0) if u_row else 0
-            categories_tested = (u_row[1] or 0) if u_row else 0
-
-            # Learning streak
-            c.execute("SELECT current_streak FROM learning_streak WHERE user_id = ?", (user_id,))
-            st_row = c.fetchone()
-            current_streak = st_row[0] if st_row else 0
-
-            # Recent exam history (last 5)
-            c.execute("""
-            SELECT passed, time_taken_seconds
-            FROM exam_results
-            WHERE user_id = ?
-            ORDER BY id DESC
-            LIMIT 5
-            """, (user_id,))
-            recent_exams = c.fetchall()
-            if recent_exams:
-                recent_pass_rate = round(sum(r[0] for r in recent_exams) / len(recent_exams) * 100.0, 1)
-                valid_times = [r[1] for r in recent_exams if r[1] and r[1] > 0]
-                avg_exam_time = sum(valid_times) / len(valid_times) if valid_times else 0.0
-            else:
-                recent_pass_rate = None
-                avg_exam_time = 0.0
-
-            # Unique questions answered correctly
-            c.execute("""
-            SELECT COUNT(DISTINCT sa.canonical_id)
-            FROM session_answers sa
-            JOIN user_sessions us ON sa.session_id = us.session_id
-            WHERE us.user_id = ? AND sa.is_correct = 1
-            """, (user_id,))
-            uc_row = c.fetchone()
-            unique_correct = (uc_row[0] or 0) if uc_row else 0
-
-            # Recent answers history (last 40 answers)
-            c.execute("""
-            SELECT sa.is_correct
-            FROM session_answers sa
-            JOIN user_sessions us ON sa.session_id = us.session_id
-            WHERE us.user_id = ?
-            ORDER BY sa.id DESC
-            LIMIT 40
-            """, (user_id,))
-            recent_ans_rows = c.fetchall()
-            recent_ans_total = len(recent_ans_rows)
-            recent_ans_correct = sum(r[0] for r in recent_ans_rows if r[0] == 1)
+            total_exams = int(row.get("total_exams") or 0)
+            passed_exams = int(row.get("passed_exams") or 0)
+            total_ans = int(row.get("total_ans") or 0)
+            correct_ans = int(row.get("correct_ans") or 0)
+            mistakes_cnt = int(row.get("unresolved_mistakes") or 0)
+            resolved_cnt = int(row.get("resolved_mistakes") or 0)
+            unique_qs = int(row.get("unique_qs") or 0)
+            categories_tested = int(row.get("categories_tested") or 0)
+            unique_correct = int(row.get("unique_correct") or 0)
+            current_streak = int(row.get("current_streak") or 0)
+            recent_exams_count = int(row.get("recent_exams_count") or 0)
+            recent_exams_passed = int(row.get("recent_exams_passed") or 0)
+            recent_pass_rate = round(recent_exams_passed / recent_exams_count * 100.0, 1) if recent_exams_count > 0 else None
+            avg_exam_time = float(row.get("recent_avg_exam_time") or 0.0)
+            recent_ans_total = int(row.get("recent_ans_total") or 0)
+            recent_ans_correct = int(row.get("recent_ans_correct") or 0)
 
             pass_rate = round((passed_exams / total_exams * 100), 1) if total_exams > 0 else 0.0
 
@@ -1771,3 +1792,311 @@ class BotDatabase:
                     "created_at": r["created_at"]
                 })
             return res
+
+    # --- RULLY 2.0: Daily Goal, Ticket Mastery, Session Review & Adaptive Analytics ---
+    def set_daily_goal(self, user_id: int, goal_questions: int) -> int:
+        goal = max(5, min(100, int(goal_questions)))
+        today_str = datetime.utcnow().strftime("%Y-%m-%d")
+        now_ts = datetime.utcnow().isoformat()
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT user_id FROM learning_streak WHERE user_id = ?", (user_id,))
+            if c.fetchone():
+                c.execute(
+                    "UPDATE learning_streak SET daily_goal_questions = ?, updated_at = ? WHERE user_id = ?",
+                    (goal, now_ts, user_id),
+                )
+            else:
+                c.execute(
+                    """
+                    INSERT INTO learning_streak (user_id, current_streak, last_active_date, daily_goal_questions, today_questions_count, updated_at)
+                    VALUES (?, 1, ?, ?, 0, ?)
+                    """,
+                    (user_id, today_str, goal, now_ts),
+                )
+            conn.commit()
+        return goal
+
+    def upsert_ticket_progress(
+        self,
+        user_id: int,
+        ticket_number: int,
+        total_questions: int,
+        correct_count: int,
+        percentage: float,
+        passed: bool,
+        session_id: str,
+    ) -> None:
+        now_ts = datetime.utcnow().isoformat()
+        with self._get_connection() as conn:
+            self._ensure_ticket_progress_table(conn)
+            c = conn.cursor()
+            c.execute(
+                """
+                INSERT INTO user_ticket_progress (
+                    user_id, ticket_number, total_questions, best_correct,
+                    best_percentage, attempts_count, is_passed, last_session_id, last_attempted_at
+                ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
+                ON CONFLICT(user_id, ticket_number) DO UPDATE SET
+                    total_questions = excluded.total_questions,
+                    best_correct = MAX(user_ticket_progress.best_correct, excluded.best_correct),
+                    best_percentage = MAX(user_ticket_progress.best_percentage, excluded.best_percentage),
+                    attempts_count = user_ticket_progress.attempts_count + 1,
+                    is_passed = MAX(user_ticket_progress.is_passed, excluded.is_passed),
+                    last_session_id = excluded.last_session_id,
+                    last_attempted_at = excluded.last_attempted_at
+                """,
+                (user_id, ticket_number, total_questions, correct_count, percentage, 1 if passed else 0, session_id, now_ts),
+            )
+            conn.commit()
+
+    def get_ticket_progress_map(self, user_id: int) -> Dict[int, Dict[str, Any]]:
+        with self._get_connection() as conn:
+            self._ensure_ticket_progress_table(conn)
+            c = conn.cursor()
+            c.execute(
+                """
+                SELECT ticket_number, total_questions, best_correct, best_percentage,
+                       attempts_count, is_passed, last_session_id, last_attempted_at
+                FROM user_ticket_progress
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            )
+            res: Dict[int, Dict[str, Any]] = {}
+            for r in c.fetchall():
+                res[int(r["ticket_number"])] = {
+                    "ticket_number": int(r["ticket_number"]),
+                    "total_questions": int(r["total_questions"]),
+                    "best_correct": int(r["best_correct"]),
+                    "best_percentage": float(r["best_percentage"]),
+                    "attempts_count": int(r["attempts_count"]),
+                    "is_passed": bool(r["is_passed"]),
+                    "last_session_id": r["last_session_id"],
+                    "last_attempted_at": r["last_attempted_at"],
+                }
+            return res
+
+    def get_solved_correct_ids(self, user_id: int) -> Set[str]:
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute(
+                """
+                SELECT DISTINCT sa.canonical_id
+                FROM session_answers sa
+                JOIN user_sessions us ON sa.session_id = us.session_id
+                WHERE us.user_id = ? AND sa.is_correct = 1
+                """,
+                (user_id,),
+            )
+            return {r["canonical_id"] for r in c.fetchall()}
+
+    def get_session_review(self, session_id: str, user_id: int) -> Optional[Dict[str, Any]]:
+        session = self.get_session(session_id)
+        if not session or session.get("user_id") != user_id:
+            return None
+        answers = self.get_session_answers(session_id)
+        bookmarks = set(self.get_user_bookmarks(user_id))
+        return {
+            "session": session,
+            "answers": answers,
+            "bookmarks": bookmarks,
+        }
+
+    def get_learning_analytics(
+        self,
+        user_id: int,
+        categories: List[Dict[str, Any]],
+        engine_total_questions: int = 1327,
+    ) -> Dict[str, Any]:
+        """
+        Computes per-category mastery, weak/strong topic rankings, milestones,
+        and a real-time Smart Next Action recommendation using 2 compact queries.
+        """
+        with self._get_connection() as conn:
+            self._ensure_ticket_progress_table(conn)
+            c = conn.cursor()
+            c.execute(
+                """
+                SELECT COALESCE(cq.category_id, 0) AS category_id,
+                       COUNT(sa.id) AS total_attempts,
+                       COALESCE(SUM(sa.is_correct), 0) AS correct_attempts,
+                       COUNT(DISTINCT sa.canonical_id) AS unique_answered,
+                       COUNT(DISTINCT CASE WHEN sa.is_correct = 1 THEN sa.canonical_id END) AS unique_correct
+                FROM session_answers sa
+                JOIN user_sessions us ON sa.session_id = us.session_id
+                LEFT JOIN canonical_questions cq ON sa.canonical_id = cq.canonical_id
+                WHERE us.user_id = ?
+                GROUP BY COALESCE(cq.category_id, 0)
+                """,
+                (user_id,),
+            )
+            cat_perf = {
+                int(r["category_id"]): {
+                    "total_attempts": int(r["total_attempts"] or 0),
+                    "correct_attempts": int(r["correct_attempts"] or 0),
+                    "unique_answered": int(r["unique_answered"] or 0),
+                    "unique_correct": int(r["unique_correct"] or 0),
+                }
+                for r in c.fetchall()
+            }
+
+            c.execute(
+                """
+                SELECT COALESCE(cq.category_id, 0) AS category_id,
+                       COUNT(*) AS active_mistakes
+                FROM user_mistakes um
+                LEFT JOIN canonical_questions cq ON um.canonical_id = cq.canonical_id
+                WHERE um.user_id = ? AND um.is_resolved = 0
+                GROUP BY COALESCE(cq.category_id, 0)
+                """,
+                (user_id,),
+            )
+            cat_mistakes = {int(r["category_id"]): int(r["active_mistakes"] or 0) for r in c.fetchall()}
+
+            c.execute(
+                """
+                SELECT
+                    (SELECT COUNT(*) FROM exam_results WHERE user_id = ?) AS total_exams,
+                    (SELECT COALESCE(SUM(passed), 0) FROM exam_results WHERE user_id = ?) AS passed_exams,
+                    (SELECT COALESCE(SUM(CASE WHEN is_resolved = 0 THEN 1 ELSE 0 END), 0) FROM user_mistakes WHERE user_id = ?) AS active_mistakes,
+                    (SELECT COALESCE(SUM(CASE WHEN is_resolved = 1 THEN 1 ELSE 0 END), 0) FROM user_mistakes WHERE user_id = ?) AS resolved_mistakes,
+                    (SELECT COALESCE(current_streak, 1) FROM learning_streak WHERE user_id = ?) AS current_streak,
+                    (SELECT COUNT(*) FROM user_completed_modules WHERE user_id = ?) AS completed_modules,
+                    (SELECT COUNT(*) FROM user_ticket_progress WHERE user_id = ? AND is_passed = 1) AS passed_tickets
+                """,
+                tuple([user_id] * 7),
+            )
+            summary_row = dict(c.fetchone() or {})
+
+        category_mastery = []
+        total_unique_correct = 0
+        total_unique_answered = 0
+        for cat in categories:
+            cid = int(cat["category_id"])
+            total_q = int(cat.get("question_count") or 0)
+            perf = cat_perf.get(cid, {"total_attempts": 0, "correct_attempts": 0, "unique_answered": 0, "unique_correct": 0})
+            mistakes_here = cat_mistakes.get(cid, 0)
+            attempts = perf["total_attempts"]
+            correct_att = perf["correct_attempts"]
+            uniq_ans = perf["unique_answered"]
+            uniq_corr = perf["unique_correct"]
+            total_unique_correct += uniq_corr
+            total_unique_answered += uniq_ans
+
+            acc_pct = round((correct_att / attempts) * 100.0, 1) if attempts > 0 else None
+            mastery_pct = round((uniq_corr / total_q) * 100.0, 1) if total_q > 0 else 0.0
+            category_mastery.append({
+                "category_id": cid,
+                "name": cat["name"],
+                "total_questions": total_q,
+                "attempts": attempts,
+                "correct": correct_att,
+                "unique_answered": uniq_ans,
+                "unique_correct": uniq_corr,
+                "accuracy_pct": acc_pct,
+                "mastery_pct": min(100.0, mastery_pct),
+                "unresolved_mistakes": mistakes_here,
+            })
+
+        attempted_cats = [x for x in category_mastery if x["attempts"] > 0]
+        weak_categories = sorted(
+            [x for x in attempted_cats if (x["accuracy_pct"] is not None and x["accuracy_pct"] < 80.0) or x["unresolved_mistakes"] > 0],
+            key=lambda x: ((x["accuracy_pct"] if x["accuracy_pct"] is not None else 0.0), -x["unresolved_mistakes"]),
+        )[:5]
+        strong_categories = sorted(
+            [x for x in attempted_cats if x["accuracy_pct"] is not None and x["accuracy_pct"] >= 80.0],
+            key=lambda x: (-x["accuracy_pct"], -x["unique_correct"]),
+        )[:5]
+
+        total_exams = int(summary_row.get("total_exams") or 0)
+        passed_exams = int(summary_row.get("passed_exams") or 0)
+        active_mistakes = int(summary_row.get("active_mistakes") or 0)
+        resolved_mistakes = int(summary_row.get("resolved_mistakes") or 0)
+        current_streak = int(summary_row.get("current_streak") or 1)
+        completed_modules = int(summary_row.get("completed_modules") or 0)
+        passed_tickets = int(summary_row.get("passed_tickets") or 0)
+
+        # Smart Next Action Recommendation Engine
+        if total_unique_answered < 10:
+            recommendation = {
+                "kind": "adaptive_starter",
+                "target_type": "ADAPTIVE",
+                "target_id": None,
+                "metric": total_unique_answered,
+            }
+        elif active_mistakes >= 5:
+            recommendation = {
+                "kind": "mistake_drill",
+                "target_type": "MISTAKES",
+                "target_id": None,
+                "metric": active_mistakes,
+            }
+        elif weak_categories:
+            w = weak_categories[0]
+            recommendation = {
+                "kind": "weak_topic",
+                "target_type": "CATEGORY",
+                "target_id": w["category_id"],
+                "topic_name": w["name"],
+                "metric": w["accuracy_pct"] if w["accuracy_pct"] is not None else 0.0,
+            }
+        elif total_exams == 0 or passed_exams == 0:
+            recommendation = {
+                "kind": "official_exam",
+                "target_type": "EXAM",
+                "target_id": None,
+                "metric": total_exams,
+            }
+        else:
+            recommendation = {
+                "kind": "adaptive_mastery",
+                "target_type": "ADAPTIVE",
+                "target_id": None,
+                "metric": round((total_unique_correct / max(1, engine_total_questions)) * 100.0, 1),
+            }
+
+        milestones = [
+            {"id": "first_steps", "unlocked": total_unique_answered >= 10, "progress": min(10, total_unique_answered), "target": 10},
+            {"id": "streak_3", "unlocked": current_streak >= 3, "progress": min(3, current_streak), "target": 3},
+            {"id": "exam_passer", "unlocked": passed_exams >= 1, "progress": min(1, passed_exams), "target": 1},
+            {"id": "mistake_slayer", "unlocked": resolved_mistakes >= 5, "progress": min(5, resolved_mistakes), "target": 5},
+            {"id": "ticket_finisher", "unlocked": passed_tickets >= 5, "progress": min(5, passed_tickets), "target": 5},
+            {"id": "avtodrom_pro", "unlocked": completed_modules >= 5, "progress": min(5, completed_modules), "target": 5},
+        ]
+
+        return {
+            "overall_coverage_pct": round((total_unique_answered / max(1, engine_total_questions)) * 100.0, 1),
+            "overall_mastery_pct": round((total_unique_correct / max(1, engine_total_questions)) * 100.0, 1),
+            "unique_answered": total_unique_answered,
+            "unique_correct": total_unique_correct,
+            "total_bank_questions": engine_total_questions,
+            "passed_tickets": passed_tickets,
+            "completed_modules": completed_modules,
+            "category_mastery": category_mastery,
+            "weak_categories": weak_categories,
+            "strong_categories": strong_categories,
+            "recommendation": recommendation,
+            "milestones": milestones,
+        }
+
+    def get_ai_student_snapshot(self, user_id: int) -> Dict[str, Any]:
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute(
+                """
+                SELECT
+                  (SELECT COUNT(*) FROM exam_results WHERE user_id = ?) AS total_exams,
+                  (SELECT COALESCE(SUM(passed), 0) FROM exam_results WHERE user_id = ?) AS passed_exams,
+                  (SELECT COALESCE(SUM(CASE WHEN is_resolved = 0 THEN 1 ELSE 0 END), 0) FROM user_mistakes WHERE user_id = ?) AS active_mistakes,
+                  (SELECT COUNT(DISTINCT sa.canonical_id) FROM session_answers sa JOIN user_sessions us ON sa.session_id = us.session_id WHERE us.user_id = ?) AS unique_answered
+                """,
+                (user_id, user_id, user_id, user_id),
+            )
+            r = dict(c.fetchone() or {})
+            return {
+                "total_exams": int(r.get("total_exams") or 0),
+                "passed_exams": int(r.get("passed_exams") or 0),
+                "active_mistakes": int(r.get("active_mistakes") or 0),
+                "unique_answered": int(r.get("unique_answered") or 0),
+            }
