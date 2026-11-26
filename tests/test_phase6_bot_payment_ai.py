@@ -754,4 +754,4 @@ def test_spa_deep_link_hash_js_syntax_and_routing():
     assert {"tab": "tests", "sub": "signs"} in parsed["navigated"]
     assert {"tab": "tests", "sub": "rules"} in parsed["navigated"]
     assert any(n["tab"] == "amaliy" for n in parsed["navigated"])
-    assert {"session_type": "TICKET", "ticket_number": 7} in parsed["sessions"]
+    assert {"session_type": "BILET", "ticket_number": 7} in parsed["sessions"]

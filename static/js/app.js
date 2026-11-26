@@ -71,7 +71,7 @@
       R.state.prepareSubtab = 'tickets';
       R.navigateTo('tests');
       if (ticketNo >= 1 && typeof R.startSession === 'function') {
-        R.startSession({ session_type: 'TICKET', ticket_number: ticketNo });
+        R.startSession({ session_type: 'BILET', ticket_number: ticketNo });
       }
       return true;
     }

@@ -13,6 +13,7 @@ class SlidingWindowRateLimiter:
     def __init__(self, maxsize: int = 5000):
         self._records: Dict[str, deque] = {}
         self._maxsize = maxsize
+        self._rejections_total = 0
         self._lock = Lock()
 
     def is_allowed(self, key: str, max_requests: int, window_seconds: float) -> Tuple[bool, int, float]:
@@ -39,6 +40,7 @@ class SlidingWindowRateLimiter:
                 q.popleft()
 
             if len(q) >= max_requests:
+                self._rejections_total += 1
                 earliest = q[0]
                 retry_after = max(0.1, earliest + window_seconds - now)
                 return False, 0, retry_after
@@ -47,6 +49,14 @@ class SlidingWindowRateLimiter:
             remaining = max(0, max_requests - len(q))
             return True, remaining, 0.0
 
+    def stats(self) -> Dict[str, int]:
+        with self._lock:
+            return {
+                "tracked_keys": len(self._records),
+                "maxsize": self._maxsize,
+                "rejections_total": self._rejections_total,
+            }
+
     def reset(self, key: Optional[str] = None):
         """Clears records for a key or all keys."""
         with self._lock:
@@ -54,6 +64,20 @@ class SlidingWindowRateLimiter:
                 self._records.pop(key, None)
             else:
                 self._records.clear()
+
+
+def get_client_ip(request: Any) -> str:
+    """Extracts true caller IP safely behind Vercel/Render edge proxies."""
+    headers = getattr(request, "headers", None) or {}
+    for hdr in ("cf-connecting-ip", "x-real-ip", "x-forwarded-for"):
+        val = headers.get(hdr)
+        if val:
+            first = str(val).split(",")[0].strip()
+            if first:
+                return first[:64]
+    client = getattr(request, "client", None)
+    host = getattr(client, "host", None) if client else None
+    return str(host or "unknown")[:64]
 
 rate_limiter = SlidingWindowRateLimiter()
 

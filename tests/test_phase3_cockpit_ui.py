@@ -31,10 +31,11 @@ def test_unified_navigation_order_and_core_ids():
     assert sidebar_tabs == expected_tabs
     assert dock_tabs == expected_tabs
 
-    # Required defer scripts & v5 cache-busters preserved
+    # Required defer scripts & active cache-busters preserved
     assert '/static/css/rully.css?v=5.0.0' in html
-    for js in ("icons.js", "translations.js", "cheatsheet_data.js", "core/theme.js", "views/reference.js", "views/home.js", "app.js"):
+    for js in ("icons.js", "translations.js", "cheatsheet_data.js", "core/theme.js", "views/reference.js", "views/home.js"):
         assert f'script defer src="/static/js/{js}?v=5.0.0"' in html
+    assert 'script defer src="/static/js/app.js?v=8.0.0"' in html
 
     # Required view containers and modals preserved
     for dom_id in (

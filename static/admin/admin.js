@@ -529,9 +529,12 @@
         `).join('');
       }
 
-      // 4. Load Question Sync & Source Monitoring + Editorial Legal Queue
-      await loadQuestionSyncStatus();
-      await loadEditorialQueue(1);
+      // 4. Load Question Sync, Editorial Legal Queue, and System Observability concurrently
+      await Promise.allSettled([
+        loadQuestionSyncStatus(),
+        loadEditorialQueue(1),
+        loadSystemObservability(),
+      ]);
 
     } catch (e) {
       console.error("Sozlamalar yuklashda xatolik:", e);
@@ -1689,6 +1692,68 @@
     document.getElementById('auth-container').style.display = 'flex';
     document.getElementById('app-container').style.display = 'none';
   }
+
+  // ================= 6. SYSTEM OBSERVABILITY & AUDIT LOGS =================
+  window.loadSystemObservability = async function () {
+    try {
+      const [healthRes, logsRes] = await Promise.all([
+        apiFetch('/api/admin/system/health'),
+        apiFetch('/api/admin/system/audit-logs?limit=10')
+      ]);
+
+      const badge = document.getElementById('obs-overall-badge');
+      const dbEl = document.getElementById('obs-db-val');
+      const latEl = document.getElementById('obs-latency-val');
+      const reqEl = document.getElementById('obs-req-val');
+      const rtEl = document.getElementById('obs-runtime-val');
+      const routesEl = document.getElementById('obs-routes-summary');
+      const logsEl = document.getElementById('obs-audit-logs-list');
+
+      const obs = healthRes.observability || {};
+      const db = healthRes.database || {};
+      const rl = healthRes.rate_limiter || {};
+
+      if (badge) {
+        const isOk = healthRes.overall_status === 'HEALTHY';
+        badge.className = `badge ${isOk ? 'badge-emerald' : 'badge-amber'}`;
+        badge.textContent = escapeHtml(healthRes.overall_status || 'HEALTHY');
+      }
+      if (dbEl) {
+        dbEl.textContent = `${escapeHtml(db.integrity_check || 'ok')} (${db.latency_ms ?? 0}ms)`;
+      }
+      if (latEl) {
+        latEl.textContent = `${obs.global_p50_ms ?? 0}ms / ${obs.global_p95_ms ?? 0}ms`;
+      }
+      if (reqEl) {
+        reqEl.textContent = `${obs.total_requests ?? 0} req • 5xx:${obs.errors_5xx ?? 0} • RL:${rl.rejections_total ?? 0}`;
+      }
+      if (rtEl) {
+        const ramStr = obs.memory_rss_mb !== null && obs.memory_rss_mb !== undefined ? `${obs.memory_rss_mb}MB` : 'N/A';
+        rtEl.textContent = `${obs.uptime_seconds ?? 0}s / ${ramStr} / ${obs.router_mode || 'full'}`;
+      }
+      if (routesEl) {
+        const groups = obs.routes || {};
+        const summary = Object.keys(groups).map(g => `${g}:${groups[g].count}(p95=${groups[g].p95_ms}ms)`).join(' | ');
+        routesEl.textContent = summary ? `Yo‘nalishlar: ${summary}` : 'Hali API metrikalari yig‘ilmagan.';
+      }
+      if (logsEl) {
+        const items = logsRes.logs || [];
+        logsEl.innerHTML = items.length
+          ? items.map(l => `
+              <div class="bg-slate-900/60 border border-slate-800 rounded px-2.5 py-1.5 flex items-center justify-between gap-2">
+                <div class="min-w-0">
+                  <span class="font-mono text-emerald font-semibold">${escapeHtml(l.action || '')}</span>
+                  <span class="text-slate-300 ml-1.5">${escapeHtml((l.details || '').slice(0, 120))}</span>
+                </div>
+                <span class="text-[11px] text-muted font-mono shrink-0">${escapeHtml((l.performed_at || '').slice(0, 19))}</span>
+              </div>
+            `).join('')
+          : '<div class="text-muted py-2">Audit yozuvlari topilmadi.</div>';
+      }
+    } catch (e) {
+      console.error('Observability yuklashda xatolik:', e);
+    }
+  };
 
   window.addEventListener('DOMContentLoaded', init);
 

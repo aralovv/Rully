@@ -10,7 +10,7 @@ from typing import Optional, Dict, Any, Tuple
 from src.api.deps import get_current_user, get_db
 from src.api.security import verify_telegram_init_data
 from src.bot.database import BotDatabase, SUBSCRIPTION_PLANS
-from src.security.rate_limiter import rate_limiter, BoundedTTLCache
+from src.security.rate_limiter import rate_limiter, BoundedTTLCache, get_client_ip
 
 router = APIRouter(prefix="/api", tags=["Auth & User"])
 
@@ -34,7 +34,7 @@ class SubscriptionActivateRequest(BaseModel):
 
 @router.post("/auth/telegram")
 def auth_telegram(req: TelegramAuthRequest, request: Request, db: BotDatabase = Depends(get_db)):
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request)
     rate_key = f"auth_ip:{client_ip}"
     # IP-based rate limit: 120 req/min (allows shared Wi-Fi NAT environments e.g., driving schools/campuses)
     allowed, _, retry_after = rate_limiter.is_allowed(rate_key, max_requests=120, window_seconds=60)

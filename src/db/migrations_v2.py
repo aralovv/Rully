@@ -228,31 +228,44 @@ def verify_schema_parity(conn: Any) -> Dict[str, Any]:
     missing_cq_cols = sorted({c for c, _ in PROVENANCE_COLUMNS} - cq_cols)
 
     cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM session_answers WHERE user_id IS NULL")
-    r_null = cur.fetchone()
-    null_sa_uid = r_null[0] if not hasattr(r_null, "values") else list(r_null.values())[0]
+    if "user_id" in sa_cols:
+        cur.execute("SELECT COUNT(*) FROM session_answers WHERE user_id IS NULL")
+        r_null = cur.fetchone()
+        null_sa_uid = r_null[0] if not hasattr(r_null, "values") else list(r_null.values())[0]
+    else:
+        null_sa_uid = -1
 
-    # Check FK anti-joins safely via SELECT
-    orphan_checks = {
-        "session_answers.session_id": (
+    # Check FK anti-joins safely via SELECT (skipping tables not yet migrated / rolled back)
+    orphan_checks = [
+        (
+            "session_answers.session_id",
+            {"session_answers", "user_sessions"},
             "SELECT COUNT(*) FROM session_answers sa LEFT JOIN user_sessions us "
-            "ON sa.session_id = us.session_id WHERE us.session_id IS NULL"
+            "ON sa.session_id = us.session_id WHERE us.session_id IS NULL",
         ),
-        "session_answers.canonical_id": (
+        (
+            "session_answers.canonical_id",
+            {"session_answers", "canonical_questions"},
             "SELECT COUNT(*) FROM session_answers sa LEFT JOIN canonical_questions cq "
-            "ON sa.canonical_id = cq.canonical_id WHERE cq.canonical_id IS NULL"
+            "ON sa.canonical_id = cq.canonical_id WHERE cq.canonical_id IS NULL",
         ),
-        "user_ticket_progress.user_id": (
+        (
+            "user_ticket_progress.user_id",
+            {"user_ticket_progress", "telegram_users"},
             "SELECT COUNT(*) FROM user_ticket_progress tp LEFT JOIN telegram_users tu "
-            "ON tp.user_id = tu.user_id WHERE tu.user_id IS NULL"
+            "ON tp.user_id = tu.user_id WHERE tu.user_id IS NULL",
         ),
-        "editorial_review_queue.canonical_id": (
+        (
+            "editorial_review_queue.canonical_id",
+            {"editorial_review_queue", "canonical_questions"},
             "SELECT COUNT(*) FROM editorial_review_queue eq LEFT JOIN canonical_questions cq "
-            "ON eq.canonical_id = cq.canonical_id WHERE cq.canonical_id IS NULL"
+            "ON eq.canonical_id = cq.canonical_id WHERE cq.canonical_id IS NULL",
         ),
-    }
+    ]
     orphans = {}
-    for label, sql in orphan_checks.items():
+    for label, req_tables, sql in orphan_checks:
+        if not req_tables.issubset(tables):
+            continue
         cur.execute(sql)
         row = cur.fetchone()
         cnt = row[0] if not hasattr(row, "values") else list(row.values())[0]

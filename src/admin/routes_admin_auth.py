@@ -17,6 +17,7 @@ from src.admin.auth_service import (
     revoke_admin_session
 )
 from src.admin.deps import get_current_admin
+from src.security.rate_limiter import get_client_ip
 
 router = APIRouter(prefix="/api/admin/auth", tags=["Admin Auth"])
 
@@ -34,7 +35,7 @@ class AdminOTPVerifyRequest(BaseModel):
 @router.post("/login")
 async def admin_login(req: AdminLoginRequest, request: Request):
     """Step 1: Verifies username/password and sends OTP to Admin Telegram."""
-    client_ip = request.client.host if request.client else ""
+    client_ip = get_client_ip(request)
     user_agent = request.headers.get("user-agent", "")
 
     success, message, data = await initiate_admin_login(
@@ -57,7 +58,7 @@ async def admin_login(req: AdminLoginRequest, request: Request):
 @router.post("/otp/verify")
 async def admin_otp_verify(req: AdminOTPVerifyRequest, request: Request, response: Response):
     """Step 2: Verifies single-use OTP and establishes authenticated session."""
-    client_ip = request.client.host if request.client else ""
+    client_ip = get_client_ip(request)
     user_agent = request.headers.get("user-agent", "")
 
     success, message, data = await verify_admin_otp(

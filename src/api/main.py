@@ -2,48 +2,93 @@
 RULLY Avtotest Telegram Mini App & Admin Financial Control Center - FastAPI Main Application.
 """
 
-import os
 import asyncio
 import logging
+import os
+import threading
+import time as _time
+import uuid
 from contextlib import asynccontextmanager
+from typing import Optional
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, Response
 
-# User-facing Mini App Routers
+# User-facing Mini App Routers (always eagerly mounted for fast serverless boot)
 from src.api.routes_auth import router as auth_router
 from src.api.routes_theory import router as theory_router
 from src.api.routes_practical import router as practical_router
 from src.api.routes_payment import router as payment_router
 from src.api.routes_telegram import router as telegram_router
 from src.api.routes_ai import router as ai_router
-
-# Admin Control Panel Routers
-from src.admin.routes_admin_auth import router as admin_auth_router
-from src.admin.routes_admin_dashboard import router as admin_dashboard_router
-from src.admin.routes_admin_users import router as admin_users_router
-from src.admin.routes_admin_plans import router as admin_plans_router
-from src.admin.routes_admin_cards import router as admin_cards_router
-from src.admin.routes_admin_orders import router as admin_orders_router
-from src.admin.routes_admin_payments import router as admin_payments_router
-from src.admin.routes_admin_mtproto import router as admin_mtproto_router
-from src.admin.routes_admin_analytics import router as admin_analytics_router
-from src.admin.routes_admin_logs import router as admin_logs_router
-from src.admin.routes_admin_broadcast import router as admin_broadcast_router
-from src.admin.routes_admin_questions import router as admin_questions_router
-
-# System & Lifecycle Services
-from src.database_migrations import run_migrations
-from src.admin.auth_service import ensure_admin_user_exists
-from src.payments.order_manager import expire_stale_orders
+from src.security.observability import observability
 
 logger = logging.getLogger(__name__)
+
+_ADMIN_MOUNT_LOCK = threading.Lock()
+
+# CSP directives split cleanly: Admin UI relies on inline handlers and is strictly non-frameable;
+# User Mini App forbids unsafe-inline scripts and permits official Telegram Web iFrame hosts.
+_CSP_USER_MINIAPP = (
+    "default-src 'self'; "
+    "script-src 'self' https://telegram.org; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src 'self' https://fonts.gstatic.com data:; "
+    "img-src 'self' data: blob: https://cdn.jsdelivr.net https://raw.githubusercontent.com https://t.me https://*.telegram.org; "
+    "connect-src 'self' https://rully-three.vercel.app https://rully-app.onrender.com https://cdn.jsdelivr.net; "
+    "frame-ancestors 'self' https://web.telegram.org https://webk.telegram.org https://webz.telegram.org https://t.me; "
+    "base-uri 'self'; form-action 'self'; object-src 'none'"
+)
+_CSP_ADMIN_PANEL = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src 'self' https://fonts.gstatic.com data:; "
+    "img-src 'self' data: blob: https://cdn.jsdelivr.net https://raw.githubusercontent.com; "
+    "connect-src 'self' https://rully-three.vercel.app https://rully-app.onrender.com; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'; form-action 'self'; object-src 'none'"
+)
+
+
+def _attach_admin_routers(target_app: FastAPI) -> None:
+    """Imports and registers the 12 Admin routers cleanly (deferred on serverless cold starts)."""
+    from src.admin.routes_admin_auth import router as admin_auth_router
+    from src.admin.routes_admin_dashboard import router as admin_dashboard_router
+    from src.admin.routes_admin_users import router as admin_users_router
+    from src.admin.routes_admin_plans import router as admin_plans_router
+    from src.admin.routes_admin_cards import router as admin_cards_router
+    from src.admin.routes_admin_orders import router as admin_orders_router
+    from src.admin.routes_admin_payments import router as admin_payments_router
+    from src.admin.routes_admin_mtproto import router as admin_mtproto_router
+    from src.admin.routes_admin_analytics import router as admin_analytics_router
+    from src.admin.routes_admin_logs import router as admin_logs_router
+    from src.admin.routes_admin_broadcast import router as admin_broadcast_router
+    from src.admin.routes_admin_questions import router as admin_questions_router
+
+    for r in (
+        admin_auth_router,
+        admin_dashboard_router,
+        admin_users_router,
+        admin_plans_router,
+        admin_cards_router,
+        admin_orders_router,
+        admin_payments_router,
+        admin_mtproto_router,
+        admin_analytics_router,
+        admin_logs_router,
+        admin_broadcast_router,
+        admin_questions_router,
+    ):
+        target_app.include_router(r)
 
 # Background worker for order expiration
 async def order_expiration_worker():
     """Runs periodically (every 15 minutes) to expire stale payment orders without blocking the event loop."""
+    from src.payments.order_manager import expire_stale_orders
     while True:
         try:
             expired_count = await asyncio.to_thread(expire_stale_orders)
@@ -84,9 +129,11 @@ _dp_instance = None
 async def lifespan(app: FastAPI):
     global _bot_instance, _dp_instance
 
-    # 1. Run migrations and database schema updates only on local development
+    # 1. Run migrations and database schema updates only on local/standalone servers
     if not IS_VERCEL:
         try:
+            from src.database_migrations import run_migrations
+            from src.admin.auth_service import ensure_admin_user_exists
             run_migrations()
             ensure_admin_user_exists()
         except Exception as e:
@@ -250,16 +297,6 @@ async def lifespan(app: FastAPI):
         question_sync_task.cancel()
 
 
-app = FastAPI(
-    title="RULLY Avtotest & Admin Financial Gateway API",
-    description="REST API for RULLY Telegram Mini App & Admin MTProto Payment Control Center",
-    version="2.1.0",
-    lifespan=lifespan
-)
-
-# Enable GZip compression for responses >= 1000 bytes (boosts Render/cold-start static transfer)
-app.add_middleware(GZipMiddleware, minimum_size=1000)
-
 # Strict CORS Configuration for Mini App webviews, official Telegram clients, and private admin web access
 ALLOWED_ORIGINS = [
     "https://rully-rully4.vercel.app",
@@ -284,145 +321,223 @@ _web_app_url = os.getenv("WEB_APP_URL", "").strip()
 if _web_app_url and _web_app_url not in ALLOWED_ORIGINS:
     ALLOWED_ORIGINS.append(_web_app_url)
 
-# Strict Regex: only trusted rully domains, official telegram origins, and localhost ports
 STRICT_CORS_ORIGIN_REGEX = r"^https?:\/\/(localhost|127\.0\.0\.1|rully[a-zA-Z0-9-]*\.vercel\.app|rully[a-zA-Z0-9-]*\.onrender\.com|web[kz]?\.telegram\.org|t\.me)(:[0-9]+)?$"
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_origin_regex=STRICT_CORS_ORIGIN_REGEX,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
-    allow_headers=["*"],
-)
 
-@app.middleware("http")
-async def add_no_cache_header(request: Request, call_next):
-    import time as _time
-    t0 = _time.perf_counter()
-    response = await call_next(request)
-    elapsed_ms = round((_time.perf_counter() - t0) * 1000.0, 2)
-    response.headers["X-Process-Time-Ms"] = str(elapsed_ms)
-    path = request.url.path
-    if path in ("/", "/index.html", "/admin", "/admin/", "/static/index.html", "/static/admin/index.html"):
-        response.headers["Cache-Control"] = "public, max-age=0, must-revalidate"
-        response.headers["Pragma"] = "no-cache"
-    elif path.startswith(("/static/css/", "/static/js/", "/static/img/", "/static/images/")):
-        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    elif path == "/api/categories":
-        response.headers["Cache-Control"] = "public, max-age=300, s-maxage=3600, stale-while-revalidate=3600"
-    elif path.startswith("/api/amaliy/"):
-        response.headers["Cache-Control"] = "private, no-cache, no-store, must-revalidate"
-    return response
-
-# Include User Mini App API Routers
-app.include_router(auth_router)
-app.include_router(theory_router)
-app.include_router(practical_router)
-app.include_router(payment_router)
-app.include_router(telegram_router)
-app.include_router(ai_router)
-
-# Include Admin Control Panel Routers
-app.include_router(admin_auth_router)
-app.include_router(admin_dashboard_router)
-app.include_router(admin_users_router)
-app.include_router(admin_plans_router)
-app.include_router(admin_cards_router)
-app.include_router(admin_orders_router)
-app.include_router(admin_payments_router)
-app.include_router(admin_mtproto_router)
-app.include_router(admin_analytics_router)
-app.include_router(admin_logs_router)
-app.include_router(admin_broadcast_router)
-app.include_router(admin_questions_router)
-
-# Serve & Proxy Images with Local + Remote Fallback & Edge Caching
-images_dir = os.path.abspath("data/images/original")
-
-@app.get("/images/{filename}")
-async def serve_image(filename: str):
+def create_app(public_only: Optional[bool] = None) -> FastAPI:
     """
-    High-resiliency image delivery endpoint:
-    1. Returns local file if present on disk with immutable caching.
-    2. In serverless environments (e.g. Vercel), proxies from GitHub Raw with 1-year immutable edge caching.
+    Application factory enabling Vercel public-router cold-start splitting (`public_only=True`)
+    while loading full user + admin + worker capability on standalone Render servers (`public_only=False`).
     """
-    clean_name = os.path.basename(filename.replace("\\", "/"))
-    local_path = os.path.join(images_dir, clean_name)
-    if os.path.exists(local_path):
-        return FileResponse(
-            local_path,
-            media_type="image/webp",
-            headers={"Cache-Control": "public, max-age=31536000, immutable"}
+    t_boot = _time.perf_counter()
+    use_public_split = (
+        bool(public_only)
+        if public_only is not None
+        else bool(IS_VERCEL or os.getenv("RULLY_PUBLIC_ONLY", "").lower() in ("1", "true", "yes"))
+    )
+    disable_admin_on_split = os.getenv("VERCEL_DISABLE_ADMIN", "").lower() in ("1", "true", "yes")
+
+    application = FastAPI(
+        title="RULLY Avtotest & Admin Financial Gateway API",
+        description="REST API for RULLY Telegram Mini App & Admin MTProto Payment Control Center",
+        version="2.1.0",
+        lifespan=lifespan,
+    )
+    application.state.public_only = use_public_split
+    application.state.admin_routers_loaded = not use_public_split
+
+    application.add_middleware(GZipMiddleware, minimum_size=1000)
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=ALLOWED_ORIGINS,
+        allow_origin_regex=STRICT_CORS_ORIGIN_REGEX,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
+        allow_headers=["*"],
+    )
+
+    @application.exception_handler(Exception)
+    async def sanitized_exception_handler(request: Request, exc: Exception):
+        req_id = getattr(request.state, "request_id", uuid.uuid4().hex[:12])
+        logger.exception(f"Unhandled exception [req_id={req_id}] on {request.method} {request.url.path}: {exc}")
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "error": "Internal server error", "request_id": req_id},
+            headers={"X-Request-ID": req_id},
         )
 
-    # Serverless fallback: Proxy from GitHub Raw with edge caching
-    gh_raw_url = f"https://raw.githubusercontent.com/aralovv/Rully/main/data/images/original/{clean_name}"
-    try:
-        import httpx
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            resp = await client.get(gh_raw_url)
-            if resp.status_code == 200:
-                return Response(
-                    content=resp.content,
-                    media_type="image/webp",
-                    headers={
-                        "Cache-Control": "public, max-age=31536000, s-maxage=31536000, immutable",
-                        "X-Proxy-Source": "github-raw"
-                    }
+    @application.middleware("http")
+    async def security_and_observability_middleware(request: Request, call_next):
+        req_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12]
+        req_id = str(req_id)[:32]
+        request.state.request_id = req_id
+        t0 = _time.perf_counter()
+        path = request.url.path
+
+        # Lazy admin router loading or explicit 503 block on public-split cold-start apps
+        if path.startswith("/api/admin"):
+            if use_public_split and disable_admin_on_split:
+                response = JSONResponse(
+                    status_code=503,
+                    content={
+                        "ok": False,
+                        "detail": "Admin endpoints are served via standalone Render host.",
+                        "request_id": req_id,
+                    },
                 )
-    except Exception as e:
-        logger.warning(f"Failed to fetch image {clean_name} from GitHub Raw: {e}")
+            else:
+                if not application.state.admin_routers_loaded:
+                    with _ADMIN_MOUNT_LOCK:
+                        if not application.state.admin_routers_loaded:
+                            _attach_admin_routers(application)
+                            application.state.admin_routers_loaded = True
+                response = await call_next(request)
+        else:
+            response = await call_next(request)
 
-    return Response(status_code=404, content="Image not found")
+        elapsed_ms = round((_time.perf_counter() - t0) * 1000.0, 2)
+        response.headers["X-Process-Time-Ms"] = str(elapsed_ms)
+        response.headers["X-Request-ID"] = req_id
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
 
-# Mount Static Assets
-static_dir = os.path.abspath("static")
-if os.path.exists(static_dir):
-    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+        is_admin_surface = path.startswith(("/admin", "/static/admin/"))
+        response.headers["Content-Security-Policy"] = _CSP_ADMIN_PANEL if is_admin_surface else _CSP_USER_MINIAPP
+        if is_admin_surface:
+            response.headers["X-Frame-Options"] = "DENY"
 
-@app.get("/favicon.ico")
-async def favicon():
-    return Response(status_code=204)
+        forwarded_proto = (request.headers.get("x-forwarded-proto") or "").lower()
+        if request.url.scheme == "https" or forwarded_proto == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
-@app.get("/api/health")
-@app.get("/healthz")
-@app.get("/api/ping")
-async def health_check():
-    mtproto_status = "serverless-disabled"
-    try:
-        from src.mtproto.service import get_mtproto_manager
-        mtproto_status = get_mtproto_manager().connection_status
-    except ImportError:
-        pass
-    return {
-        "status": "healthy",
-        "pong": True,
-        "service": "rully-miniapp-api",
-        "version": "2.1.0",
-        "platform_version": "2.0.0",
-        "environment": "vercel" if IS_VERCEL else "standalone-cloud",
-        "canonical_db": "master_database.sqlite",
-        "turso_configured": bool(os.getenv("TURSO_DATABASE_URL")),
-        "gemini_api_key_set": bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")),
-        "gemini_key_len": len((os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "")),
-        "mtproto_status": mtproto_status,
-        "bot_active": _bot_instance is not None
-    }
+        if path in ("/", "/index.html", "/admin", "/admin/", "/static/index.html", "/static/admin/index.html"):
+            response.headers["Cache-Control"] = "public, max-age=0, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+        elif path.startswith(("/static/css/", "/static/js/", "/static/img/", "/static/images/")):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif path == "/api/categories":
+            response.headers["Cache-Control"] = "public, max-age=300, s-maxage=3600, stale-while-revalidate=3600"
+        elif path.startswith("/api/amaliy/"):
+            response.headers["Cache-Control"] = "private, no-cache, no-store, must-revalidate"
 
-# --- Independent Admin Panel Route ---
-@app.get("/admin")
-@app.get("/admin/")
-async def serve_admin_panel():
-    admin_index = os.path.join(static_dir, "admin", "index.html")
-    if os.path.exists(admin_index):
-        return FileResponse(admin_index)
-    return {"error": "Admin panel template not found"}
+        observability.record_request(
+            method=request.method,
+            path=path,
+            status_code=getattr(response, "status_code", 200),
+            duration_ms=elapsed_ms,
+            request_id=req_id,
+        )
+        return response
 
-# --- User Mini App Route ---
-@app.get("/")
-async def serve_index():
-    index_file = os.path.join(static_dir, "index.html")
-    if os.path.exists(index_file):
-        return FileResponse(index_file)
-    return {"message": "RULLY Mini App API is running."}
+    # Include User Mini App API Routers
+    for user_router in (
+        auth_router,
+        theory_router,
+        practical_router,
+        payment_router,
+        telegram_router,
+        ai_router,
+    ):
+        application.include_router(user_router)
+
+    # Full-mode hosts (Render/Local) eagerly register Admin routers
+    if not use_public_split:
+        _attach_admin_routers(application)
+
+    # Serve & Proxy Images with Local + Remote Fallback & Edge Caching
+    images_dir = os.path.abspath("data/images/original")
+
+    @application.get("/images/{filename}")
+    async def serve_image(filename: str):
+        """
+        High-resiliency image delivery endpoint:
+        1. Returns local file if present on disk with immutable caching.
+        2. In serverless environments (e.g. Vercel), proxies from GitHub Raw with 1-year immutable edge caching.
+        """
+        clean_name = os.path.basename(filename.replace("\\", "/"))
+        local_path = os.path.join(images_dir, clean_name)
+        if os.path.exists(local_path):
+            return FileResponse(
+                local_path,
+                media_type="image/webp",
+                headers={"Cache-Control": "public, max-age=31536000, immutable"}
+            )
+
+        gh_raw_url = f"https://raw.githubusercontent.com/aralovv/Rully/main/data/images/original/{clean_name}"
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                resp = await client.get(gh_raw_url)
+                if resp.status_code == 200:
+                    return Response(
+                        content=resp.content,
+                        media_type="image/webp",
+                        headers={
+                            "Cache-Control": "public, max-age=31536000, s-maxage=31536000, immutable",
+                            "X-Proxy-Source": "github-raw"
+                        }
+                    )
+        except Exception as e:
+            logger.warning(f"Failed to fetch image {clean_name} from GitHub Raw: {e}")
+
+        return Response(status_code=404, content="Image not found")
+
+    static_dir = os.path.abspath("static")
+    if os.path.exists(static_dir):
+        application.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+    @application.get("/favicon.ico")
+    async def favicon():
+        return Response(status_code=204)
+
+    @application.get("/api/health")
+    @application.get("/healthz")
+    @application.get("/api/ping")
+    async def health_check():
+        mtproto_status = "serverless-disabled"
+        if not IS_VERCEL:
+            try:
+                from src.mtproto.service import get_mtproto_manager
+                mtproto_status = get_mtproto_manager().connection_status
+            except ImportError:
+                pass
+        return {
+            "status": "healthy",
+            "pong": True,
+            "service": "rully-miniapp-api",
+            "version": "2.1.0",
+            "platform_version": "2.0.0",
+            "environment": "vercel" if IS_VERCEL else "standalone-cloud",
+            "router_mode": "public-split" if use_public_split else "full",
+            "admin_routers_loaded": bool(application.state.admin_routers_loaded),
+            "observability_ready": True,
+            "canonical_db": "master_database.sqlite",
+            "turso_configured": bool(os.getenv("TURSO_DATABASE_URL")),
+            "gemini_api_key_set": bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")),
+            "gemini_key_len": len((os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "")),
+            "mtproto_status": mtproto_status,
+            "bot_active": _bot_instance is not None
+        }
+
+    @application.get("/admin")
+    @application.get("/admin/")
+    async def serve_admin_panel():
+        admin_index = os.path.join(static_dir, "admin", "index.html")
+        if os.path.exists(admin_index):
+            return FileResponse(admin_index)
+        return {"error": "Admin panel template not found"}
+
+    @application.get("/")
+    async def serve_index():
+        index_file = os.path.join(static_dir, "index.html")
+        if os.path.exists(index_file):
+            return FileResponse(index_file)
+        return {"message": "RULLY Mini App API is running."}
+
+    cold_start_ms = round((_time.perf_counter() - t_boot) * 1000.0, 2)
+    observability.set_boot_metadata("public-split" if use_public_split else "full", cold_start_ms)
+    return application
+
+
+app = create_app()
