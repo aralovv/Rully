@@ -289,6 +289,23 @@ CREATE TABLE IF NOT EXISTS staged_questions (
 
 CREATE INDEX IF NOT EXISTS idx_staged_status ON staged_questions(review_status);
 CREATE INDEX IF NOT EXISTS idx_staged_slot ON staged_questions(source_code, source_ticket, source_position);
+
+-- 16. RULLY 2.0 User Ticket (Bilet 01..67) Progress Tracking
+CREATE TABLE IF NOT EXISTS user_ticket_progress (
+    user_id INTEGER NOT NULL,
+    ticket_number INTEGER NOT NULL,
+    total_questions INTEGER NOT NULL DEFAULT 20,
+    best_correct INTEGER NOT NULL DEFAULT 0,
+    best_percentage REAL NOT NULL DEFAULT 0.0,
+    attempts_count INTEGER NOT NULL DEFAULT 1,
+    is_passed INTEGER NOT NULL DEFAULT 0,
+    last_session_id TEXT,
+    last_attempted_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, ticket_number),
+    FOREIGN KEY (user_id) REFERENCES telegram_users(user_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_ticket_progress_user ON user_ticket_progress(user_id);
+CREATE INDEX IF NOT EXISTS idx_session_answers_user_canon ON session_answers(user_id, canonical_id, is_correct);
 """
 
 def run_migrations(db_path: str = "master_database.sqlite"):

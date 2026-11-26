@@ -29,7 +29,11 @@ _hasher = PasswordHasher(
 
 # Encryption key for sensitive data (cards, sessions)
 _raw_secret = os.getenv("SECRET_KEY", "")
-_is_prod = os.getenv("ENVIRONMENT", "").lower() == "production" or bool(os.getenv("VERCEL"))
+_is_prod = (
+    os.getenv("ENVIRONMENT", "").lower() in ("production", "prod")
+    or bool(os.getenv("VERCEL"))
+    or bool(os.getenv("RENDER"))
+)
 if not _raw_secret:
     if _is_prod:
         import warnings

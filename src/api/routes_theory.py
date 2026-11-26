@@ -96,10 +96,11 @@ def get_question(
     is_bm = db.is_bookmarked(user["user_id"], canonical_id)
     return serialize_question(q, is_bookmarked=is_bm, include_correct=True)
 
-# 3. Start Session (Exam, Category, Random, Mistakes)
+# 3. Start Session (Exam, Category, Random, Mistakes, Custom, Bilet, Adaptive)
 class SessionStartRequest(BaseModel):
-    session_type: str = Field(..., pattern="^(EXAM|CATEGORY|RANDOM|MISTAKES|CUSTOM)$")
+    session_type: str = Field(..., pattern="^(EXAM|CATEGORY|RANDOM|MISTAKES|CUSTOM|BILET|ADAPTIVE)$")
     category_id: Optional[int] = None
+    ticket_number: Optional[int] = None
     total_questions: Optional[int] = 20
     time_limit_seconds: Optional[int] = 25 * 60
     show_answer: Optional[bool] = True
@@ -169,6 +170,31 @@ def start_session(
         loaded_questions = [engine.get_question(qid, language=lang) for qid in question_ids]
         loaded_questions = [q for q in loaded_questions if q]
         time_limit = 0
+    elif req.session_type == "BILET":
+        t_num = req.ticket_number if req.ticket_number is not None else req.category_id
+        if t_num is None or int(t_num) < 1:
+            raise HTTPException(status_code=400, detail="ticket_number required for BILET session")
+        t_num = int(t_num)
+        loaded_questions = engine.get_ticket_questions(t_num, language=lang)
+        if not loaded_questions:
+            raise HTTPException(status_code=404, detail=f"Bilet #{t_num} not found")
+        question_ids = [q.canonical_id for q in loaded_questions]
+        req.category_id = t_num
+        time_limit = req.time_limit_seconds or 0
+    elif req.session_type == "ADAPTIVE":
+        count = max(5, min(40, int(req.total_questions or 20)))
+        unresolved = db.get_user_mistakes(user_id, limit=30)
+        solved_ok = db.get_solved_correct_ids(user_id)
+        analytics = db.get_learning_analytics(user_id, engine.get_categories(lang), engine.get_total_question_count())
+        weak_cat_ids = [w["category_id"] for w in analytics.get("weak_categories", [])]
+        question_ids = engine.get_adaptive_question_ids(
+            count=count,
+            unresolved_mistakes=unresolved,
+            weak_category_ids=weak_cat_ids,
+            solved_correct_ids=solved_ok,
+        )
+        loaded_questions = [q for q in (engine.get_question(qid, language=lang) for qid in question_ids) if q]
+        time_limit = req.time_limit_seconds or 0
     else:  # RANDOM / CUSTOM
         count = req.total_questions or 10
         loaded_questions = engine.get_random_practice(count=count, language=lang)
@@ -328,6 +354,18 @@ def finish_session(
         unanswered=unanswered_count,
         status=finish_status
     )
+
+    if session.get("session_type") == "BILET" and session.get("category_id"):
+        db.upsert_ticket_progress(
+            user_id=user_id,
+            ticket_number=int(session["category_id"]),
+            total_questions=total_q,
+            correct_count=correct_count,
+            percentage=percentage,
+            passed=passed,
+            session_id=req.session_id,
+        )
+
     invalidate_auth_cache(user_id)
 
     return {
@@ -413,13 +451,125 @@ def list_mistakes(
 
     questions = []
     if is_pro:
+        bookmarks_set = set(db.get_user_bookmarks(user_id))
         for qid in mistake_ids:
             q = engine.get_question(qid, language=selected_lang, include_answer_key=True)
             if q:
-                questions.append(serialize_question(q, is_bookmarked=db.is_bookmarked(user_id, qid), include_correct=True))
+                questions.append(serialize_question(q, is_bookmarked=(qid in bookmarks_set), include_correct=True))
 
     return {
         "count": len(mistake_ids),
         "locked": not is_pro,
         "questions": questions
+    }
+
+# 9. RULLY 2.0 Systematic Tickets (Bilet 01..67)
+@router.get("/tickets")
+def list_tickets(
+    lang: Optional[str] = Query(None),
+    user: Dict[str, Any] = Depends(get_current_user),
+    db: BotDatabase = Depends(get_db)
+):
+    selected_lang = lang or user.get("language", "uz_latn")
+    if selected_lang not in ["uz_latn", "uz_cyrl", "ru"]:
+        selected_lang = "uz_latn"
+
+    summary = engine.get_tickets_summary(language=selected_lang)
+    progress_map = db.get_ticket_progress_map(user["user_id"])
+
+    passed_tickets = 0
+    attempted_tickets = 0
+    tickets_out = []
+    for item in summary:
+        t_num = item["ticket_number"]
+        prog = progress_map.get(t_num)
+        if prog:
+            attempted_tickets += 1
+            if prog["is_passed"]:
+                passed_tickets += 1
+        tickets_out.append({
+            **item,
+            "attempts_count": prog["attempts_count"] if prog else 0,
+            "best_correct": prog["best_correct"] if prog else 0,
+            "best_percentage": prog["best_percentage"] if prog else 0.0,
+            "is_passed": prog["is_passed"] if prog else False,
+            "last_session_id": prog["last_session_id"] if prog else None,
+        })
+
+    return {
+        "language": selected_lang,
+        "total_tickets": len(tickets_out),
+        "attempted_tickets": attempted_tickets,
+        "passed_tickets": passed_tickets,
+        "tickets": tickets_out
+    }
+
+# 10. RULLY 2.0 Learning Analytics, Category Mastery, Smart Next Action & Milestones
+@router.get("/learning/analytics")
+def get_learning_analytics_endpoint(
+    lang: Optional[str] = Query(None),
+    user: Dict[str, Any] = Depends(get_current_user),
+    db: BotDatabase = Depends(get_db)
+):
+    selected_lang = lang or user.get("language", "uz_latn")
+    if selected_lang not in ["uz_latn", "uz_cyrl", "ru"]:
+        selected_lang = "uz_latn"
+
+    categories = engine.get_categories(selected_lang)
+    analytics = db.get_learning_analytics(
+        user_id=user["user_id"],
+        categories=categories,
+        engine_total_questions=engine.get_total_question_count(),
+    )
+    return {
+        "ok": True,
+        "language": selected_lang,
+        **analytics
+    }
+
+# 11. RULLY 2.0 Post-Session Detailed Review
+@router.get("/session/{session_id}/review")
+def get_session_review_endpoint(
+    session_id: str,
+    lang: Optional[str] = Query(None),
+    user: Dict[str, Any] = Depends(get_current_user),
+    db: BotDatabase = Depends(get_db)
+):
+    session = db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.get("user_id") != user["user_id"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Session belongs to another user")
+
+    selected_lang = lang or session.get("language") or user.get("language", "uz_latn")
+    if selected_lang not in ["uz_latn", "uz_cyrl", "ru"]:
+        selected_lang = "uz_latn"
+
+    answers = db.get_session_answers(session_id)
+    bookmarks = set(db.get_user_bookmarks(user["user_id"]))
+    items = []
+    for idx, qid in enumerate(session["question_ids"], start=1):
+        q = engine.get_question(qid, language=selected_lang, include_answer_key=True)
+        if not q:
+            continue
+        ans = answers.get(qid)
+        serialized = serialize_question(q, is_bookmarked=(qid in bookmarks), include_correct=True)
+        items.append({
+            "index": idx,
+            "selected_key": ans["selected_key"] if ans else None,
+            "is_correct": ans["is_correct"] if ans else None,
+            "answered_at": ans["answered_at"] if ans else None,
+            **serialized,
+        })
+
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "session_type": session.get("session_type"),
+        "ticket_number": session.get("category_id") if session.get("session_type") == "BILET" else None,
+        "status": session.get("status"),
+        "total_questions": session.get("total_questions"),
+        "correct_count": session.get("correct_count"),
+        "incorrect_count": session.get("incorrect_count"),
+        "items": items
     }

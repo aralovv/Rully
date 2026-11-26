@@ -17,6 +17,7 @@ class ChatRequest(BaseModel):
     language: Optional[str] = "uz_latn"
     image_url: Optional[str] = None
     canonical_id: Optional[str] = None
+    question_context: Optional[Dict[str, Any]] = None
 
 class ClearHistoryRequest(BaseModel):
     session_id: Optional[str] = "default"
@@ -108,6 +109,7 @@ async def chat_with_ai(
         return {"ok": False, "reply": empty_reply}
 
     session_id = req.session_id or "default"
+    student_snapshot = db.get_ai_student_snapshot(user_id)
     result = await gemini_service.chat(
         user_id=user_id,
         session_id=session_id,
@@ -115,7 +117,9 @@ async def chat_with_ai(
         is_pro=is_pro,
         language=lang,
         image_url=req.image_url,
-        canonical_id=req.canonical_id
+        canonical_id=req.canonical_id,
+        question_context=req.question_context,
+        student_snapshot=student_snapshot,
     )
     return result
 

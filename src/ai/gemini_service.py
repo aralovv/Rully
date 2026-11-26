@@ -292,6 +292,29 @@ class GeminiService:
 
         return "\n".join(lines)
 
+    @staticmethod
+    def _build_learner_context(
+        student_snapshot: Optional[Dict[str, Any]] = None,
+        question_context: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        blocks = []
+        if student_snapshot:
+            blocks.append(
+                "\n[O‘QUVCHI PROFILI]: "
+                f"Yechilgan unikal savollar: {student_snapshot.get('unique_answered', 0)}, "
+                f"Imtihonlar: {student_snapshot.get('passed_exams', 0)}/{student_snapshot.get('total_exams', 0)}, "
+                f"Faol xatolar banki: {student_snapshot.get('active_mistakes', 0)} ta savol."
+            )
+        if question_context:
+            sel = question_context.get("selected_key")
+            is_ok = question_context.get("is_correct")
+            if sel:
+                blocks.append(
+                    f"[TALABA TANLOVI]: O‘quvchi ushbu savolda {sel} variantini tanladi "
+                    f"({'To‘g‘ri' if is_ok else 'Noto‘g‘ri javob bergan — aynan nima sababdan bunday bo‘lishini tushuntiring'})."
+                )
+        return "\n".join(blocks)
+
     def check_and_increment_rate_limit(self, user_id: int, is_pro: bool) -> tuple[bool, int, int]:
         """
         AI Assistant is an exclusive PRO subscription feature.
@@ -393,7 +416,9 @@ class GeminiService:
         is_pro: bool = False,
         language: str = "uz_latn",
         image_url: Optional[str] = None,
-        canonical_id: Optional[str] = None
+        canonical_id: Optional[str] = None,
+        question_context: Optional[Dict[str, Any]] = None,
+        student_snapshot: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         lang = normalize_lang(language)
 
@@ -482,12 +507,15 @@ class GeminiService:
             history.pop()
         history.append({"role": "user", "parts": current_parts})
         contents = history
-        # Build ground truth & verified scene passport context if question or image is referenced
+        # Build ground truth, scene passport & live student profile context
         gt_context = self._build_ground_truth_context(image_url, canonical_id, lang)
+        learner_ctx = self._build_learner_context(student_snapshot, question_context)
         sys_prompt_text = get_system_prompt(lang)
         if gt_context:
             sys_prompt_text += f"\n\n{gt_context}"
             logger.info(f"Injected official ground truth / scene passport into system instruction for {canonical_id or image_url}")
+        if learner_ctx:
+            sys_prompt_text += f"\n{learner_ctx}"
 
         system_instruction = {
             "parts": [{"text": sys_prompt_text}]
@@ -496,38 +524,82 @@ class GeminiService:
         payload = {
             "system_instruction": system_instruction,
             "contents": contents,
+            "tools": [{"functionDeclarations": GEMINI_TOOLS_DECLARATIONS}],
             "generationConfig": {
                 "temperature": 0.35,
                 "maxOutputTokens": 1024
             }
         }
 
-        # 5. Call Gemini with automatic fallback & retry
+        # 5. Call Gemini with automatic fallback, retry & tool-call loop
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
-                data, status_code, err_text = await self._call_gemini_with_fallback(client, payload)
-                if not data or status_code != 200:
-                    logger.error(f"Gemini API error: {status_code} {err_text}")
-                    # Refund rate limit since external API call was unsuccessful
-                    self.refund_rate_limit(user_id)
-                    if lang == "ru":
-                        err_reply = "К сожалению, произошла ошибка связи с искусственным интеллектом. Пожалуйста, попробуйте еще раз."
-                    elif lang == "uz_cyrl":
-                        err_reply = "Кечирасиз, сунъий интеллект хизмати билан алоқада хатолик юз берди. Илтимос, қайта уриниб кўринг."
-                    else:
-                        err_reply = "Kechirasiz, sun'iy intellekt xizmati bilan aloqa o'rnatishda xatolik yuz berdi. Iltimos, qayta urinib ko'ring."
-                    return {
-                        "ok": False,
-                        "reply": err_reply,
-                        "error": err_text or f"Status {status_code}"
-                    }
+                question_cards: List[Dict[str, Any]] = []
+                parts: List[Dict[str, Any]] = []
 
-                candidate = data.get("candidates", [{}])[0]
-                content = candidate.get("content", {})
-                parts = content.get("parts", [])
+                for _round in range(3):
+                    data, status_code, err_text = await self._call_gemini_with_fallback(client, payload)
+                    if not data or status_code != 200:
+                        logger.error(f"Gemini API error: {status_code} {err_text}")
+                        # Refund rate limit since external API call was unsuccessful
+                        self.refund_rate_limit(user_id)
+                        if lang == "ru":
+                            err_reply = "К сожалению, произошла ошибка связи с искусственным интеллектом. Пожалуйста, попробуйте еще раз."
+                        elif lang == "uz_cyrl":
+                            err_reply = "Кечирасиз, сунъий интеллект хизмати билан алоқада хатолик юз берди. Илтимос, қайта уриниб кўринг."
+                        else:
+                            err_reply = "Kechirasiz, sun'iy intellekt xizmati bilan aloqa o'rnatishda xatolik yuz berdi. Iltimos, qayta urinib ko'ring."
+                        return {
+                            "ok": False,
+                            "reply": err_reply,
+                            "error": err_text or f"Status {status_code}"
+                        }
 
-                question_cards = []
-                final_text = "".join(p.get("text", "") for p in parts)
+                    candidate = data.get("candidates", [{}])[0]
+                    content = candidate.get("content", {})
+                    parts = content.get("parts", [])
+
+                    fn_calls = [p["functionCall"] for p in parts if isinstance(p, dict) and "functionCall" in p]
+                    if not fn_calls:
+                        break
+
+                    contents.append({"role": "model", "parts": parts})
+                    fn_responses = []
+                    for fc in fn_calls:
+                        fn_name = fc.get("name", "")
+                        fn_args = fc.get("args") or {}
+                        fn_handler = TOOL_MAPPING.get(fn_name)
+                        if fn_handler:
+                            try:
+                                tool_result = fn_handler(fn_args, user_id, lang)
+                            except Exception as tool_err:
+                                logger.warning(f"Tool execution failed ({fn_name}): {tool_err}")
+                                tool_result = {"error": str(tool_err)}
+                        else:
+                            tool_result = {"error": f"Unknown tool: {fn_name}"}
+
+                        if isinstance(tool_result, dict):
+                            for key in ("questions", "mistake_questions", "bookmarks"):
+                                if isinstance(tool_result.get(key), list):
+                                    for item in tool_result[key]:
+                                        if len(question_cards) < 3 and isinstance(item, dict):
+                                            question_cards.append({
+                                                "canonical_id": item.get("canonical_id"),
+                                                "category_name": item.get("category_name"),
+                                                "question": item.get("question"),
+                                                "correct_option_key": item.get("correct_option_key"),
+                                            })
+
+                        fn_responses.append({
+                            "functionResponse": {
+                                "name": fn_name,
+                                "response": tool_result if isinstance(tool_result, dict) else {"result": tool_result},
+                            }
+                        })
+                    contents.append({"role": "user", "parts": fn_responses})
+                    payload["contents"] = contents
+
+                final_text = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
 
                 # Clean any leaked technical identifiers from final text
                 final_text = re.sub(r'\b(?:Canon(?:ical)?\s*(?:yhq)?[:\-]?\s*)?UZ-YHQ-[A-Z0-9]+\b', '', final_text, flags=re.IGNORECASE)
@@ -545,7 +617,7 @@ class GeminiService:
                     "reply": final_text,
                     "limit_reached": False,
                     "usage": {"current": current_count, "max": max_limit},
-                    "cards": question_cards[:3] # return top 3 question cards if any
+                    "cards": question_cards[:3]
                 }
 
             except Exception as e:
