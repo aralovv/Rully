@@ -178,16 +178,16 @@ Verified directly in codebase, SQLite (`24.78 MB`), and Turso:
 | **Wave 3** | AI Ustoz 2.0 SSE Streaming, Pedagogy Tools & Citation Guardrails | **Completed** | `tests/test_wave3_ai_ustoz.py` + `tests/test_phase6_bot_payment_ai.py` passed (header keys, rollback, SSE, 3/day gate) |
 | **Wave 4** | Admin Cockpit Strict CSP, RBAC, Zero-PII, Reconciliation & Bulk Editorial | **Completed** | `tests/test_wave4_admin_security_ui.py` passed; Playwright Admin Cockpit flow passed |
 | **Wave 5** | Public Freemium Web, `window.R` Modules, Lazy i18n, PWA & Avtodrom 2D | **Completed** | `tests/test_wave5_frontend_experience.py` passed; `17/17` JS `node --check` passed |
-| **Wave 6** | Full Suite (`187` tests) & Playwright `320–1440px` Visual/E2E Audit | **Completed** | `187 passed, 0 failed, 0 skipped`; `7/7` viewports `0` overflow; `0` console/page errors |
+| **Wave 6** | Full Suite & Playwright `320–1440px` Visual/E2E Audit | **Completed** | All suites passed (`0` failed, `0` skipped); `7/7` viewports `0` overflow; `0` console/page errors |
+| **Wave 7 (Stars XTR)** | Native Telegram Stars (`XTR`) Mini App + Bot + Admin Integration | **Completed** | `tests/test_telegram_stars_payments.py` + Playwright Paywall (`390px`/`1280px`) passed (`0` errors, HUMO ledger balanced) |
 
 ---
 
 ## 18. Verification Matrix & Evidence
 
 ### A. Automated Backend, Data & Security Suite (`pytest -v`)
-- **Latest Verified Full Run:** **`187 passed, 0 failed, 0 skipped`** covering baseline, Phase 1–8 tests, and all 5 Wave transformation suites (`test_wave1_security_p0.py` through `test_wave5_frontend_experience.py`).
-- **Live Database Immutability Proof:** `master_database.sqlite` SHA-256 digest remained bit-identical before and after full suite execution:
-  `dccd1ec477737d6c92408fd080fd19e757e7f3259777659f6eb9cee57f75fe63`.
+- **Latest Verified Full Run:** Full `pytest -v` covering baseline, Phase 1–8 tests, Wave 1–5 suites, and `tests/test_telegram_stars_payments.py` (**0 failed, 0 skipped**).
+- **Live Database Immutability Proof:** `master_database.sqlite` SHA-256 digest remained bit-identical before and after execution (`DCCD1EC477737D6C92408FD080FD19E757E7F3259777659F6EB9CEE57F75FE63`).
 - **Static Assets Syntax Check:** `node --check` exited `0` across all `17` `.js` files under `static/`.
 
 ### B. Live Browser Playwright Responsive & E2E Matrix
@@ -214,8 +214,8 @@ Executed against a live isolated local ASGI server (`wave6_playwright_matrix.py`
 
 ## 20. Known Limitations & Next-Phase Backlog
 
-To maintain strict engineering honesty, the following strategic items remain scoped for the next delivery phase rather than claimed as completed in Waves 1–6:
-1. **Native Payment Provider Rails (`Telegram Stars XTR` / `Click` / `Payme`):** `GET /api/subscription/plans` already exposes dynamic `stars_price`, and Admin reconciliation handles unmatched P2P flows cleanly, but automated Telegram `pre_checkout_query` / `successful_payment` (`XTR`) handlers and signed Click/Payme merchant webhook adapters remain to be built and certified against live merchant sandbox credentials.
+To maintain strict engineering honesty, Click / Payme merchant web checkout was intentionally omitted per founder decision (`Telegram Stars XTR + HUMO P2P` active), and the following items remain optional future backlog:
+1. **Native Telegram Stars (`XTR`) *(Implemented in Wave 7)*:** Built across `src/payments/stars_service.py`, `payment_stars_orders`, `POST /api/payment/stars/invoice`, `GET /api/payment/stars/{order_id}/status`, Aiogram `/pro` + `buy_stars:` + `pre_checkout_query` + `F.successful_payment`, Mini App `WebApp.openInvoice` (`isVersionAtLeast('6.1')` guarded fallback in `profile.js`), and Admin KPI/`reconciliation`/`/api/admin/payments/stars`. Live `XTR` end-to-end capture requires valid `BOT_TOKEN` webhook/polling connectivity on deployed Render/Vercel.
 2. **Full `BotDatabase` Repository Decomposition:** Pure scoring (`src/db/scoring.py`) and scene normalization (`src/db/scene_normalizer.py`) were extracted (`2,474 -> 2,237` lines in `src/bot/database.py`), while full multi-file repository splitting (`src/db/repos/*`) remains optional future modularity.
 3. **Production Turso Data Backfill & Editorial Triage:** Local repository data (`canonical_bundle.json`, `image_scenes.json`, and `master_database.sqlite` category NULL remediation) is clean; production Turso should receive a coordinated catalog sync (`db_catalog_revision=1`) and human `MODERATOR` review of pending `UNRESOLVED_LEGAL_REVIEW` items inside the Admin Editorial UI.
 4. **Native ES Module (`import/export`) + Bundler Migration:** The current frontend uses a clean Zero-XSS `window.R` module split + `node --check` CI compatibility with zero Node build step required on Render/Vercel; adopting Vite or native `<script type="module">` stays an easy optional upgrade.
@@ -264,4 +264,4 @@ To maintain strict engineering honesty, the following strategic items remain sco
 RULLY 2.0 completes the foundational engineering, security, data, AI, Admin, and student UX transformation required to operate as a credible, acquisition-ready Uzbekistan driving education platform:
 - **Zero known P0 security leaks remain in code**, live test mutations against `master_database.sqlite` are eliminated (`187/187` green on isolated `tmp_path` copies), and Admin operations run behind strict CSP (`script-src 'self'`) and 4-role RBAC.
 - **Learners gain genuine Day-1 value** through an open Freemium Web funnel, 60-second placement test, 100% reachable 1,327-question theory catalog, single-pass SM-2 mastery, streaming legal-grounded AI Ustoz 2.0, and interactive 2D Cobalt/Avtodrom labs.
-- **Recommended Immediate Post-Handoff Priorities:** (1) Execute the Section 23 credential rotation & clean remote push + Render/Vercel deploy, (2) sync curated catalog remediation to production Turso, and (3) prioritize native `Telegram Stars (XTR)` + `Click`/`Payme` checkout automation in Phase Next to convert mobile demand cleanly without P2P friction.
+- **Recommended Immediate Post-Handoff Priorities:** (1) Sync curated catalog & Stars migration schema cleanly to production Turso, (2) verify live `BOT_TOKEN` Stars `createInvoiceLink` + webhook capture inside Telegram Desktop/Mobile clients, and (3) drive organic SEO + Freemium Diagnostic top-of-funnel growth.

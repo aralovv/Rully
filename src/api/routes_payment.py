@@ -19,6 +19,10 @@ from src.payments.order_manager import (
     get_user_active_order,
     get_order_by_id
 )
+from src.payments.stars_service import (
+    create_stars_invoice_order,
+    get_stars_order_status,
+)
 from src.security.telegram_notifier import send_payment_invoice_to_user, send_order_created_alert
 
 router = APIRouter(prefix="/api/payment", tags=["User Payment"])
@@ -127,3 +131,41 @@ def api_get_order_status(
         "remaining_seconds": order.get("remaining_seconds", 0),
         "paid_at": order.get("paid_at")
     }
+
+
+@router.post("/stars/invoice")
+async def api_create_stars_invoice(
+    req: CreateOrderRequest,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """
+    Creates a native Telegram Stars (`XTR`) invoice link via Bot API (`createInvoiceLink`)
+    for direct checkout in Telegram Mini App (`WebApp.openInvoice`) or web-to-Telegram redirect.
+    """
+    user_id = user["user_id"]
+    allowed, _, retry_after = rate_limiter.is_allowed(f"stars_invoice:{user_id}", max_requests=5, window_seconds=60)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many Stars invoice requests. Please wait {int(retry_after)}s.",
+        )
+
+    try:
+        res = await create_stars_invoice_order(user_id=user_id, plan_id=req.plan_id.strip(), create_link=True)
+        return res
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/stars/{order_id}/status")
+async def api_get_stars_order_status(
+    order_id: str,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Polls Telegram Stars (`XTR`) invoice fulfillment status."""
+    status_code, payload = await asyncio.to_thread(get_stars_order_status, order_id, user["user_id"])
+    if status_code != 200:
+        raise HTTPException(status_code=status_code, detail=payload.get("detail", "Stars order error"))
+    return payload

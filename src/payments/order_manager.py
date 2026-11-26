@@ -75,6 +75,15 @@ def get_subscription_plan(plan_id: str) -> Optional[Dict[str, Any]]:
     return _cached_plans.get(plan_id)
 
 
+def compute_stars_price(plan: Dict[str, Any]) -> int:
+    """Computes native Telegram Stars (XTR) amount for a subscription plan."""
+    explicit = plan.get("stars_price")
+    if explicit is not None and int(explicit) > 0:
+        return int(explicit)
+    price = int(plan.get("base_price_uzs") or plan.get("price_uzs") or 0)
+    return max(1, round(price / 180))
+
+
 def list_active_subscription_plans() -> List[Dict[str, Any]]:
     """Returns active subscription plans dynamically from DB with Telegram Stars XTR pricing."""
     global _cached_plans, _cached_plans_time
@@ -94,7 +103,7 @@ def list_active_subscription_plans() -> List[Dict[str, Any]]:
             "duration_days": int(p["duration_days"]),
             "price_uzs": price,
             "price_formatted": f"{price:,} so‘m".replace(",", " "),
-            "stars_price": max(1, round(price / 180)),
+            "stars_price": compute_stars_price(p),
         })
     return out
 

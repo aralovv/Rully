@@ -489,13 +489,69 @@ def get_reconciliation_report(current_admin: dict = Depends(get_current_admin)):
         discrepancy_count = abs(matched_events - ledger_count)
         is_balanced = (discrepancy_count == 0)
 
+        from src.payments.stars_service import _ensure_stars_schema
+        _ensure_stars_schema(conn)
+        c.execute("""
+            SELECT
+                COUNT(*) as total_stars_orders,
+                COALESCE(SUM(CASE WHEN status = 'PAID' THEN 1 ELSE 0 END), 0) as paid_stars_orders,
+                COALESCE(SUM(CASE WHEN status = 'PAID' THEN stars_amount ELSE 0 END), 0) as total_stars_revenue
+            FROM payment_stars_orders
+        """)
+        stars_summary = dict(c.fetchone() or {})
+
     return {
         "ok": True,
         "is_balanced": is_balanced,
         "discrepancy_count": discrepancy_count,
         "events_summary": events_summary,
         "ledger_summary": ledger_summary,
-        "subscription_summary": sub_summary
+        "subscription_summary": sub_summary,
+        "stars_summary": stars_summary,
+    }
+
+
+@router.get("/stars")
+def list_stars_payments(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    status: Optional[str] = Query(None, description="PENDING, PAID, EXPIRED, FAILED"),
+    current_admin: dict = Depends(get_current_admin),
+):
+    """Lists native Telegram Stars (XTR) payment orders and captures."""
+    offset = (page - 1) * limit
+    conditions = []
+    params = []
+    if status:
+        conditions.append("s.status = ?")
+        params.append(status.strip().upper())
+    where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
+
+    from src.payments.stars_service import _ensure_stars_schema
+    with _get_connection() as conn:
+        _ensure_stars_schema(conn)
+        c = conn.cursor()
+        c.execute(f"SELECT COUNT(*) FROM payment_stars_orders s {where_clause}", params)
+        total_items = int(c.fetchone()[0] or 0)
+        c.execute(
+            f"""
+            SELECT s.*, u.username, u.first_name, u.last_name
+            FROM payment_stars_orders s
+            LEFT JOIN telegram_users u ON s.user_id = u.user_id
+            {where_clause}
+            ORDER BY s.created_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            params + [limit, offset],
+        )
+        orders = [dict(r) for r in c.fetchall()]
+
+    return {
+        "ok": True,
+        "total": total_items,
+        "page": page,
+        "limit": limit,
+        "orders": orders,
     }
 
 

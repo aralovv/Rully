@@ -198,6 +198,31 @@ CREATE TABLE IF NOT EXISTS payment_review_cases (
     FOREIGN KEY (user_id) REFERENCES telegram_users(user_id)
 );
 
+-- 11b. Telegram Stars (XTR) Orders (native in-app digital goods checkout)
+CREATE TABLE IF NOT EXISTS payment_stars_orders (
+    order_id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    plan_id TEXT NOT NULL,
+    plan_name TEXT NOT NULL,
+    duration_days INTEGER NOT NULL,
+    stars_amount INTEGER NOT NULL,
+    uzs_equivalent INTEGER NOT NULL,
+    payload TEXT UNIQUE NOT NULL,
+    invoice_url TEXT,
+    telegram_payment_charge_id TEXT UNIQUE,
+    provider_payment_charge_id TEXT,
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    paid_at TEXT,
+    FOREIGN KEY (user_id) REFERENCES telegram_users(user_id),
+    FOREIGN KEY (plan_id) REFERENCES subscription_plans(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_stars_orders_user ON payment_stars_orders(user_id);
+CREATE INDEX IF NOT EXISTS idx_stars_orders_status ON payment_stars_orders(status);
+CREATE INDEX IF NOT EXISTS idx_stars_orders_payload ON payment_stars_orders(payload);
+
 -- 12. User Activity Events (Real activity telemetry)
 CREATE TABLE IF NOT EXISTS user_activity_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

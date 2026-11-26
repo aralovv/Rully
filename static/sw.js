@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'rully-shell-v5';
+const CACHE_NAME = 'rully-shell-v6';
 const STATIC_ASSETS = [
   '/',
   '/static/css/rully.css?v=5.0.0',

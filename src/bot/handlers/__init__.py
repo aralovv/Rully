@@ -11,11 +11,13 @@ from src.bot.handlers.practice import practice_router
 from src.bot.handlers.mistakes import mistakes_router
 from src.bot.handlers.results import results_router
 from src.bot.handlers.admin import admin_router
+from src.bot.handlers.payments import payments_router
 
 main_router = Router(name="main_router")
 
 # Include all subrouters in logical priority order
 main_router.include_router(start_router)
+main_router.include_router(payments_router)
 main_router.include_router(menu_router)
 main_router.include_router(exam_router)
 main_router.include_router(custom_test_router)

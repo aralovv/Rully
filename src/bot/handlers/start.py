@@ -4,7 +4,7 @@ Start, Onboarding, Language Selection, and Help Handlers.
 import re
 from typing import Dict, Any, Optional, Tuple
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from aiogram.filters import CommandStart, Command, CommandObject
 from src.bot.database import BotDatabase
 from src.bot.keyboards import (
@@ -394,6 +394,22 @@ async def cmd_subscription(message: Message, db: BotDatabase):
     lang = db.get_user_language(user_id)
     sub = db.get_user_subscription(user_id)
 
+    try:
+        from src.payments.order_manager import list_active_subscription_plans
+        plans = list_active_subscription_plans()
+    except Exception:
+        plans = []
+    if not plans:
+        plans = [
+            {"id": "pro_14", "name": "14 kunlik PRO", "price_formatted": "14 000 so‘m", "stars_price": 78},
+            {"id": "pro_30", "name": "30 kunlik PRO", "price_formatted": "25 000 so‘m", "stars_price": 139},
+        ]
+
+    plan_lines = "\n".join(
+        f"• <b>{pl['name']}</b> — {pl['price_formatted']} · <b>{pl['stars_price']} ⭐ Stars</b>"
+        for pl in plans
+    )
+
     if lang == "uz_latn":
         status_line = f"Sizning tarifingiz: <b>{sub['tier_name']}</b>"
         if sub["is_pro"]:
@@ -402,15 +418,15 @@ async def cmd_subscription(message: Message, db: BotDatabase):
             f"👑 <b>RULLY PRO Obuna Tizimi</b>\n\n"
             f"{status_line}\n\n"
             f"<b>Mavjud PRO tariflar:</b>\n"
-            f"• <b>14 kunlik (2 hafta)</b> — 14 000 so‘m\n"
-            f"• <b>30 kunlik (1 oy)</b> — 25 000 so‘m (⭐ Eng ommabop)\n\n"
+            f"{plan_lines}\n\n"
             f"<b>PRO imkoniyatlari:</b>\n"
-            f"✅ Nazariy Imtihon (20 savol / 25 daqiqa)\n"
-            f"✅ Xatolar Banki bilan ishlash\n"
-            f"✅ To‘liq Imtihon Shpargalkasi\n"
-            f"✅ Aniq Statistika va Telemetriya"
+            f"✅ Cheksiz Davlat Imtihoni (20 savol / 25 daqiqa)\n"
+            f"✅ Cheksiz AI Ustoz 2.0 va 7 kunlik o‘quv reja\n"
+            f"✅ To‘liq Avtodrom 2D va Imtihon Shpargalkasi\n"
+            f"✅ Telegram Stars (⭐) orqali 1 soniyada faollashuv"
         )
-        btn_text = "💳 Obunani faollashtirish (Profil)"
+        btn_webapp = "💳 Karta (HUMO) / Mini App orqali"
+        stars_prefix = "⭐ Stars:"
     elif lang == "uz_cyrl":
         status_line = f"Сизнинг тарифингиз: <b>{sub['tier_name']}</b>"
         if sub["is_pro"]:
@@ -419,15 +435,15 @@ async def cmd_subscription(message: Message, db: BotDatabase):
             f"👑 <b>RULLY PRO Обуна Тизими</b>\n\n"
             f"{status_line}\n\n"
             f"<b>Мавжуд PRO тарифлар:</b>\n"
-            f"• <b>14 кунлик (2 ҳафта)</b> — 14 000 сўм\n"
-            f"• <b>30 кунлик (1 ой)</b> — 25 000 сўм (⭐ Энг оммабоп)\n\n"
+            f"{plan_lines}\n\n"
             f"<b>PRO имкониятлари:</b>\n"
-            f"✅ Назарий Имтиҳон (20 савол / 25 дақиқа)\n"
-            f"✅ Хатолар Банки билан ишлаш\n"
-            f"✅ Тўлиқ Имтиҳон Шпаргалкаси\n"
-            f"✅ Аниқ Статистика ва Телеметрия"
+            f"✅ Чексиз Давлат Имтиҳони (20 савол / 25 дақиқа)\n"
+            f"✅ Чексиз AI Устоз 2.0 ва 7 кунлик ўқув режа\n"
+            f"✅ Тўлиқ Автодром 2D ва Имтиҳон Шпаргалкаси\n"
+            f"✅ Telegram Stars (⭐) орқали бир зумда фаоллашув"
         )
-        btn_text = "💳 Обунани фаоллаштириш (Профиль)"
+        btn_webapp = "💳 Карта (HUMO) / Mini App орқали"
+        stars_prefix = "⭐ Stars:"
     else:
         status_line = f"Ваш тариф: <b>{sub['tier_name']}</b>"
         if sub["is_pro"]:
@@ -436,17 +452,20 @@ async def cmd_subscription(message: Message, db: BotDatabase):
             f"👑 <b>Подписка RULLY PRO</b>\n\n"
             f"{status_line}\n\n"
             f"<b>Доступные PRO тарифы:</b>\n"
-            f"• <b>14 дней (2 недели)</b> — 14 000 сум\n"
-            f"• <b>30 дней (1 месяц)</b> — 25 000 сум (⭐ Хит продаж)\n\n"
+            f"{plan_lines}\n\n"
             f"<b>Возможности PRO:</b>\n"
-            f"✅ Теоретический экзамен (20 вопросов / 25 мин)\n"
-            f"✅ Банк ошибок и отработка\n"
-            f"✅ Полная шпаргалка к экзамену\n"
-            f"✅ Подробная статистика и готовность"
+            f"✅ Безлимитный Госэкзамен (20 вопросов / 25 мин)\n"
+            f"✅ Безлимитный AI Наставник 2.0 и 7-дневный план\n"
+            f"✅ Полный Автодром 2D и Шпаргалка\n"
+            f"✅ Мгновенная оплата через Telegram Stars (⭐)"
         )
-        btn_text = "💳 Активировать подписку (Профиль)"
+        btn_webapp = "💳 Карта (HUMO) / Через Mini App"
+        stars_prefix = "⭐ Stars:"
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=btn_text, web_app=WebAppInfo(url=f"{WEB_APP_URL}#profile"))]
-    ])
+    rows = [
+        [InlineKeyboardButton(text=f"{stars_prefix} {pl['name']} — {pl['stars_price']} ⭐", callback_data=f"buy_stars:{pl['id']}")]
+        for pl in plans
+    ]
+    rows.append([InlineKeyboardButton(text=btn_webapp, web_app=WebAppInfo(url=f"{WEB_APP_URL}#profile"))])
+    kb = InlineKeyboardMarkup(inline_keyboard=rows)
     await message.answer(text=text, parse_mode="HTML", reply_markup=kb)

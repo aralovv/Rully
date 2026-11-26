@@ -65,6 +65,8 @@ def get_dashboard_kpis(current_admin: dict = Depends(get_current_admin)):
     ]
 
     with _get_connection() as conn:
+        from src.payments.stars_service import _ensure_stars_schema
+        _ensure_stars_schema(conn)
         c = conn.cursor()
         c.execute(sql, params)
         row = c.fetchone()
@@ -82,6 +84,18 @@ def get_dashboard_kpis(current_admin: dict = Depends(get_current_admin)):
         unmatched_payments = row[10]
         review_cases = row[11]
 
+        c.execute(
+            """
+            SELECT
+                COUNT(CASE WHEN status = 'PAID' THEN 1 END),
+                COALESCE(SUM(CASE WHEN status = 'PAID' THEN stars_amount ELSE 0 END), 0)
+            FROM payment_stars_orders
+            """
+        )
+        stars_row = c.fetchone()
+        stars_payments_count = int((stars_row[0] if stars_row else 0) or 0)
+        stars_revenue_xtr = int((stars_row[1] if stars_row else 0) or 0)
+
     return {
         "ok": True,
         "kpis": {
@@ -96,7 +110,9 @@ def get_dashboard_kpis(current_admin: dict = Depends(get_current_admin)):
             "expired_subscriptions": expired_subscriptions,
             "pending_orders": pending_orders,
             "unmatched_payments": unmatched_payments,
-            "review_cases_pending": review_cases
+            "review_cases_pending": review_cases,
+            "stars_payments_count": stars_payments_count,
+            "stars_revenue_xtr": stars_revenue_xtr,
         }
     }
 

@@ -382,6 +382,7 @@
         const ev = rep.events_summary || {};
         const ld = rep.ledger_summary || {};
         const sub = rep.subscription_summary || {};
+        const st = rep.stars_summary || {};
         if (summaryBox) {
           summaryBox.innerHTML = `
             <div class="card p-4 space-y-3">
@@ -389,7 +390,7 @@
                 <h4 class="font-bold text-sm text-slate-100">Moliyaviy Yarashuv Hisoboti</h4>
                 <span class="badge ${rep.is_balanced ? 'badge-emerald' : 'badge-red'}">${rep.is_balanced ? 'BALANS MOS (0 FARQ)' : 'TAFOVUT: ' + escapeHtml(rep.discrepancy_count)}</span>
               </div>
-              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
                 <div class="bg-slate-900/80 border border-slate-800 rounded p-2.5">
                   <div class="text-[11px] text-muted">Bank Kirim Events</div>
                   <div class="font-bold text-sm font-mono">${escapeHtml(ev.incoming_events || 0)} (${escapeHtml(formatMoney(ev.total_incoming_uzs || 0))})</div>
@@ -405,6 +406,10 @@
                 <div class="bg-slate-900/80 border border-slate-800 rounded p-2.5">
                   <div class="text-[11px] text-muted">Obunalar (Faol / Grant / Bekor)</div>
                   <div class="font-bold text-sm font-mono">${escapeHtml(sub.active_subs || 0)} / ${escapeHtml(sub.manual_grants || 0)} / ${escapeHtml(sub.revoked_subs || 0)}</div>
+                </div>
+                <div class="bg-slate-900/80 border border-slate-800 rounded p-2.5">
+                  <div class="text-[11px] text-muted">⭐ Telegram Stars (XTR)</div>
+                  <div class="font-bold text-sm font-mono text-amber-300">${escapeHtml(st.paid_stars_orders || 0)} ta · ${escapeHtml(st.total_stars_revenue || 0)} ⭐</div>
                 </div>
               </div>
             </div>

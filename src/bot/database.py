@@ -30,14 +30,16 @@ SUBSCRIPTION_PLANS = {
         "name": "14 kunlik PRO (2 hafta)",
         "duration_days": 14,
         "price_uzs": 14000,
-        "price_formatted": "14 000 so‘m"
+        "price_formatted": "14 000 so‘m",
+        "stars_price": 78,
     },
     "pro_30": {
         "id": "pro_30",
         "name": "30 kunlik PRO (1 oy)",
         "duration_days": 30,
         "price_uzs": 25000,
-        "price_formatted": "25 000 so‘m"
+        "price_formatted": "25 000 so‘m",
+        "stars_price": 139,
     }
 }
 

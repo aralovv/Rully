@@ -29,6 +29,7 @@ async def setup_bot_commands(bot: Bot):
         BotCommand(command="test", description="Aralash test va sozlamalar"),
         BotCommand(command="mistakes", description="Xatolar banki"),
         BotCommand(command="results", description="Tayyorgarlik darajasi"),
+        BotCommand(command="pro", description="RULLY PRO obuna (Stars ⭐ / HUMO)"),
         BotCommand(command="language", description="Tilni o‘zgartirish / Сменить язык"),
         BotCommand(command="help", description="Yordam va bo‘limlar")
     ]
@@ -44,6 +45,7 @@ async def setup_bot_commands(bot: Bot):
         BotCommand(command="test", description="Настраиваемый тест"),
         BotCommand(command="mistakes", description="Банк ошибок"),
         BotCommand(command="results", description="Индекс готовности"),
+        BotCommand(command="pro", description="Подписка RULLY PRO (Stars ⭐ / HUMO)"),
         BotCommand(command="language", description="Сменить язык"),
         BotCommand(command="help", description="Помощь и разделы")
     ]

@@ -28,14 +28,15 @@
     R.openModal('paywall-modal');
 
     let plans = [
-      { id: 'pro_14', name: R.t('sub_plan_14_title'), duration_days: 14, price_formatted: R.t('sub_plan_14_price'), daily: R.t('sub_plan_14_daily') },
-      { id: 'pro_30', name: R.t('sub_plan_30_title'), duration_days: 30, price_formatted: R.t('sub_plan_30_price'), daily: R.t('sub_plan_30_daily'), popular: true }
+      { id: 'pro_14', name: R.t('sub_plan_14_title'), duration_days: 14, price_formatted: R.t('sub_plan_14_price'), stars_price: 78, daily: R.t('sub_plan_14_daily') },
+      { id: 'pro_30', name: R.t('sub_plan_30_title'), duration_days: 30, price_formatted: R.t('sub_plan_30_price'), stars_price: 139, daily: R.t('sub_plan_30_daily'), popular: true }
     ];
     try {
       const res = await R.api('/api/subscription/plans');
       if (Array.isArray(res.plans) && res.plans.length) {
         plans = res.plans.map(function (p) {
-          return Object.assign({}, p, { popular: String(p.id).includes('30') });
+          const stars = Number(p.stars_price || Math.max(1, Math.round(Number(p.price_uzs || p.base_price_uzs || 0) / 180)));
+          return Object.assign({}, p, { stars_price: stars, popular: String(p.id).includes('30') });
         });
       }
     } catch (e) {}
@@ -50,21 +51,102 @@
       '    <div>' + R.icon('checkCircle', 'xs') + ' ' + R.escHtml(R.t('sub_feature_cheatsheet')) + '</div>' +
       '  </div>' +
       plans.map(function (pl) {
+        const uzsLabel = pl.price_formatted || (pl.base_price_uzs + ' so‘m');
+        const starsVal = Number(pl.stars_price || 78);
+        const starsBtnLabel = R.t('sub_btn_stars').replace('{stars}', String(starsVal));
+        const cardBtnLabel = R.t('sub_btn_card').replace('{price}', uzsLabel);
         return '<div class="surface-card" style="' + (pl.popular ? 'border-color:var(--color-primary);' : '') + '">' +
           '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">' +
-          '  <div><strong>' + R.escHtml(pl.name) + '</strong>' + (pl.popular ? ' <span class="badge-pill badge-primary">' + R.escHtml(R.t('sub_popular_badge')) + '</span>' : '') + '</div>' +
-          '  <strong class="font-mono" style="color:var(--color-primary);">' + R.escHtml(pl.price_formatted || (pl.base_price_uzs + ' so‘m')) + '</strong>' +
+          '  <div style="min-width:0;"><strong>' + R.escHtml(pl.name) + '</strong>' + (pl.popular ? ' <span class="badge-pill badge-primary">' + R.escHtml(R.t('sub_popular_badge')) + '</span>' : '') + '</div>' +
+          '  <div style="text-align:right;flex-shrink:0;white-space:nowrap;">' +
+          '    <strong class="font-mono" style="color:var(--color-amber);display:block;font-size:13px;">⭐ ' + starsVal + ' XTR</strong>' +
+          '    <span class="font-mono" style="color:var(--text-muted);font-size:11.5px;">' + R.escHtml(uzsLabel) + '</span>' +
+          '  </div>' +
           '</div>' +
-          '<button type="button" class="btn ' + (pl.popular ? 'btn-primary' : 'btn-secondary') + ' btn-block btn-sm" data-buy-plan="' + R.escHtml(pl.id) + '">' + R.escHtml(R.t('sub_btn_activate')) + '</button>' +
+          '<div style="display:flex;flex-direction:column;gap:6px;">' +
+          '  <button type="button" class="btn ' + (pl.popular ? 'btn-primary' : 'btn-secondary') + ' btn-block btn-sm" data-buy-stars="' + R.escHtml(pl.id) + '">⭐ ' + R.escHtml(starsBtnLabel) + '</button>' +
+          '  <button type="button" class="btn btn-secondary btn-block btn-sm" data-buy-plan="' + R.escHtml(pl.id) + '">💳 ' + R.escHtml(cardBtnLabel) + '</button>' +
+          '</div>' +
+          '<div style="font-size:11px;color:var(--text-muted);margin-top:6px;text-align:center;">⚡ ' + R.escHtml(R.t('sub_stars_instant_badge')) + '</div>' +
           '</div>';
       }).join('') +
       '</div>';
+
+    body.querySelectorAll('[data-buy-stars]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        R.payWithTelegramStars(btn.dataset.buyStars);
+      });
+    });
 
     body.querySelectorAll('[data-buy-plan]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         R.createPaymentOrder(btn.dataset.buyPlan);
       });
     });
+  };
+
+  async function waitUntilStarsPaid(orderId, maxAttempts) {
+    const attempts = maxAttempts || 12;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const st = await R.api('/api/payment/stars/' + encodeURIComponent(orderId) + '/status');
+        if (st && st.is_paid) {
+          R.closeModal('paywall-modal');
+          R.haptic('success');
+          R.showToast(R.t('sub_success_msg'), 4000);
+          await R.refreshProfileSnapshot();
+          return true;
+        }
+        if (st && (st.is_expired || st.status === 'FAILED')) return false;
+      } catch (e) {}
+      await new Promise(function (resolve) { setTimeout(resolve, 900); });
+    }
+    return false;
+  }
+
+  R.payWithTelegramStars = async function (planId) {
+    try {
+      const res = await R.api('/api/payment/stars/invoice', {
+        method: 'POST',
+        body: { plan_id: planId }
+      });
+      if (!res || !res.invoice_url) throw new Error(R.t('sub_stars_failed'));
+      const invoiceUrl = R.safeUrl ? R.safeUrl(res.invoice_url) : res.invoice_url;
+      if (!invoiceUrl) throw new Error(R.t('sub_stars_failed'));
+
+      const tg = window.Telegram && window.Telegram.WebApp;
+      const canNativeInvoice = Boolean(
+        tg &&
+        typeof tg.openInvoice === 'function' &&
+        (typeof tg.isVersionAtLeast !== 'function' || tg.isVersionAtLeast('6.1'))
+      );
+      if (canNativeInvoice) {
+        tg.openInvoice(invoiceUrl, async function (status) {
+          if (status === 'paid') {
+            const ok = await waitUntilStarsPaid(res.order_id, 15);
+            if (!ok) {
+              R.closeModal('paywall-modal');
+              R.haptic('success');
+              R.showToast(R.t('sub_success_msg'), 4000);
+              await R.refreshProfileSnapshot();
+            }
+          } else if (status === 'cancelled') {
+            R.showToast(R.t('sub_stars_cancelled'));
+          } else if (status === 'failed') {
+            R.showToast(R.t('sub_stars_failed'));
+          } else if (status === 'pending') {
+            R.showToast(R.t('sub_stars_pending'));
+            waitUntilStarsPaid(res.order_id, 20);
+          }
+        });
+      } else {
+        window.open(invoiceUrl, '_blank', 'noopener,noreferrer');
+        R.showToast(R.t('sub_stars_pending'), 4000);
+        waitUntilStarsPaid(res.order_id, 25);
+      }
+    } catch (err) {
+      R.showToast(err.detail || err.message || R.t('sub_stars_failed'));
+    }
   };
 
   R.createPaymentOrder = async function (planId) {

@@ -126,6 +126,20 @@ async def send_payment_alert_to_admin(order_id: str, amount_uzs: int, user_id: i
     return await broadcast_order_alert(text)
 
 
+async def send_stars_payment_alert_to_admin(order_id: str, stars_amount: int, user_id: int, plan_name: str) -> bool:
+    """Alerts the 'Buyurtmalar Rully' group when a Telegram Stars (XTR) payment completes."""
+    user_label = get_user_mention(user_id)
+    text = (
+        "⭐ <b>Yangi Telegram Stars (XTR) to‘lov</b>\n\n"
+        f"Buyurtma: <code>{order_id}</code>\n"
+        f"Foydalanuvchi: {user_label}\n"
+        f"Summa: <b>{stars_amount} ⭐ (XTR)</b>\n"
+        f"Tarif: <b>{plan_name}</b>\n"
+        "Holati: 🟢 Bir zumda avtomatik faollashtirildi"
+    )
+    return await broadcast_order_alert(text)
+
+
 async def send_late_payment_alert_to_admin(order_id: str, amount_uzs: int, user_id: int, card_suffix: str) -> bool:
     """Alerts the 'Buyurtmalar Rully' group and admin when a payment arrives for an expired order."""
     amount_str = f"{amount_uzs:,}".replace(",", " ")
