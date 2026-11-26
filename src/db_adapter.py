@@ -296,7 +296,7 @@ def is_turso_enabled() -> bool:
     return bool(url and token and HAS_LIBSQL)
 
 
-def get_db_connection(db_path: str = "master_database.sqlite"):
+def get_db_connection(db_path: Optional[str] = None):
     """
     Unified database connection factory.
     Returns TursoConnection if TURSO_DATABASE_URL is set; otherwise local sqlite3.Connection.
@@ -305,8 +305,9 @@ def get_db_connection(db_path: str = "master_database.sqlite"):
         url, token = _get_turso_credentials()
         http_url = url.replace("libsql://", "https://")
         return TursoConnection(url=http_url, token=token)
-    
-    conn = sqlite3.connect(db_path, timeout=30.0, check_same_thread=False)
+
+    resolved_path = db_path or os.getenv("DB_PATH", "master_database.sqlite")
+    conn = sqlite3.connect(resolved_path, timeout=30.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     try:

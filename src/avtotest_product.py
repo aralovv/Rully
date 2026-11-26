@@ -93,8 +93,8 @@ class ExamSessionResult:
 class AvtotestProductEngine:
     REVISION_CHECK_TTL_SECONDS = 300.0
 
-    def __init__(self, db_path: str = "master_database.sqlite", bundle_path: Optional[str] = None):
-        self.db_path = db_path
+    def __init__(self, db_path: Optional[str] = None, bundle_path: Optional[str] = None):
+        self.db_path = db_path or os.getenv("DB_PATH", "master_database.sqlite")
         if bundle_path is not None:
             self.bundle_path: Optional[str] = bundle_path
         elif os.path.normpath(self.db_path) == os.path.normpath("master_database.sqlite"):
@@ -335,16 +335,17 @@ class AvtotestProductEngine:
         return False
 
     def invalidate_cache(self, reload: bool = True):
-        """Evicts in-memory catalog caches and optionally reloads from bundle/DB."""
-        with self._cache_lock:
-            self._cache_questions = {}
-            self._cache_categories = []
-            self._by_category = {}
-            self._all_canonical_ids = []
-            self._cache_revision = None
-            self._last_revision_check_at = 0.0
-            if reload:
-                self._preload_cache()
+        """Reloads catalog atomically using copy-on-write replacement to prevent empty-cache reads."""
+        if reload:
+            self._preload_cache()
+        else:
+            with self._cache_lock:
+                self._cache_questions = {}
+                self._cache_categories = []
+                self._by_category = {}
+                self._all_canonical_ids = []
+                self._cache_revision = None
+                self._last_revision_check_at = 0.0
 
     # 1. Language Support
     @staticmethod
@@ -483,29 +484,33 @@ class AvtotestProductEngine:
                 legal_doc_title=q_row["legal_doc_title"] if "legal_doc_title" in row_keys else None,
             )
 
-    # 3. Practice by Category
-    def get_questions_by_category(self, category_id: int, language: str = "uz_latn", limit: Optional[int] = None) -> List[QuestionItem]:
+    # 3. Practice by Category (unseen-first prioritization + offset pagination for >30 categories)
+    def get_questions_by_category(
+        self,
+        category_id: int,
+        language: str = "uz_latn",
+        limit: Optional[int] = None,
+        solved_ids: Optional[set] = None,
+        offset: int = 0,
+    ) -> List[QuestionItem]:
         if self._by_category:
             qids = list(self._by_category.get(category_id, []))
-            if limit:
-                qids = qids[:limit]
-            return [self.get_question(qid, language=language) for qid in qids if qid]
+        else:
+            with self._get_connection() as conn:
+                c = conn.cursor()
+                if category_id == 0:
+                    c.execute("SELECT canonical_id FROM canonical_questions WHERE category_id = 0 OR category_id IS NULL")
+                else:
+                    c.execute("SELECT canonical_id FROM canonical_questions WHERE category_id = ?", (category_id,))
+                qids = [row["canonical_id"] for row in c.fetchall()]
 
-        with self._get_connection() as conn:
-            c = conn.cursor()
-            if category_id == 0:
-                query = "SELECT canonical_id FROM canonical_questions WHERE category_id = 0 OR category_id IS NULL"
-                params = []
-            else:
-                query = "SELECT canonical_id FROM canonical_questions WHERE category_id = ?"
-                params = [category_id]
-            if limit:
-                query += " LIMIT ?"
-                params.append(limit)
-            c.execute(query, params)
-            qids = [row["canonical_id"] for row in c.fetchall()]
-
-        return [self.get_question(qid, language=language) for qid in qids]
+        if solved_ids:
+            qids = [qid for qid in qids if qid not in solved_ids] + [qid for qid in qids if qid in solved_ids]
+        if offset and offset > 0:
+            qids = qids[offset:]
+        if limit and limit > 0:
+            qids = qids[:limit]
+        return [q for q in (self.get_question(qid, language=language) for qid in qids if qid) if q]
 
     # 4. Random Mixed Practice
     def get_random_practice(self, count: int = 10, language: str = "uz_latn") -> List[QuestionItem]:

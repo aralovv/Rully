@@ -60,7 +60,7 @@ def audit_and_seed_provenance(conn: Any, admin_actor: str = "system_phase1e_audi
     cur = conn.cursor()
     cur.execute("""
         SELECT canonical_id, category_name, legal_reference, legal_act_title,
-               verification_status, legal_verification_status
+               verification_status, legal_verification_status, editorial_reviewed_by
         FROM canonical_questions
         ORDER BY canonical_id
     """)
@@ -236,7 +236,9 @@ def list_editorial_queue(
 
     cur.execute(
         f"""
-        SELECT eq.*, cq.category_name, cq.legal_reference AS current_legal_hint,
+        SELECT eq.*, cq.category_name, cq.has_image, cq.correct_option_key,
+               im.local_path AS image_path,
+               cq.legal_reference AS current_legal_hint,
                cq.legal_verification_status AS current_legal_status,
                cq.legal_doc_title AS current_legal_doc_title,
                cq.legal_doc_url AS current_legal_doc_url,
@@ -246,6 +248,7 @@ def list_editorial_queue(
                ct.question_text AS preview_text_uz_latn
         FROM editorial_review_queue eq
         JOIN canonical_questions cq ON eq.canonical_id = cq.canonical_id
+        LEFT JOIN images im ON cq.primary_image_id = im.id
         LEFT JOIN canonical_translations ct ON eq.canonical_id = ct.canonical_id AND ct.language = 'uz_latn'
         {where_sql}
         ORDER BY eq.id ASC
@@ -262,7 +265,14 @@ def list_editorial_queue(
             d["issue_flags"] = json.loads(d.get("issue_flags_json") or "[]")
         except Exception:
             d["issue_flags"] = []
+        raw_img = d.get("image_path")
+        if d.get("has_image") and raw_img:
+            fname = str(raw_img).replace("\\", "/").split("/")[-1]
+            d["image_url"] = f"/images/{fname}"
+        else:
+            d["image_url"] = None
         d["translations"] = {}
+        d["options"] = []
         canon_ids.append(d["canonical_id"])
         items.append(d)
 
@@ -286,8 +296,31 @@ def list_editorial_queue(
                 "explanation": tr["explanation"],
                 "translation_status": tr["translation_status"],
             }
+
+        cur.execute(
+            f"""
+            SELECT canonical_id, option_key, is_correct, text_uz_latn, text_uz_cyrl, text_ru
+            FROM canonical_answers
+            WHERE canonical_id IN ({placeholders})
+            ORDER BY canonical_id, sort_order
+            """,
+            tuple(unique_ids),
+        )
+        a_cols = [d[0] for d in cur.description]
+        ans_map: Dict[str, List[Dict[str, Any]]] = {}
+        for a_row in cur.fetchall():
+            ar = _row_dict(a_row, a_cols)
+            ans_map.setdefault(ar["canonical_id"], []).append({
+                "key": ar["option_key"],
+                "is_correct": bool(ar["is_correct"]),
+                "text_uz_latn": ar["text_uz_latn"],
+                "text_uz_cyrl": ar["text_uz_cyrl"],
+                "text_ru": ar["text_ru"],
+            })
+
         for d in items:
             d["translations"] = trans_map.get(d["canonical_id"], {})
+            d["options"] = ans_map.get(d["canonical_id"], [])
 
     return {
         "total": total,
@@ -387,6 +420,7 @@ def approve_editorial_item(
             """
             UPDATE canonical_questions
             SET legal_verification_status = ?,
+                verification_status = 'ADMIN_MANUALLY_APPROVED',
                 legal_doc_title = COALESCE(?, legal_doc_title),
                 legal_doc_url = COALESCE(?, legal_doc_url),
                 legal_chapter = COALESCE(?, legal_chapter),

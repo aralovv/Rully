@@ -16,14 +16,15 @@ from src.sync.staging_manager import StagingManager
 from src.security.telegram_notifier import send_telegram_message, MAIN_BOT_TOKEN, ADMIN_TELEGRAM_ID
 
 class QuestionSyncService:
-    def __init__(self, db_path: str = "master_database.sqlite"):
-        self.db_path = db_path
+    def __init__(self, db_path: Optional[str] = None):
+        resolved_db = db_path or os.getenv("DB_PATH", "master_database.sqlite")
+        self.db_path = resolved_db
         self.adapters: Dict[str, BaseSourceAdapter] = {
             "yesprava": YesPravaAdapter(),
             "propdd": ProPDDAdapter()
         }
-        self.unifier = IncrementalUnifier(db_path=db_path)
-        self.staging = StagingManager(db_path=db_path)
+        self.unifier = IncrementalUnifier(db_path=resolved_db)
+        self.staging = StagingManager(db_path=resolved_db)
 
     def _get_connection(self):
         from src.db_adapter import get_db_connection

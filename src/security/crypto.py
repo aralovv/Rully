@@ -7,6 +7,8 @@ Provides:
 """
 
 import os
+import re
+import hmac
 import base64
 import secrets
 import hashlib
@@ -27,33 +29,43 @@ _hasher = PasswordHasher(
     salt_len=16
 )
 
-# Encryption key for sensitive data (cards, sessions)
-_raw_secret = os.getenv("SECRET_KEY", "")
-_is_prod = (
-    os.getenv("ENVIRONMENT", "").lower() in ("production", "prod")
-    or bool(os.getenv("VERCEL"))
-    or bool(os.getenv("RENDER"))
-)
-if not _raw_secret:
-    if _is_prod:
-        import warnings
-        warnings.warn("SECURITY WARNING: SECRET_KEY is not defined in production environment variables! Using fallback.", RuntimeWarning)
-    _SECRET_KEY = "rully_secure_secret_key_32_bytes_minimum_for_crypto_production_2026"
-else:
-    _SECRET_KEY = _raw_secret
+_DEV_FALLBACK_SECRET = "rully_dev_only_non_prod_secret_key_change_in_prod_2026"
+_LEGACY_PLAIN_DIGITS_RE = re.compile(r"^\d{8,24}$")
 
-# Generate a deterministic 32-byte url-safe base64 key from _SECRET_KEY
-_fernet_key = base64.urlsafe_b64encode(hashlib.sha256(_SECRET_KEY.encode()).digest())
-_cipher = Fernet(_fernet_key)
+
+def _is_prod_runtime() -> bool:
+    return (
+        os.getenv("ENVIRONMENT", "").strip().lower() in ("production", "prod", "standalone-cloud")
+        or bool(os.getenv("VERCEL"))
+        or bool(os.getenv("RENDER"))
+    )
+
+
+def _get_secret_key() -> str:
+    raw = os.getenv("SECRET_KEY", "").strip()
+    if raw:
+        return raw
+    if _is_prod_runtime() and "PYTEST_CURRENT_TEST" not in os.environ:
+        raise RuntimeError("SECURITY CRITICAL: SECRET_KEY environment variable is required in production.")
+    return _DEV_FALLBACK_SECRET
+
+
+def _get_cipher() -> Fernet:
+    fernet_key = base64.urlsafe_b64encode(hashlib.sha256(_get_secret_key().encode("utf-8")).digest())
+    return Fernet(fernet_key)
 
 
 def hash_password(password: str) -> str:
     """Hashes a plaintext password using Argon2id."""
+    if not password:
+        raise ValueError("Password cannot be empty.")
     return _hasher.hash(password)
 
 
 def verify_password(hash_str: str, password: str) -> bool:
     """Verifies a plaintext password against an Argon2id hash."""
+    if not hash_str or not password:
+        return False
     try:
         return _hasher.verify(hash_str, password)
     except (VerifyMismatchError, Exception):
@@ -64,31 +76,35 @@ def encrypt_data(data: str) -> str:
     """Encrypts sensitive plaintext string using AES-CBC/Fernet."""
     if not data:
         return ""
-    encrypted_bytes = _cipher.encrypt(data.encode('utf-8'))
+    encrypted_bytes = _get_cipher().encrypt(data.encode('utf-8'))
     return encrypted_bytes.decode('utf-8')
 
 
 def decrypt_data(encrypted_str: str) -> str:
-    """Decrypts ciphertext string back to plaintext."""
+    """Decrypts ciphertext string back to plaintext, failing closed on invalid ciphertext."""
     if not encrypted_str:
         return ""
+    text = str(encrypted_str).strip()
     try:
-        decrypted_bytes = _cipher.decrypt(encrypted_str.encode('utf-8'))
+        decrypted_bytes = _get_cipher().decrypt(text.encode('utf-8'))
         return decrypted_bytes.decode('utf-8')
-    except Exception:
-        # Fallback if unencrypted / legacy format
-        return encrypted_str
+    except Exception as exc:
+        # Allow legacy unencrypted numeric PAN only if purely digits (never fake-decrypt 'ENC:' or corrupted Fernet tokens)
+        if _LEGACY_PLAIN_DIGITS_RE.fullmatch(text):
+            return text
+        raise ValueError("Decryption failed: invalid ciphertext or SECRET_KEY mismatch") from exc
 
 
 def generate_secure_otp(length: int = 6) -> str:
     """Generates a cryptographically random numeric OTP (default 6 digits)."""
-    # Range 100000 to 999999
     return "".join(secrets.choice("0123456789") for _ in range(length))
 
 
 def hash_otp(otp: str, salt: str = "rully_otp_salt_2026") -> str:
-    """Creates a SHA-256 hash of the OTP with salt. OTP values are NEVER stored in plaintext."""
-    return hashlib.sha256(f"{salt}:{otp}".encode('utf-8')).hexdigest()
+    """Creates an HMAC-SHA256 digest of the OTP keyed by SECRET_KEY. Plaintext OTPs are NEVER stored."""
+    key = _get_secret_key().encode("utf-8")
+    msg = f"{salt}:{otp}".encode("utf-8")
+    return hmac.new(key, msg, hashlib.sha256).hexdigest()
 
 
 def verify_otp_hash(otp: str, stored_hash: str, salt: str = "rully_otp_salt_2026") -> bool:

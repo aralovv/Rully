@@ -4,13 +4,33 @@ Enables the Telegram Bot to process updates statelessly 24/7 without requiring l
 """
 
 import os
+import hmac
 import logging
 from typing import Optional
-from fastapi import APIRouter, Request, Header, HTTPException, status
+from fastapi import APIRouter, Request, Header, Cookie, HTTPException, Depends, status
 from aiogram.types import Update
 
 from src.bot.bot import create_bot_app, setup_bot_commands
 from src.bot.config import BOT_TOKEN
+
+
+async def _require_admin_lazy(
+    request: Request,
+    admin_session: Optional[str] = Cookie(None, alias="admin_session"),
+    rully_csrf: Optional[str] = Cookie(None, alias="rully_csrf"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    x_admin_session: Optional[str] = Header(None, alias="X-Admin-Session"),
+    x_csrf_token: Optional[str] = Header(None, alias="X-CSRF-Token"),
+):
+    from src.admin.deps import get_current_admin
+    return await get_current_admin(
+        request=request,
+        admin_session=admin_session,
+        rully_csrf=rully_csrf,
+        authorization=authorization,
+        x_admin_session=x_admin_session,
+        x_csrf_token=x_csrf_token,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +60,12 @@ async def telegram_webhook_handler(
     Receives incoming webhook updates from Telegram Bot API servers.
     """
     webhook_secret = os.getenv("TELEGRAM_WEBHOOK_SECRET", "").strip()
-    # Security (P0): Fail-closed. Reject if webhook secret is unset or signature token does not match
-    if not webhook_secret or x_telegram_bot_api_secret_token != webhook_secret:
+    # Security (P0): Fail-closed with constant-time comparison
+    if (
+        not webhook_secret
+        or not x_telegram_bot_api_secret_token
+        or not hmac.compare_digest(x_telegram_bot_api_secret_token, webhook_secret)
+    ):
         logger.warning("Rejected webhook update due to missing or invalid secret token")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid secret token")
 
@@ -58,9 +82,9 @@ async def telegram_webhook_handler(
 
 
 @router.get("/info")
-async def get_webhook_info():
+async def get_webhook_info(current_admin: dict = Depends(_require_admin_lazy)):
     """
-    Returns current webhook registration details directly from Telegram Bot API.
+    Returns current webhook registration details directly from Telegram Bot API (Admin only).
     """
     try:
         bot, _, _, _ = get_bot_app()

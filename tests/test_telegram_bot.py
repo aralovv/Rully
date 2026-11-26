@@ -19,7 +19,7 @@ from src.bot.widgets import build_progress_widget_html, build_result_widget_html
 from src.avtotest_product import AvtotestProductEngine
 from src.bot.config import EXAM_TOTAL_QUESTIONS, EXAM_PASSING_SCORE, EXAM_TIME_LIMIT_SECONDS
 
-DB_PATH = "master_database.sqlite"
+DB_PATH = os.getenv("DB_PATH", "master_database.sqlite")
 
 @pytest.fixture(autouse=True, scope="module")
 def cleanup_bot_test_users():

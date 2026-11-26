@@ -377,6 +377,98 @@ def tool_get_srs_review_queue(user_id: int, limit: int = 5, language: str = "uz_
             "srs_items": items,
         }
 
+
+def tool_analyze_weak_patterns(user_id: int, language: str = "uz_latn") -> Dict[str, Any]:
+    """Talabaning eng zaif mavzulari va takrorlanuvchi xatolar patternini tahlil qilish."""
+    lang = normalize_lang(language)
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT COALESCE(cq.category_id, 0) AS category_id,
+                   cq.category_name,
+                   COUNT(sa.id) AS total_attempts,
+                   COALESCE(SUM(sa.is_correct), 0) AS correct_attempts,
+                   COUNT(DISTINCT CASE WHEN um.is_resolved = 0 THEN um.canonical_id END) AS active_mistakes
+            FROM session_answers sa
+            JOIN user_sessions us ON sa.session_id = us.session_id
+            LEFT JOIN canonical_questions cq ON sa.canonical_id = cq.canonical_id
+            LEFT JOIN user_mistakes um ON um.user_id = us.user_id AND um.canonical_id = sa.canonical_id
+            WHERE us.user_id = ?
+            GROUP BY COALESCE(cq.category_id, 0), cq.category_name
+            HAVING total_attempts > 0
+            """,
+            (user_id,),
+        )
+        rows = [dict(r) for r in c.fetchall()]
+        weak = []
+        for r in rows:
+            att = int(r.get("total_attempts") or 0)
+            corr = int(r.get("correct_attempts") or 0)
+            acc = round((corr / att) * 100.0, 1) if att > 0 else 0.0
+            mistakes = int(r.get("active_mistakes") or 0)
+            if acc < 82.0 or mistakes > 0:
+                weak.append({
+                    "category_id": int(r.get("category_id") or 0),
+                    "category_name": localize_category(r.get("category_name"), lang),
+                    "attempts": att,
+                    "accuracy_pct": acc,
+                    "active_mistakes": mistakes,
+                })
+        weak.sort(key=lambda x: (-x["active_mistakes"], x["accuracy_pct"]))
+        top_mistakes = tool_get_user_mistakes(user_id, limit=3, language=lang).get("mistake_questions", [])
+        return {
+            "weak_categories_count": len(weak),
+            "weak_categories": weak[:5],
+            "top_mistake_questions": top_mistakes,
+        }
+
+
+def tool_generate_study_plan(user_id: int, days: int = 7, language: str = "uz_latn") -> Dict[str, Any]:
+    """Talabaning statistikasi, SRS qarzdorligi va zaif mavzulari asosida shaxsiy o'qish rejasini tuzish."""
+    lang = normalize_lang(language)
+    safe_days = max(3, min(int(days or 7), 14))
+    stats = tool_get_user_statistics(user_id, language=lang)
+    weak = tool_analyze_weak_patterns(user_id, language=lang)
+    srs_due = int(stats.get("srs_due_now") or 0)
+    mistakes_cnt = int(stats.get("mistakes_in_pool") or 0)
+    weak_cats = [w["category_name"] for w in weak.get("weak_categories", []) if w.get("category_name")]
+
+    plan = []
+    for d in range(1, safe_days + 1):
+        if d == 1 and srs_due > 0:
+            focus = "Aqlli Takrorlash (SM-2)" if lang == "uz_latn" else ("Ақлли Такрорлаш (SM-2)" if lang == "uz_cyrl" else "Интервальное повторение (SM-2)")
+            mode = "SRS"
+            target = min(25, max(10, srs_due))
+        elif d % 3 == 0:
+            focus = "Rasmiy 20 talik VMQ 408 Imtihon" if lang == "uz_latn" else ("Расмий 20 талик ВМҚ 408 Имтиҳон" if lang == "uz_cyrl" else "Пробный госэкзамен (20 вопросов)")
+            mode = "EXAM"
+            target = 20
+        elif mistakes_cnt > 0 and d in (2, 5):
+            focus = "Xatolar ustida ishlash" if lang == "uz_latn" else ("Хатолар устида ишлаш" if lang == "uz_cyrl" else "Работа над ошибками")
+            mode = "MISTAKES"
+            target = min(20, max(10, mistakes_cnt))
+        elif weak_cats:
+            topic = weak_cats[(d - 1) % len(weak_cats)]
+            focus = topic
+            mode = "CATEGORY"
+            target = 20
+        else:
+            focus = "Bilet va moslashuvchan mashq" if lang == "uz_latn" else ("Билет ва мослашувчан машқ" if lang == "uz_cyrl" else "Официальные билеты и практика")
+            mode = "BILET"
+            target = 20
+        plan.append({"day": d, "focus": focus, "recommended_mode": mode, "target_questions": target})
+
+    return {
+        "days": safe_days,
+        "summary_metrics": {
+            "active_mistakes": mistakes_cnt,
+            "srs_due_now": srs_due,
+            "weak_topics_top3": weak_cats[:3],
+        },
+        "plan": plan,
+    }
+
 # Gemini Function Declarations Schema
 GEMINI_TOOLS_DECLARATIONS = [
     {
@@ -447,6 +539,27 @@ GEMINI_TOOLS_DECLARATIONS = [
                 }
             }
         }
+    },
+    {
+        "name": "analyze_weak_patterns",
+        "description": "Talabaning qaysi YHQ bo'limlari va savol turlarida ko'p xato qilayotganini chuqur tahlil qilish.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {}
+        }
+    },
+    {
+        "name": "generate_study_plan",
+        "description": "Talabaning xatolari, SRS jadvali va imtihon tarixi asosida shaxsiy 7 kunlik tayyorgarlik rejasini tuzish.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "days": {
+                    "type": "INTEGER",
+                    "description": "Reja kunlari soni (standart 7)"
+                }
+            }
+        }
     }
 ]
 
@@ -456,4 +569,6 @@ TOOL_MAPPING = {
     "get_user_mistakes": lambda args, uid, lang="uz_latn": tool_get_user_mistakes(uid, args.get("limit", 5), language=lang),
     "get_user_statistics": lambda args, uid, lang="uz_latn": tool_get_user_statistics(uid, language=lang),
     "get_srs_review_queue": lambda args, uid, lang="uz_latn": tool_get_srs_review_queue(uid, args.get("limit", 5), language=lang),
+    "analyze_weak_patterns": lambda args, uid, lang="uz_latn": tool_analyze_weak_patterns(uid, language=lang),
+    "generate_study_plan": lambda args, uid, lang="uz_latn": tool_generate_study_plan(uid, args.get("days", 7), language=lang),
 }

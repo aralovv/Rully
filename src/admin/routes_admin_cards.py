@@ -14,12 +14,16 @@ from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from src.admin.deps import get_current_admin
+from src.admin.deps import get_current_admin, require_admin_role
 from src.db_adapter import execute_batch, get_db_connection
 from src.payments.order_manager import invalidate_payment_cache
 from src.security.crypto import encrypt_data, mask_card_number
 
-router = APIRouter(prefix="/api/admin/cards", tags=["Admin Payment Cards"])
+router = APIRouter(
+    prefix="/api/admin/cards",
+    tags=["Admin Payment Cards"],
+    dependencies=[Depends(require_admin_role("FINANCE"))],
+)
 DB_PATH = os.getenv("DB_PATH", "master_database.sqlite")
 
 def _get_connection():

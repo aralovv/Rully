@@ -79,7 +79,7 @@ async def api_create_payment_order(
             final_amount_uzs=order.get("final_amount_uzs", 0),
             order_id=order.get("order_id", "")
         ))
-        if message == "Yangi to‘lov buyurtmasi yaratildi.":
+        if "yaratildi" in (message or "").lower():
             asyncio.create_task(send_order_created_alert(order))
     except Exception:
         pass

@@ -9,6 +9,13 @@
   R.loadPrepareData = async function () {
     const lang = R.state.lang;
     try {
+      if (R.state.isGuest) {
+        if (!R.state.categories.length && R.state.publicOverview && Array.isArray(R.state.publicOverview.categories)) {
+          R.state.categories = R.state.publicOverview.categories;
+          R.renderPrepare();
+        }
+        return;
+      }
       const promises = [];
       if (!R.state.categories.length) {
         promises.push(R.api('/api/categories?lang=' + lang).then(function (d) { R.state.categories = d.categories || []; }));
@@ -148,7 +155,10 @@
 
     container.querySelectorAll('[data-start-cat]').forEach(function (btn) {
       btn.addEventListener('click', function () {
-        R.startSession({ session_type: 'CATEGORY', category_id: Number(btn.dataset.startCat), total_questions: 30 });
+        const cid = Number(btn.dataset.startCat);
+        const catObj = (R.state.categories || []).find(function (x) { return Number(x.category_id) === cid; });
+        const total = Math.min(80, Math.max(30, Number((catObj && catObj.question_count) || 30)));
+        R.startSession({ session_type: 'CATEGORY', category_id: cid, total_questions: total });
       });
     });
   }

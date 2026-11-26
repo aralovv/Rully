@@ -75,6 +75,30 @@ def get_subscription_plan(plan_id: str) -> Optional[Dict[str, Any]]:
     return _cached_plans.get(plan_id)
 
 
+def list_active_subscription_plans() -> List[Dict[str, Any]]:
+    """Returns active subscription plans dynamically from DB with Telegram Stars XTR pricing."""
+    global _cached_plans, _cached_plans_time
+    now = time.time()
+    if not _cached_plans or (now - _cached_plans_time) >= 60.0:
+        with _get_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT * FROM subscription_plans WHERE is_active = 1 ORDER BY duration_days ASC")
+            _cached_plans = {row["id"]: dict(row) for row in c.fetchall()}
+            _cached_plans_time = now
+    out = []
+    for p in sorted(_cached_plans.values(), key=lambda x: int(x.get("duration_days") or 0)):
+        price = int(p.get("base_price_uzs") or p.get("price_uzs") or 0)
+        out.append({
+            "id": p["id"],
+            "name": p["name"],
+            "duration_days": int(p["duration_days"]),
+            "price_uzs": price,
+            "price_formatted": f"{price:,} so‘m".replace(",", " "),
+            "stars_price": max(1, round(price / 180)),
+        })
+    return out
+
+
 def get_order_by_id(order_id: str) -> Optional[Dict[str, Any]]:
     """Retrieves full order details by order_id, enforcing real-time expiration check."""
     with _get_connection() as conn:
@@ -259,13 +283,18 @@ def create_or_get_payment_order(user_id: int, plan_id: str) -> Tuple[bool, str, 
         max_retries = 5
         created_order_id = None
 
+        late_grace_cutoff = (now_dt - timedelta(hours=2)).isoformat()
         for attempt in range(max_retries):
-            # Refresh active amounts for this card
+            # Exclude both active PENDING orders and recently EXPIRED orders (prevents late-payment suffix collision)
             c.execute("""
-                SELECT final_amount_uzs FROM payment_orders 
-                WHERE card_id = ? AND status = 'PENDING' AND expires_at > ?
-            """, (card["id"], now_str))
-            active_amounts = set(row[0] for row in c.fetchall())
+                SELECT final_amount_uzs FROM payment_orders
+                WHERE card_id = ?
+                  AND (
+                      (status = 'PENDING' AND expires_at > ?)
+                      OR (status = 'EXPIRED' AND expires_at > ?)
+                  )
+            """, (card["id"], now_str, late_grace_cutoff))
+            reserved_amounts = set(row[0] for row in c.fetchall())
 
             candidate_suffixes = list(range(1, 1000))
             secrets.SystemRandom().shuffle(candidate_suffixes)
@@ -273,9 +302,21 @@ def create_or_get_payment_order(user_id: int, plan_id: str) -> Tuple[bool, str, 
             allocated_suffix = None
             for s in candidate_suffixes:
                 candidate_amount = base_price + s
-                if candidate_amount not in active_amounts:
+                if candidate_amount not in reserved_amounts:
                     allocated_suffix = s
                     break
+
+            if allocated_suffix is None:
+                # Fallback strictly to only active unexpired PENDING check when suffix pool is heavily contended
+                c.execute(
+                    "SELECT final_amount_uzs FROM payment_orders WHERE card_id = ? AND status = 'PENDING' AND expires_at > ?",
+                    (card["id"], now_str),
+                )
+                active_only = set(row[0] for row in c.fetchall())
+                for s in candidate_suffixes:
+                    if (base_price + s) not in active_only:
+                        allocated_suffix = s
+                        break
 
             if allocated_suffix is None:
                 return False, "To‘lov tizimi ayni paytda band. Iltimos, 1-2 daqiqadan so‘ng qayta urinib ko‘ring.", None

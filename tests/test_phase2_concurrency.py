@@ -7,11 +7,12 @@ Phase 2 (P1) Verification Tests:
 import time
 import threading
 import pytest
+import os
 from src.db_adapter import get_db_connection, execute_batch, TursoRow
 from src.security.rate_limiter import BoundedTTLCache
 from src.bot.database import BotDatabase
 
-DB_PATH = "master_database.sqlite"
+DB_PATH = os.getenv("DB_PATH", "master_database.sqlite")
 
 @pytest.fixture(scope="module")
 def bot_db():

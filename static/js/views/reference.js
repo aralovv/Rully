@@ -31,8 +31,8 @@
       badge = '<span class="badge-pill badge-emerald">' + R.icon('checkCircle', 'xs') + ' ' + R.escHtml(R.t('prov_verified_law')) + '</span>';
     } else if (status === 'VERIFIED_FIRST_AID_OR_TECH') {
       badge = '<span class="badge-pill badge-primary">' + R.icon('checkCircle', 'xs') + ' ' + R.escHtml(R.t('prov_verified_tech')) + '</span>';
-    } else if (status === 'UNRESOLVED_LEGAL_REVIEW') {
-      badge = '<span class="badge-pill badge-amber">' + R.icon('alertTriangle', 'xs') + ' ' + R.escHtml(R.t('prov_pending_review')) + '</span>';
+    } else if (displayRef) {
+      badge = '<span class="badge-pill badge-neutral">' + R.icon('bookOpen', 'xs') + ' ' + R.escHtml(R.t('prov_ref_law')) + '</span>';
     }
 
     const refChip = displayRef
@@ -132,6 +132,15 @@
     if (g === 'priority_turn') {
       return '<path d="M36 46V26h14" fill="none" stroke="#111827" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 26h14V14" fill="none" stroke="#111827" stroke-width="2" stroke-linecap="round"/>';
     }
+    if (g === 'plate_range') {
+      return '<path d="M14 38V17" stroke="#111827" stroke-width="2.6" stroke-linecap="round"/><polygon points="14,12 10,19 18,19" fill="#111827"/>' +
+        '<path d="M58 38V17" stroke="#111827" stroke-width="2.6" stroke-linecap="round"/><polygon points="58,12 54,19 62,19" fill="#111827"/>' +
+        '<text x="36" y="31" font-size="12" font-weight="800" fill="#111827" text-anchor="middle" font-family="var(--font-mono)">100m</text>';
+    }
+    if (g === 'plate_down') {
+      return '<path d="M56 15v21" stroke="#111827" stroke-width="2.6" stroke-linecap="round"/><polygon points="56,41 52,34 60,34" fill="#111827"/>' +
+        '<text x="29" y="31" font-size="13" font-weight="800" fill="#111827" text-anchor="middle" font-family="var(--font-mono)">10 m</text>';
+    }
     return '';
   }
 
@@ -194,9 +203,15 @@
     if (sh === 'plate_white') {
       return '<svg class="sign-svg" viewBox="0 0 72 52" aria-hidden="true">' +
         '<rect x="4" y="8" width="64" height="36" rx="5" fill="#FFFFFF" stroke="#111827" stroke-width="2.5"/>' +
-        (s.glyph === 'priority_turn'
+        ((s.glyph === 'priority_turn' || s.glyph === 'plate_range' || s.glyph === 'plate_down')
           ? glyph
           : '<text x="36" y="31" font-size="13" font-weight="800" fill="#111827" text-anchor="middle" font-family="var(--font-mono)">' + lbl + '</text>') +
+        '</svg>';
+    }
+    if (sh === 'circle_slash') {
+      return '<svg class="sign-svg" viewBox="0 0 72 72" aria-hidden="true">' +
+        '<circle cx="36" cy="36" r="29" fill="#FFFFFF" stroke="#DC2626" stroke-width="7"/>' +
+        glyph +
         '</svg>';
     }
     return '<svg class="sign-svg" viewBox="0 0 72 72" aria-hidden="true">' +

@@ -21,7 +21,7 @@ async def show_user_results(event: Message | CallbackQuery, db: BotDatabase):
 
     stats = db.get_user_stats(user_id)
     history = db.get_user_exam_history(user_id, limit=5)
-    readiness = db.compute_driver_readiness(user_id)
+    readiness = stats.get("readiness_score", 0)
 
     title = get_str("stats_title", lang)
     readiness_line = (

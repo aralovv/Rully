@@ -159,9 +159,227 @@
     R.openModal('daily-goal-modal');
   };
 
+  R.openGuestSyncModal = function () {
+    const titleEl = document.getElementById('info-modal-title');
+    const bodyEl = document.getElementById('info-modal-body');
+    if (!bodyEl) return;
+    if (titleEl) titleEl.textContent = R.t('web_gate_title');
+    bodyEl.innerHTML =
+      '<div class="surface-card" style="text-align:center;">' +
+      '  <div class="brand-mark" style="width:48px;height:48px;font-size:22px;margin:0 auto 12px;">R</div>' +
+      '  <p style="font-size:13.5px;color:var(--text-secondary);margin-bottom:16px;">' + R.escHtml(R.t('web_gate_desc')) + '</p>' +
+      '  <a href="https://t.me/rully_uz_bot" target="_blank" rel="noopener" class="btn btn-primary btn-block">' +
+      R.icon('telegram', 'sm') + '<span>' + R.escHtml(R.t('web_gate_btn')) + '</span>' +
+      '  </a>' +
+      '</div>';
+    R.openModal('info-modal');
+  };
+
+  R.maybeShowOnboarding = function () {
+    try {
+      if (localStorage.getItem('rully_onboarded') === '1') return;
+    } catch (e) {}
+    const stats = R.state.stats || {};
+    if (Number(stats.total_questions_answered || 0) > 0) return;
+
+    const body = document.getElementById('onboarding-modal-body');
+    if (!body) return;
+
+    function renderOnboardingBody() {
+      const curGoal = Number((R.state.streak && R.state.streak.daily_goal_questions) || 20);
+      body.innerHTML =
+        '<p style="font-size:13px;color:var(--text-secondary);">' + R.escHtml(R.t('onboarding_desc')) + '</p>' +
+        '<div>' +
+        '  <div style="font-size:12.5px;font-weight:700;margin-bottom:6px;">1. ' + R.escHtml(R.t('language_select_title')) + '</div>' +
+        '  <div class="seg-pills" style="grid-template-columns:repeat(3,1fr);">' +
+        '    <button type="button" class="seg-pill ' + (R.state.lang === 'uz_latn' ? 'active' : '') + '" data-ob-lang="uz_latn">O‘zbekcha</button>' +
+        '    <button type="button" class="seg-pill ' + (R.state.lang === 'uz_cyrl' ? 'active' : '') + '" data-ob-lang="uz_cyrl">Ўзбекча</button>' +
+        '    <button type="button" class="seg-pill ' + (R.state.lang === 'ru' ? 'active' : '') + '" data-ob-lang="ru">Русский</button>' +
+        '  </div>' +
+        '</div>' +
+        '<div>' +
+        '  <div style="font-size:12.5px;font-weight:700;margin-bottom:6px;">2. ' + R.escHtml(R.t('daily_goal_label')) + '</div>' +
+        '  <div class="seg-pills">' +
+        [10, 20, 30, 50].map(function (g) {
+          return '<button type="button" class="seg-pill ' + (curGoal === g ? 'active' : '') + '" data-ob-goal="' + g + '">' + g + '</button>';
+        }).join('') +
+        '  </div>' +
+        '</div>' +
+        '<button type="button" class="btn btn-primary btn-block" id="btn-ob-finish">' + R.escHtml(R.t('btn_start_exam')) + ' →</button>';
+
+      body.querySelectorAll('[data-ob-lang]').forEach(function (btn) {
+        btn.addEventListener('click', async function () {
+          await R.changeLanguage(btn.dataset.obLang);
+          renderOnboardingBody();
+        });
+      });
+      body.querySelectorAll('[data-ob-goal]').forEach(function (btn) {
+        btn.addEventListener('click', async function () {
+          const g = Number(btn.dataset.obGoal);
+          R.state.streak.daily_goal_questions = g;
+          try { await R.api('/api/user/daily-goal', { method: 'POST', body: { daily_goal: g } }); } catch (e) {}
+          R.syncShellUI();
+          renderOnboardingBody();
+        });
+      });
+      document.getElementById('btn-ob-finish')?.addEventListener('click', function () {
+        try { localStorage.setItem('rully_onboarded', '1'); } catch (e) {}
+        R.closeModal('onboarding-modal');
+        R.renderHome();
+      });
+    }
+
+    renderOnboardingBody();
+    R.openModal('onboarding-modal');
+  };
+
+  function renderGuestHome(root) {
+    const ov = R.state.publicOverview || {};
+    const diag = R.state.guestDiag || { questions: [], index: 0, answers: {}, checked: null };
+    const qs = diag.questions || [];
+    const totalQ = ov.total_questions || 1327;
+    let diagWidgetHtml = '';
+
+    if (diag.checked) {
+      const res = diag.checked;
+      diagWidgetHtml =
+        '<div class="surface-card diag-guest-card">' +
+        '  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">' +
+        '    <strong>' + R.escHtml(R.t('guest_diag_done')) + '</strong>' +
+        '    <span class="badge-pill ' + (res.percentage >= 80 ? 'badge-emerald' : 'badge-amber') + ' font-mono">' + res.correct_count + ' / ' + res.total + ' (' + res.percentage + '%)</span>' +
+        '  </div>' +
+        '  <div class="list-stack" style="margin-bottom:12px;">' +
+        (res.items || []).map(function (it, idx) {
+          return '<div class="surface-card" style="padding:10px;background:var(--bg-subtle);">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
+            '  <span class="font-mono" style="font-weight:700;font-size:12px;">#' + (idx + 1) + ' (' + R.escHtml(it.selected_key) + ' → ' + R.escHtml(it.correct_option_key) + ')</span>' +
+            '  <span class="badge-pill ' + (it.is_correct ? 'badge-emerald' : 'badge-rose') + '">' + R.escHtml(it.is_correct ? R.t('correct_badge') : R.t('wrong_badge')) + '</span>' +
+            '</div>' +
+            (it.explanation ? '<p style="font-size:12px;color:var(--text-secondary);">' + R.escHtml(it.explanation) + '</p>' : '') +
+            '</div>';
+        }).join('') +
+        '  </div>' +
+        '  <div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+        '    <a href="https://t.me/rully_uz_bot" target="_blank" rel="noopener" class="btn btn-primary" style="flex:1;">' + R.icon('telegram', 'sm') + '<span>' + R.escHtml(R.t('guest_sync_tg')) + '</span></a>' +
+        '    <button type="button" class="btn btn-secondary" id="guest-diag-restart">' + R.escHtml(R.t('btn_retake')) + '</button>' +
+        '  </div>' +
+        '</div>';
+    } else if (qs.length && diag.active) {
+      const q = qs[Math.min(diag.index, qs.length - 1)];
+      const chosen = diag.answers[q.canonical_id];
+      const imgUrl = R.safeUrl(q.image_url);
+      diagWidgetHtml =
+        '<div class="surface-card diag-guest-card">' +
+        '  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+        '    <span class="badge-pill badge-primary">' + R.escHtml(R.t('guest_diag_title')) + '</span>' +
+        '    <span class="badge-pill badge-neutral font-mono">' + (diag.index + 1) + ' / ' + qs.length + '</span>' +
+        '  </div>' +
+        (imgUrl ? '<div class="quiz-media-frame" style="margin-bottom:10px;max-height:200px;"><img src="' + R.escHtml(imgUrl) + '" alt="Diagnostika"></div>' : '') +
+        '  <p style="font-weight:700;font-size:14.5px;margin-bottom:10px;">' + R.escHtml(q.question_text) + '</p>' +
+        '  <div class="options-stack">' +
+        (q.options || []).map(function (o) {
+          return '<button type="button" class="option-btn ' + (chosen === o.option_key ? 'is-correct' : '') + '" data-gdiag-opt="' + R.escHtml(o.option_key) + '">' +
+            '<span class="option-key-badge">' + R.escHtml(o.option_key) + '</span>' +
+            '<span class="option-text">' + R.escHtml(o.text) + '</span>' +
+            '</button>';
+        }).join('') +
+        '  </div>' +
+        '</div>';
+    }
+
+    root.innerHTML =
+      '<div class="home-bento-top">' +
+      '  <section class="surface-card" style="display:flex;flex-direction:column;justify-content:space-between;gap:12px;">' +
+      '    <div>' +
+      '      <span class="badge-pill badge-primary" style="margin-bottom:8px;">' + R.icon('sparkles', 'xs') + ' ' + R.escHtml(R.t('guest_hero_badge')) + '</span>' +
+      '      <h1 style="font-family:var(--font-display);font-size:20px;font-weight:800;line-height:1.25;">' + R.escHtml(R.t('guest_hero_title')) + '</h1>' +
+      '      <p style="font-size:13px;color:var(--text-secondary);margin-top:6px;">' + R.escHtml(R.t('guest_hero_desc')) + '</p>' +
+      '    </div>' +
+      '    <button type="button" class="btn btn-exam-ignition btn-block" id="guest-start-diag-btn">' + R.icon('zap', 'sm') + '<span>' + R.escHtml(R.t('guest_diag_btn')) + '</span></button>' +
+      '  </section>' +
+      '  <section class="exam-launch-card">' +
+      '    <div class="exam-launch-top">' +
+      '      <div>' +
+      '        <div class="exam-launch-eyebrow"><span class="cockpit-pulse-dot" aria-hidden="true"></span><span>VMQ 408 / 172</span></div>' +
+      '        <div class="exam-launch-title">' + totalQ.toLocaleString() + '+ ' + R.escHtml(R.t('nav_tests')) + '</div>' +
+      '      </div>' +
+      '      <span class="cockpit-quota-pill">TELEGRAM</span>' +
+      '    </div>' +
+      '    <p style="font-size:12.5px;color:rgba(255,255,255,0.85);margin-bottom:10px;">' + R.escHtml(R.t('web_gate_desc')) + '</p>' +
+      '    <a href="https://t.me/rully_uz_bot" target="_blank" rel="noopener" class="btn btn-emerald btn-block">' + R.icon('telegram', 'sm') + '<span>' + R.escHtml(R.t('guest_sync_tg')) + '</span></a>' +
+      '  </section>' +
+      '</div>' +
+      diagWidgetHtml +
+      '<div class="section-heading"><span>' + R.escHtml(R.t('section_quick_start')) + '</span></div>' +
+      '<div class="bento-action-grid">' +
+      '  <button type="button" class="surface-card card-interactive action-tile" id="guest-tile-signs"><div class="tile-icon-box badge-primary">' + R.icon('compass', 'lg') + '</div><div class="tile-body"><div class="tile-title">' + R.escHtml(R.t('tab_signs')) + '</div><div class="tile-desc">' + R.escHtml(R.t('home_signs_desc')) + '</div></div></button>' +
+      '  <button type="button" class="surface-card card-interactive action-tile" id="guest-tile-rules"><div class="tile-icon-box badge-emerald">' + R.icon('bookOpen', 'lg') + '</div><div class="tile-body"><div class="tile-title">' + R.escHtml(R.t('ref_law_title')) + '</div><div class="tile-desc">' + R.escHtml(R.t('home_rules_desc')) + '</div></div></button>' +
+      '  <button type="button" class="surface-card card-interactive action-tile" id="guest-tile-amaliy"><div class="tile-icon-box badge-amber">' + R.icon('steeringWheel', 'lg') + '</div><div class="tile-body"><div class="tile-title">' + R.escHtml(R.t('amaliy_sim_tab')) + '</div><div class="tile-desc">' + R.escHtml(R.t('card_amaliy_desc')) + '</div></div></button>' +
+      '  <button type="button" class="surface-card card-interactive action-tile" id="guest-tile-topics"><div class="tile-icon-box badge-neutral">' + R.icon('layers', 'lg') + '</div><div class="tile-body"><div class="tile-title">' + R.escHtml(R.t('card_categories_title')) + '</div><div class="tile-desc">' + R.escHtml(R.t('card_categories_desc')) + '</div></div></button>' +
+      '</div>';
+
+    document.getElementById('guest-start-diag-btn')?.addEventListener('click', function () {
+      R.state.guestDiag = {
+        questions: (R.state.publicOverview && R.state.publicOverview.diagnostic_questions) || [],
+        index: 0,
+        answers: {},
+        checked: null,
+        active: true
+      };
+      if (!R.state.guestDiag.questions.length) R.openGuestSyncModal();
+      else R.renderHome();
+    });
+
+    document.getElementById('guest-diag-restart')?.addEventListener('click', function () {
+      R.state.guestDiag = {
+        questions: (R.state.publicOverview && R.state.publicOverview.diagnostic_questions) || [],
+        index: 0,
+        answers: {},
+        checked: null,
+        active: true
+      };
+      R.renderHome();
+    });
+
+    root.querySelectorAll('[data-gdiag-opt]').forEach(function (btn) {
+      btn.addEventListener('click', async function () {
+        const q = qs[diag.index];
+        if (!q) return;
+        diag.answers[q.canonical_id] = btn.dataset.gdiagOpt;
+        if (diag.index < qs.length - 1) {
+          diag.index += 1;
+          R.renderHome();
+        } else {
+          try {
+            const list = Object.keys(diag.answers).map(function (cid) {
+              return { canonical_id: cid, selected_key: diag.answers[cid] };
+            });
+            const checked = await R.api('/api/public/diagnostic/check', {
+              method: 'POST',
+              body: { language: R.state.lang, answers: list }
+            });
+            diag.checked = checked;
+            diag.active = false;
+            R.renderHome();
+          } catch (e) { R.showToast(e.message || R.t('ai_net_error')); }
+        }
+      });
+    });
+
+    document.getElementById('guest-tile-signs')?.addEventListener('click', function () { R.state.prepareSubtab = 'signs'; R.navigateTo('tests'); });
+    document.getElementById('guest-tile-rules')?.addEventListener('click', function () { R.state.prepareSubtab = 'rules'; R.navigateTo('tests'); });
+    document.getElementById('guest-tile-amaliy')?.addEventListener('click', function () { R.state.amaliySubtab = 'simulator'; R.navigateTo('amaliy'); });
+    document.getElementById('guest-tile-topics')?.addEventListener('click', function () { R.state.prepareSubtab = 'topics'; R.navigateTo('tests'); });
+  }
+
   R.renderHome = function () {
     const root = document.getElementById('view-home');
     if (!root) return;
+
+    if (R.state.isGuest) {
+      renderGuestHome(root);
+      return;
+    }
 
     if (R.state.authPending && !R.state.stats) {
       root.innerHTML =
@@ -179,7 +397,7 @@
     }
 
     const stats = R.state.stats || {};
-    const streak = R.state.streak || { current_streak: 1, daily_goal_questions: 20, today_questions_count: 0 };
+    const streak = R.state.streak || { current_streak: 0, daily_goal_questions: 20, today_questions_count: 0 };
     const sub = R.state.subscription || {};
     const ft = R.state.freeTier || {};
     const analytics = R.state.analytics || {};
@@ -237,7 +455,19 @@
       { key: 'pillar_streak', val: pillars.pace_and_streak || 0 }
     ];
 
+    const draft = typeof R.getSavedQuizDraft === 'function' ? R.getSavedQuizDraft() : null;
+    const resumeHtml = draft
+      ? '<div class="surface-card resume-banner">' +
+        '  <div><strong>' + R.escHtml(R.t('quiz_resume_title')) + '</strong><div style="font-size:12px;color:var(--text-secondary);">' + R.escHtml(draft.sessionType) + ' • ' + Object.keys(draft.answers || {}).length + ' / ' + (draft.questions || []).length + '</div></div>' +
+        '  <div style="display:flex;gap:6px;">' +
+        '    <button type="button" class="btn btn-primary btn-sm" id="home-resume-quiz-btn">' + R.escHtml(R.t('quiz_resume_btn')) + '</button>' +
+        '    <button type="button" class="btn btn-ghost btn-sm" id="home-discard-quiz-btn">' + R.escHtml(R.t('quiz_resume_discard')) + '</button>' +
+        '  </div>' +
+        '</div>'
+      : '';
+
     root.innerHTML =
+      resumeHtml +
       '<div class="home-bento-top">' +
       '  <section class="surface-card readiness-hero" style="--gauge-accent:' + meta.stroke + ';--gauge-glow:' + meta.glow + ';">' +
       '    <div class="readiness-top-row">' +
@@ -307,7 +537,7 @@
       '        </div>' +
       '        <div class="progress-track"><div class="progress-fill ' + (goalPct >= 100 ? 'emerald' : '') + '" style="width:' + goalPct + '%"></div></div>' +
       '        <div style="display:flex;align-items:center;justify-content:space-between;font-size:11.5px;color:var(--text-muted);margin-top:2px;">' +
-      '          <span>' + R.icon('flame', 'xs') + ' ' + R.escHtml(R.t('streak_badge', { days: streak.current_streak || 1 })) + '</span>' +
+      '          <span>' + R.icon('flame', 'xs') + ' ' + R.escHtml(R.t('streak_badge', { days: streak.current_streak || 0 })) + '</span>' +
       '          <span>' + (goalPct >= 100 ? R.escHtml(R.t('daily_goal_done_badge')) : goalPct + '%') + '</span>' +
       '        </div>' +
       '      </div>' +
@@ -370,6 +600,8 @@
       '</div>';
 
     // Bind events
+    document.getElementById('home-resume-quiz-btn')?.addEventListener('click', function () { R.resumeSavedQuizSession(); });
+    document.getElementById('home-discard-quiz-btn')?.addEventListener('click', function () { R.discardSavedQuizDraft(); });
     const diagBtn = document.getElementById('home-diag-btn');
     if (diagBtn) diagBtn.addEventListener('click', R.openReadinessModal);
 

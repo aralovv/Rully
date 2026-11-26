@@ -13,8 +13,14 @@ services:
         sync: false
       - key: BOT_TOKEN
         sync: false
+      - key: ENVIRONMENT
+        value: production
       - key: SECRET_KEY
         generateValue: true
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ENABLE_INTERNAL_QUESTION_SYNC
+        value: "false"
       - key: ADMIN_IDS
         sync: false
       - key: ADMIN_TELEGRAM_ID

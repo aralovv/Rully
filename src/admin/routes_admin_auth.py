@@ -17,7 +17,8 @@ from src.admin.auth_service import (
     revoke_admin_session
 )
 from src.admin.deps import get_current_admin
-from src.security.rate_limiter import get_client_ip
+from src.security.rate_limiter import get_client_ip, rate_limiter
+from src.security.crypto import generate_session_token
 
 router = APIRouter(prefix="/api/admin/auth", tags=["Admin Auth"])
 
@@ -36,6 +37,9 @@ class AdminOTPVerifyRequest(BaseModel):
 async def admin_login(req: AdminLoginRequest, request: Request):
     """Step 1: Verifies username/password and sends OTP to Admin Telegram."""
     client_ip = get_client_ip(request)
+    allowed, _, retry_after = rate_limiter.is_allowed(f"admin_login_ip:{client_ip}", max_requests=10, window_seconds=300)
+    if not allowed:
+        raise HTTPException(status_code=429, detail=f"Juda ko‘p urinish. {int(retry_after)} soniyadan so‘ng urinib ko‘ring.")
     user_agent = request.headers.get("user-agent", "")
 
     success, message, data = await initiate_admin_login(
@@ -57,8 +61,11 @@ async def admin_login(req: AdminLoginRequest, request: Request):
 
 @router.post("/otp/verify")
 async def admin_otp_verify(req: AdminOTPVerifyRequest, request: Request, response: Response):
-    """Step 2: Verifies single-use OTP and establishes authenticated session."""
+    """Step 2: Verifies single-use OTP and establishes authenticated HttpOnly session + CSRF cookie."""
     client_ip = get_client_ip(request)
+    allowed, _, retry_after = rate_limiter.is_allowed(f"admin_otp_ip:{client_ip}", max_requests=15, window_seconds=300)
+    if not allowed:
+        raise HTTPException(status_code=429, detail=f"Juda ko‘p OTP urinishlari. {int(retry_after)} soniyadan so‘ng urinib ko‘ring.")
     user_agent = request.headers.get("user-agent", "")
 
     success, message, data = await verify_admin_otp(
@@ -81,10 +88,20 @@ async def admin_otp_verify(req: AdminOTPVerifyRequest, request: Request, respons
         or request.url.scheme == "https"
     )
 
+    csrf_token = generate_session_token()
     response.set_cookie(
         key="admin_session",
         value=session_token,
         httponly=True,
+        samesite="lax",
+        secure=is_secure,
+        max_age=12 * 3600,
+        path="/"
+    )
+    response.set_cookie(
+        key="rully_csrf",
+        value=csrf_token,
+        httponly=False,
         samesite="lax",
         secure=is_secure,
         max_age=12 * 3600,
@@ -96,7 +113,6 @@ async def admin_otp_verify(req: AdminOTPVerifyRequest, request: Request, respons
         "message": message,
         "data": {
             "admin": data["admin"],
-            "session_token": session_token,
             "expires_at": data["expires_at"]
         }
     }
@@ -110,6 +126,7 @@ async def admin_logout(response: Response, current_admin: dict = Depends(get_cur
         revoke_admin_session(session_id)
 
     response.delete_cookie(key="admin_session", path="/")
+    response.delete_cookie(key="rully_csrf", path="/")
     return {"ok": True, "message": "Muvaffaqiyatli chiqildi"}
 
 

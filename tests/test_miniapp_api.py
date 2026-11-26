@@ -13,9 +13,10 @@ from src.api.security import generate_dev_init_data, verify_telegram_init_data
 client = TestClient(app)
 
 # 1. Security & Cryptographic Verification Tests
-def test_security_hmac_verification():
-    # Valid generation with active token
-    active_token = os.getenv("BOT_TOKEN") or "5875526565:AAEwGdyseiyejQQkf67_WEkvKX0cz0EX94s"
+def test_security_hmac_verification(monkeypatch):
+    # Valid generation with active or test mock token
+    mock_tok = "0000000000:TEST_MOCK_BOT_TOKEN_NOT_REAL"
+    active_token = os.getenv("BOT_TOKEN") or mock_tok
     init_data = generate_dev_init_data(user_id=8809526955, bot_token=active_token)
     is_valid, user_data = verify_telegram_init_data(init_data)
     assert is_valid is True
@@ -24,7 +25,9 @@ def test_security_hmac_verification():
     assert user_data["username"] == "kurs_savdo"
 
     # Multi-token fallback with previous token
-    init_data_old = generate_dev_init_data(user_id=8809526955, bot_token="5875526565:AAEwGdyseiyejQQkf67_WEkvKX0cz0EX94s")
+    prev_tok = "0000000001:TEST_PREVIOUS_ROTATION_TOKEN"
+    monkeypatch.setenv("BOT_PREVIOUS_TOKENS", prev_tok)
+    init_data_old = generate_dev_init_data(user_id=8809526955, bot_token=prev_tok)
     is_valid_old, user_data_old = verify_telegram_init_data(init_data_old)
     assert is_valid_old is True
     assert user_data_old["id"] == 8809526955
@@ -124,7 +127,7 @@ def test_question_detail_endpoint():
 # 6. Exam Session Lifecycle & Subscription Enforcement (Free Block -> Activate -> Start -> Answer -> Finish)
 def test_exam_session_lifecycle():
     from src.bot.database import BotDatabase
-    db = BotDatabase("master_database.sqlite")
+    db = BotDatabase(os.getenv("DB_PATH", "master_database.sqlite"))
     # Reset dev user to free tier first
     with db._get_connection() as conn:
         conn.execute("UPDATE telegram_users SET is_pro = 0, subscription_tier = 'free', subscription_expires_at = NULL WHERE user_id = 8809526955")
@@ -370,7 +373,7 @@ def test_subscription_plans_and_flow():
 # 14. Custom Quiz Subscription Limits (Free: 10 & 20 allowed, 30+ locked)
 def test_custom_quiz_subscription_limits():
     from src.bot.database import BotDatabase
-    db = BotDatabase("master_database.sqlite")
+    db = BotDatabase(os.getenv("DB_PATH", "master_database.sqlite"))
     # Reset dev user to free tier
     with db._get_connection() as conn:
         conn.execute("UPDATE telegram_users SET is_pro = 0, subscription_tier = 'free', subscription_expires_at = NULL WHERE user_id = 8809526955")

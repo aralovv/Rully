@@ -6,19 +6,20 @@ import os
 import json
 import time
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from src.api.deps import get_current_user, get_db
 from src.api.routes_auth import invalidate_auth_cache
+from src.analytics.tracker import log_user_event
 from src.bot.database import BotDatabase
 from src.avtotest_product import AvtotestProductEngine, QuestionItem
 from src.bot.category_localization import localize_category
 from src.db.reference_catalog import get_law_reference, get_road_signs_reference
-from src.security.rate_limiter import rate_limiter, BoundedTTLCache
+from src.security.rate_limiter import rate_limiter, BoundedTTLCache, get_client_ip
 
 router = APIRouter(prefix="/api", tags=["Theory & Exam"])
-engine = AvtotestProductEngine("master_database.sqlite")
+engine = AvtotestProductEngine(os.getenv("DB_PATH", "master_database.sqlite"))
 
 # 1. Categories cache (clears cleanly when engine or admin updates catalog_version)
 _categories_cache = BoundedTTLCache[str, Any](maxsize=16, ttl_seconds=300.0)
@@ -122,6 +123,7 @@ class SessionStartRequest(BaseModel):
     category_id: Optional[int] = None
     ticket_number: Optional[int] = None
     total_questions: Optional[int] = 20
+    offset: Optional[int] = 0
     time_limit_seconds: Optional[int] = 25 * 60
     show_answer: Optional[bool] = True
     show_explanation: Optional[bool] = True
@@ -147,8 +149,8 @@ def start_session(
     if lang not in ["uz_latn", "uz_cyrl", "ru"]:
         lang = "uz_latn"
 
-    # Enforce Free Tier (2 free exam sessions) & PRO subscription
-    if req.session_type in ["EXAM", "MISTAKES"]:
+    # Enforce Free Tier (2 free exam sessions) & PRO subscription; Mistakes Bank is free for all users!
+    if req.session_type == "EXAM":
         ft = db.get_user_free_tier_status(user_id)
         if not ft["has_access"]:
             raise HTTPException(
@@ -176,7 +178,14 @@ def start_session(
     elif req.session_type == "CATEGORY":
         if req.category_id is None:
             raise HTTPException(status_code=400, detail="category_id required for CATEGORY session")
-        loaded_questions = engine.get_questions_by_category(req.category_id, language=lang, limit=req.total_questions)
+        solved_ok = set(db.get_solved_correct_ids(user_id))
+        loaded_questions = engine.get_questions_by_category(
+            req.category_id,
+            language=lang,
+            limit=req.total_questions,
+            solved_ids=solved_ok,
+            offset=max(0, int(req.offset or 0)),
+        )
         question_ids = [q.canonical_id for q in loaded_questions]
         time_limit = req.time_limit_seconds or 0
     elif req.session_type == "MISTAKES":
@@ -253,11 +262,12 @@ def start_session(
     # Fetch serialized question objects (using bookmarks fetched atomically with session)
     bookmarks = session_info.get("bookmark_ids") or set()
     srs_map = db.get_question_srs_map(user_id, question_ids) if req.session_type in ("SRS", "ADAPTIVE") else {}
+    reveal_correct_upfront = req.session_type != "EXAM"
     questions_list = []
     for q in loaded_questions:
         if not q:
             continue
-        item = serialize_question(q, is_bookmarked=(q.canonical_id in bookmarks), include_correct=True)
+        item = serialize_question(q, is_bookmarked=(q.canonical_id in bookmarks), include_correct=reveal_correct_upfront)
         if q.canonical_id in srs_map:
             item["srs_meta"] = srs_map[q.canonical_id]
         questions_list.append(item)
@@ -274,6 +284,10 @@ def start_session(
     }
     if queue_breakdown is not None:
         payload["queue_breakdown"] = queue_breakdown
+    try:
+        log_user_event(user_id, "QUIZ_STARTED", {"session_type": req.session_type, "count": len(questions_list)})
+    except Exception:
+        pass
     return payload
 
 # 4. Submit Answer
@@ -651,6 +665,7 @@ def get_reference_law_endpoint(
 class SrsReviewRequest(BaseModel):
     canonical_id: str
     quality: int = Field(..., ge=0, le=5)
+    recalibrate: bool = False
 
 
 @router.get("/srs/queue")
@@ -705,11 +720,112 @@ def submit_srs_review_endpoint(
         user_id=user_id,
         canonical_id=req.canonical_id,
         quality=req.quality,
+        recalibrate=req.recalibrate,
     )
     invalidate_auth_cache(user_id)
     return {
         "ok": True,
         "canonical_id": req.canonical_id,
         "srs": srs_state,
+    }
+
+
+# 14. Public Freemium Web Preview (Anonymous 60-Second Diagnostic + Catalog Overview)
+class PublicDiagnosticAnswer(BaseModel):
+    canonical_id: str
+    selected_key: str
+
+
+class PublicDiagnosticCheckRequest(BaseModel):
+    language: Optional[str] = "uz_latn"
+    answers: List[PublicDiagnosticAnswer] = Field(..., min_length=1, max_length=10)
+
+
+@router.get("/public/overview")
+def get_public_freemium_overview(
+    request: Request,
+    response: Response,
+    lang: Optional[str] = Query("uz_latn"),
+):
+    ip = get_client_ip(request)
+    allowed, _, retry_after = rate_limiter.is_allowed(f"pub_ov:{ip}", max_requests=40, window_seconds=60)
+    if not allowed:
+        raise HTTPException(status_code=429, detail=f"Too many requests. Wait {int(retry_after)}s.")
+
+    selected_lang = lang if lang in ("uz_latn", "uz_cyrl", "ru") else "uz_latn"
+    cats = engine.get_categories(selected_lang)
+
+    # Pick 5 deterministic representative diagnostic questions across diverse categories (images first when present)
+    engine.ensure_fresh_cache()
+    picked = []
+    used_cats = set()
+    all_ids = list(engine._all_canonical_ids or [])
+    for cid in all_ids:
+        q = engine.get_question(cid, language=selected_lang, include_answer_key=False)
+        if not q or q.category_id in used_cats:
+            continue
+        if len(picked) < 3 and not q.has_image:
+            continue
+        picked.append(serialize_question(q, is_bookmarked=False, include_correct=False))
+        used_cats.add(q.category_id)
+        if len(picked) >= 5:
+            break
+    if len(picked) < 5:
+        for cid in all_ids:
+            if any(p["canonical_id"] == cid for p in picked):
+                continue
+            q = engine.get_question(cid, language=selected_lang, include_answer_key=False)
+            if q:
+                picked.append(serialize_question(q, is_bookmarked=False, include_correct=False))
+            if len(picked) >= 5:
+                break
+
+    response.headers["Cache-Control"] = "public, max-age=120, s-maxage=600"
+    return {
+        "ok": True,
+        "language": selected_lang,
+        "total_questions": engine.get_total_question_count(),
+        "total_categories": len(cats),
+        "categories": cats,
+        "diagnostic_questions": picked,
+    }
+
+
+@router.post("/public/diagnostic/check")
+def check_public_diagnostic(
+    req: PublicDiagnosticCheckRequest,
+    request: Request,
+):
+    ip = get_client_ip(request)
+    allowed, _, retry_after = rate_limiter.is_allowed(f"pub_chk:{ip}", max_requests=30, window_seconds=60)
+    if not allowed:
+        raise HTTPException(status_code=429, detail=f"Too many requests. Wait {int(retry_after)}s.")
+
+    selected_lang = req.language if req.language in ("uz_latn", "uz_cyrl", "ru") else "uz_latn"
+    items = []
+    correct_count = 0
+    for ans in req.answers[:10]:
+        fb = engine.check_answer(ans.canonical_id, ans.selected_key, language=selected_lang)
+        if not fb:
+            continue
+        if fb.is_correct:
+            correct_count += 1
+        items.append({
+            "canonical_id": fb.canonical_id,
+            "is_correct": fb.is_correct,
+            "selected_key": ans.selected_key.strip().upper(),
+            "correct_option_key": fb.correct_key,
+            "explanation": fb.explanation,
+            "legal_reference": fb.legal_reference,
+        })
+
+    total = max(1, len(items))
+    pct = round((correct_count / total) * 100, 1)
+    return {
+        "ok": True,
+        "correct_count": correct_count,
+        "total": len(items),
+        "percentage": pct,
+        "items": items,
     }
 

@@ -9,10 +9,14 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, Depends, Query
 
-from src.admin.deps import get_current_admin
+from src.admin.deps import get_current_admin, require_admin_role
 from src.payments.order_manager import expire_stale_orders
 
-router = APIRouter(prefix="/api/admin/dashboard", tags=["Admin Dashboard"])
+router = APIRouter(
+    prefix="/api/admin/dashboard",
+    tags=["Admin Dashboard"],
+    dependencies=[Depends(require_admin_role("FINANCE"))],
+)
 DB_PATH = os.getenv("DB_PATH", "master_database.sqlite")
 
 

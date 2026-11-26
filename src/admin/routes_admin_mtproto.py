@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
 
-from src.admin.deps import get_current_admin
+from src.admin.deps import get_current_admin, require_admin_role
 try:
     from src.mtproto.service import get_mtproto_manager
 except ImportError:
@@ -69,7 +69,7 @@ async def get_mtproto_status(current_admin: dict = Depends(get_current_admin)):
 
 
 @router.post("/send-code")
-async def request_mtproto_code(req: PhoneRequest, current_admin: dict = Depends(get_current_admin)):
+async def request_mtproto_code(req: PhoneRequest, current_admin: dict = Depends(require_admin_role("SUPERADMIN"))):
     """Initiates MTProto connection by requesting a Telegram authentication code."""
     manager = _require_mtproto()
     success, message = await manager.request_phone_code(req.phone_number, req.api_id, req.api_hash)
@@ -79,7 +79,7 @@ async def request_mtproto_code(req: PhoneRequest, current_admin: dict = Depends(
 
 
 @router.post("/sign-in")
-async def submit_mtproto_code(req: CodeRequest, current_admin: dict = Depends(get_current_admin)):
+async def submit_mtproto_code(req: CodeRequest, current_admin: dict = Depends(require_admin_role("SUPERADMIN"))):
     """Submits the Telegram verification code."""
     manager = _require_mtproto()
     success, message, requires_2fa = await manager.submit_phone_code(req.code)
@@ -91,7 +91,7 @@ async def submit_mtproto_code(req: CodeRequest, current_admin: dict = Depends(ge
 
 
 @router.post("/sign-in-2fa")
-async def submit_mtproto_2fa(req: Password2FARequest, current_admin: dict = Depends(get_current_admin)):
+async def submit_mtproto_2fa(req: Password2FARequest, current_admin: dict = Depends(require_admin_role("SUPERADMIN"))):
     """Submits the Two-Step Verification password if enabled on the Telegram account."""
     manager = _require_mtproto()
     success, message = await manager.submit_2fa_password(req.password)
@@ -101,7 +101,7 @@ async def submit_mtproto_2fa(req: Password2FARequest, current_admin: dict = Depe
 
 
 @router.post("/disconnect")
-async def disconnect_mtproto(current_admin: dict = Depends(get_current_admin)):
+async def disconnect_mtproto(current_admin: dict = Depends(require_admin_role("SUPERADMIN"))):
     """Disconnects the active MTProto session and removes stored credentials."""
     manager = _require_mtproto()
     success, message = await manager.disconnect()
@@ -111,7 +111,7 @@ async def disconnect_mtproto(current_admin: dict = Depends(get_current_admin)):
 @router.post("/simulate-notification")
 async def simulate_humocard_notification(
     req: SimulateNotificationRequest,
-    current_admin: dict = Depends(get_current_admin)
+    current_admin: dict = Depends(require_admin_role("SUPERADMIN"))
 ):
     """
     Simulates a Humocardbot notification through the payment parser and matching engine.

@@ -25,6 +25,14 @@
 
     R.showViewContainer('view-' + tabName);
     R.syncTelegramBackButton();
+    try {
+      if (window.history && typeof window.history.replaceState === 'function' && window.location.protocol !== 'about:') {
+        const curHash = String(window.location.hash || '');
+        if (!curHash.includes('tgWebAppData=')) {
+          window.history.replaceState(null, '', '#' + tabName);
+        }
+      }
+    } catch (e) {}
 
     if (tabName === 'home') {
       R.renderHome();
@@ -133,8 +141,8 @@
     if (av) av.textContent = (displayName[0] || 'R').toUpperCase();
     if (nm) nm.textContent = displayName;
     if (sb) {
-      const days = (R.state.streak && R.state.streak.current_streak) || 1;
-      sb.textContent = R.t('streak_badge', { days: days });
+      const days = (R.state.streak && R.state.streak.current_streak) || 0;
+      sb.textContent = R.state.isGuest ? R.t('guest_hero_badge') : R.t('streak_badge', { days: days });
     }
 
     const langCode = R.state.lang === 'ru' ? 'RU' : (R.state.lang === 'uz_cyrl' ? 'ЎЗ' : 'UZ');
@@ -167,9 +175,17 @@
     R.state.refSigns = null;
     R.state.refLaw = null;
     R.state.srsQueue = null;
+    if (typeof R.loadLocaleJson === 'function') await R.loadLocaleJson(valid);
     R.syncShellUI();
     R.closeModal('lang-modal');
     R.navigateTo(R.state.activeTab);
+    if (R.state.isGuest) {
+      try {
+        R.state.publicOverview = await R.api('/api/public/overview?lang=' + valid);
+        if (R.state.activeTab === 'home') R.renderHome();
+      } catch (e) {}
+      return;
+    }
     try {
       await R.api('/api/user/language', { method: 'POST', body: { language: valid } });
       await R.loadAnalyticsAsync();
@@ -199,21 +215,20 @@
     } catch (e) {}
   };
 
-  function showExternalWebGate() {
-    const shell = document.getElementById('app-shell');
-    const gate = document.getElementById('web-gate-container');
-    if (shell) shell.classList.add('hidden');
-    if (gate) {
-      gate.classList.remove('hidden');
-      gate.innerHTML =
-        '<div class="web-gate-card">' +
-        '  <div class="brand-mark" style="width:52px;height:52px;font-size:24px;margin:0 auto 14px;">R</div>' +
-        '  <h1 style="font-family:var(--font-display);font-size:20px;font-weight:800;margin-bottom:8px;">' + R.escHtml(R.t('web_gate_title')) + '</h1>' +
-        '  <p style="font-size:13.5px;color:var(--text-secondary);margin-bottom:20px;">' + R.escHtml(R.t('web_gate_desc')) + '</p>' +
-        '  <a href="https://t.me/rully_uz_bot" target="_blank" rel="noopener" class="btn btn-primary btn-block">' +
-        R.icon('telegram', 'sm') + '<span>' + R.escHtml(R.t('web_gate_btn')) + '</span>' +
-        '  </a>' +
-        '</div>';
+  async function enterPublicFreemiumWeb() {
+    R.state.isGuest = true;
+    R.state.authPending = false;
+    if (typeof R.loadLocaleJson === 'function') await R.loadLocaleJson(R.state.lang);
+    try {
+      R.state.publicOverview = await R.api('/api/public/overview?lang=' + R.state.lang);
+      R.state.categories = (R.state.publicOverview && R.state.publicOverview.categories) || [];
+    } catch (e) {}
+    R.syncShellUI();
+    const dl = R.resolveDeepLinkRoute();
+    if (dl === 'signs' || dl === 'belgilar' || dl === 'rules' || dl === 'qoidalar' || dl === 'law' || dl === 'amaliy' || dl === 'profile') {
+      R.applyDeepLinkRoute(dl);
+    } else {
+      R.renderHome();
     }
   }
 
@@ -286,8 +301,10 @@
       const tag = (e.target && e.target.tagName) || '';
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
 
-      const keyMap = { '1': 'A', '2': 'B', '3': 'C', '4': 'D', 'a': 'A', 'b': 'B', 'c': 'C', 'd': 'D' };
-      const k = keyMap[String(e.key).toLowerCase()];
+      const keyMap = { '1': 'A', '2': 'B', '3': 'C', '4': 'D', 'a': 'A', 'b': 'B', 'c': 'C', 'd': 'D', 'f1': 'A', 'f2': 'B', 'f3': 'C', 'f4': 'D' };
+      const rawKey = String(e.key).toLowerCase();
+      const k = keyMap[rawKey];
+      if (rawKey.startsWith('f') && k) e.preventDefault();
       if (k) {
         const curQ = R.state.quiz.questions[R.state.quiz.currentIndex];
         if (curQ && (curQ.options || []).some(function (o) { return o.option_key === k; })) {
@@ -357,6 +374,9 @@
       if (!R.applyDeepLinkRoute()) {
         R.renderHome();
       }
+      if (typeof R.maybeShowOnboarding === 'function') {
+        R.maybeShowOnboarding();
+      }
       R.loadAnalyticsAsync();
       window.addEventListener('hashchange', function () {
         R.applyDeepLinkRoute();
@@ -364,11 +384,15 @@
     } catch (err) {
       R.state.authPending = false;
       if (err && err.status === 401) {
-        showExternalWebGate();
+        await enterPublicFreemiumWeb();
       } else {
         R.showToast((err && err.message) || R.t('ai_net_error'));
         R.renderHome();
       }
+    }
+
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost')) {
+      navigator.serviceWorker.register('/static/sw.js').catch(function () {});
     }
   }
 

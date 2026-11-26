@@ -7,17 +7,21 @@ import sqlite3
 import json
 import logging
 import time
+from threading import Lock
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Any, Tuple, Union, Set
 from src.db_adapter import get_db_connection, is_turso_enabled, execute_batch
+from src.db.scoring import compute_driver_accuracy, compute_driver_readiness
 from src.db.sm2_engine import (
     build_srs_upsert_stmt,
     classify_srs_mastery,
     compute_next_sm2_state,
     derive_sm2_quality,
 )
+from src.security.rate_limiter import BoundedTTLCache
 
 logger = logging.getLogger(__name__)
+_PRE_ANSWER_SRS_CACHE = BoundedTTLCache[Tuple[int, str], Optional[Dict[str, Any]]](maxsize=4000, ttl_seconds=900.0)
 
 # --- Subscription Plans Specification ---
 SUBSCRIPTION_PLANS = {
@@ -38,319 +42,22 @@ SUBSCRIPTION_PLANS = {
 }
 
 
-
-def compute_driver_accuracy(
-    total_answered: int,
-    correct_answers: int,
-    unique_questions: int = 0,
-    unique_correct: int = 0,
-    recent_total: int = 0,
-    recent_correct: int = 0,
-    categories_tested: int = 0,
-    unresolved_mistakes: int = 0,
-    return_details: bool = False,
-    srs_mastered: int = 0,
-    srs_due: int = 0,
-    srs_tracked: int = 0,
-) -> Union[float, Dict[str, Any]]:
-    """
-    RULLY Multi-Criteria Driver Accuracy Engine (0.0 to 100.0%).
-    
-    Evaluates real driving knowledge precision against 5 intelligent criteria:
-    1. Net Knowledge Accuracy above 25% Random Guessing Threshold (40% weight):
-       Normalizes raw accuracy (R - 25.0) / 70.0 to filter out lucky random clicks.
-    2. Recency Accuracy & Learning Dynamics (30% weight):
-       Evaluates the most recent 40 questions to reward learning curve improvements.
-    3. Distinct Question Mastery (20% weight):
-       Unique correct questions / unique questions tested, preventing repetition cheating.
-    4. Cross-Category Breadth (10% weight):
-       Consistent accuracy across diverse YHQ traffic categories.
-    5. Bayesian Statistical Confidence + SM-2 Retention Prior:
-       Scales with sample size (Beta(1, 3) random-guessing prior at 25%) and adjusts gently
-       for long-term SM-2 retention vs overdue memory decay when SRS history exists.
-    """
-    if total_answered <= 0 or correct_answers <= 0:
-        if return_details:
-            return {
-                "accuracy": 0.0,
-                "raw_accuracy": 0.0,
-                "net_knowledge_score": 0.0,
-                "recent_accuracy": 0.0,
-                "distinct_accuracy": 0.0,
-                "confidence_factor": 0.0,
-                "bayesian_accuracy": 0.0,
-                "srs_retention_rate": 100.0,
-            }
-        return 0.0
-
-    raw_acc = min(100.0, max(0.0, (correct_answers / total_answered) * 100.0))
-    # Empirical Beta(1, 3) Bayesian estimate centered on 25% 4-choice random baseline
-    bayesian_acc = ((correct_answers + 1.0) / (total_answered + 4.0)) * 100.0
-
-    # 1. Net Knowledge Accuracy above 25% guessing baseline (40% weight)
-    if raw_acc <= 25.0:
-        net_acc = 0.0
-    else:
-        # Scale 25% -> 95%+ to 0.0 -> 100.0%
-        net_acc = min(100.0, max(0.0, ((raw_acc - 25.0) / 70.0) * 100.0))
-
-    # 2. Recent Accuracy (30% weight)
-    if recent_total > 0:
-        recent_acc = min(100.0, max(0.0, (recent_correct / recent_total) * 100.0))
-    else:
-        recent_acc = raw_acc
-
-    # 3. Distinct Questions Accuracy (20% weight)
-    if unique_questions > 0 and unique_correct > 0:
-        distinct_acc = min(100.0, max(0.0, (unique_correct / unique_questions) * 100.0))
-    else:
-        distinct_acc = raw_acc
-
-    # 4. Cross-Category Balance (10% weight)
-    cat_count = categories_tested if categories_tested is not None else 0
-    cat_factor = min(100.0, (cat_count / 12.0) * 100.0) if cat_count > 0 else distinct_acc
-
-    # Raw multi-criteria composite
-    composite = (
-        0.40 * net_acc +
-        0.30 * recent_acc +
-        0.20 * distinct_acc +
-        0.10 * cat_factor
-    )
-
-    # 5. Statistical Confidence Scaling
-    if total_answered < 5:
-        confidence = 0.40 + (total_answered / 10.0) * 0.20
-    elif total_answered < 20:
-        confidence = 0.60 + ((total_answered - 5) / 15.0) * 0.30
-    elif total_answered < 35:
-        confidence = 0.90 + ((total_answered - 20) / 15.0) * 0.10
-    else:
-        confidence = 1.0
-
-    final_acc = composite * confidence
-
-    # Phase 5 SM-2 Retention Adjustment (strictly bounded [-3.0, +2.5], neutral when srs_tracked == 0)
-    srs_retention = 100.0
-    if srs_tracked > 0:
-        bounded_due = min(srs_tracked, max(0, srs_due))
-        srs_retention = round(((srs_tracked - bounded_due) / srs_tracked) * 100.0, 1)
-        if srs_tracked >= 10:
-            mastery_ratio = min(1.0, max(0.0, srs_mastered / srs_tracked))
-            due_ratio = bounded_due / srs_tracked
-            if mastery_ratio >= 0.4 and bounded_due <= 3:
-                final_acc += min(2.5, mastery_ratio * 2.5)
-            elif due_ratio > 0.45 and bounded_due >= 15:
-                final_acc -= min(3.0, (due_ratio - 0.45) * 6.0)
-
-    # Safeguards:
-    if raw_acc <= 25.0:
-        final_acc = min(final_acc, 8.0)
-    if unresolved_mistakes >= 15:
-        final_acc = min(final_acc, 65.0)
-
-    # For brand new users with 1-2 correct answers, cap at realistic 40%
-    if total_answered <= 3 and correct_answers == total_answered:
-        final_acc = min(final_acc, 40.0)
-
-    final_acc = round(min(100.0, max(0.0, final_acc)), 1)
-
-    if return_details:
-        return {
-            "accuracy": final_acc,
-            "raw_accuracy": round(raw_acc, 1),
-            "net_knowledge_score": round(net_acc, 1),
-            "recent_accuracy": round(recent_acc, 1),
-            "distinct_accuracy": round(distinct_acc, 1),
-            "confidence_factor": round(confidence, 2),
-            "bayesian_accuracy": round(bayesian_acc, 1),
-            "srs_retention_rate": srs_retention,
-        }
-    return final_acc
-
-
-def compute_driver_readiness(
-    total_exams: int,
-    passed_exams: int,
-    pass_rate: float,
-    total_answered: int,
-    accuracy: float,
-    unique_questions: int,
-    unresolved_mistakes: int,
-    categories_tested: int = None,
-    resolved_mistakes: int = 0,
-    current_streak: int = 0,
-    avg_exam_time_seconds: float = 0.0,
-    recent_pass_rate: float = None,
-    return_details: bool = False,
-    srs_mastered: int = 0,
-    srs_due: int = 0,
-    srs_tracked: int = 0,
-) -> Union[float, Dict[str, Any]]:
-    """
-    RULLY Intelligent 5-Pillar Exam Readiness Engine (0.0 to 100.0%).
-    Calibrated specifically for the Uzbekistan State Driving Examination (DYHXX):
-    - Requirements: 20 questions, 25 minutes, at least 18 correct (90%).
-    - Max 2 mistakes permitted; 3 mistakes = IMMEDIATE FAILURE.
-
-    5 Pillars:
-    1. Exam Mastery & Consistency (30% weight):
-       Requires passing multiple full exams under timer pressure to eliminate lucky draws.
-    2. Knowledge Accuracy & Anti-Guessing (25% weight):
-       Filters out 4-choice guessing baseline (35%). Scales from 35% (0 pts) to 95%+ (100 pts).
-    3. Curriculum & Syllabus Coverage (25% weight):
-       Broad exposure across the 1,295 question bank and 43 official categories.
-    4. Mistake Bank Hygiene (10% weight):
-       Unresolved mistakes are active failure risks; resolved mistakes award bonuses.
-    5. Exam Pace & Practice Streak (10% weight):
-       Pace management (200-1100s per exam) and daily active learning consistency.
-    """
-    if total_answered == 0 and total_exams == 0:
-        details = {
-            "readiness_score": 0.0,
-            "grade": "NOT_READY",
-            "pillars": {
-                "exam_mastery": 0.0,
-                "accuracy": 0.0,
-                "coverage": 0.0,
-                "mistake_hygiene": 0.0,
-                "pace_and_streak": 0.0
-            }
-        }
-        return details if return_details else 0.0
-
-    # Pillar 1: Exam Passing Mastery & Consistency (30% weight)
-    if passed_exams == 0:
-        p_exam = 0.0
-    else:
-        rec_pass = recent_pass_rate if recent_pass_rate is not None else pass_rate
-        consistency = min(1.0, passed_exams / 4.0)
-        p_exam = min(100.0, (0.40 * pass_rate + 0.60 * rec_pass) * (0.35 + 0.65 * consistency))
-
-    # Pillar 2: Knowledge Accuracy above 35% baseline (25% weight)
-    if total_answered < 10 or accuracy <= 35.0:
-        p_acc = 0.0
-    else:
-        p_acc = min(100.0, max(0.0, ((accuracy - 35.0) / 57.0) * 100.0))
-
-    # Pillar 3: Curriculum / Syllabus Coverage (25% weight)
-    if categories_tested is None or categories_tested <= 0:
-        categories_tested = min(43, max(1, int(unique_questions / 8)))
-
-    q_score = min(100.0, (unique_questions / 160.0) * 100.0)
-    cat_score = min(100.0, (categories_tested / 20.0) * 100.0)
-    p_cov = 0.60 * q_score + 0.40 * cat_score
-
-    # Pillar 4: Mistake Bank Hygiene (10% weight)
-    if total_answered < 5:
-        p_mistakes = 50.0
-    elif unresolved_mistakes == 0:
-        p_mistakes = 100.0
-    else:
-        penalty = unresolved_mistakes * 5.0
-        total_m = resolved_mistakes + unresolved_mistakes
-        res_bonus = (resolved_mistakes / total_m * 20.0) if total_m > 0 else 0.0
-        p_mistakes = max(0.0, min(100.0, 100.0 - penalty + res_bonus))
-
-    # Pillar 5: Exam Pace & Practice Regularity (10% weight)
-    s_score = min(100.0, max(30.0, current_streak * 25.0)) if current_streak > 0 else (100.0 if passed_exams >= 4 else (0.0 if total_exams > 0 and passed_exams == 0 else 50.0))
-    if avg_exam_time_seconds <= 0:
-        t_score = 100.0 if passed_exams >= 4 else (0.0 if total_exams > 0 and passed_exams == 0 else 50.0)
-    elif 200 <= avg_exam_time_seconds <= 1100:
-        t_score = 100.0
-    elif avg_exam_time_seconds < 200:
-        t_score = 30.0
-    else:
-        t_score = max(30.0, 100.0 - ((avg_exam_time_seconds - 1100) / 400.0) * 50.0)
-    p_pace = 0.50 * s_score + 0.50 * t_score
-
-    raw_score = (
-        0.30 * p_exam +
-        0.25 * p_acc +
-        0.25 * p_cov +
-        0.10 * p_mistakes +
-        0.10 * p_pace
-    )
-
-    # Statistical Confidence Multiplier for low volume (< 100 questions)
-    if total_answered < 100:
-        conf_multiplier = min(1.0, max(0.2, (total_answered / 100.0) ** 0.5))
-        raw_score = raw_score * conf_multiplier
-
-    # Intelligent Safeguard Gates
-    if passed_exams == 0:
-        final_score = min(raw_score, 15.0)
-    elif passed_exams == 1:
-        final_score = min(raw_score, 45.0)
-    elif passed_exams == 2:
-        final_score = min(raw_score, 68.0)
-    else:
-        final_score = raw_score
-
-    if accuracy <= 30.0:
-        final_score = min(final_score, 8.0)
-
-    if unresolved_mistakes >= 40:
-        final_score = min(final_score, 20.0)
-    elif unresolved_mistakes >= 25:
-        final_score = min(final_score, 35.0)
-    elif unresolved_mistakes >= 15:
-        final_score = min(final_score, 55.0)
-
-    if total_answered < 60:
-        final_score = min(final_score, 30.0)
-
-    srs_retention_pct = 100.0
-    if srs_tracked > 0:
-        bounded_due = min(srs_tracked, max(0, srs_due))
-        srs_retention_pct = round(((srs_tracked - bounded_due) / srs_tracked) * 100.0, 1)
-        if srs_tracked >= 10 and passed_exams >= 1:
-            mastery_ratio = min(1.0, max(0.0, srs_mastered / srs_tracked))
-            due_ratio = bounded_due / srs_tracked
-            if mastery_ratio >= 0.5 and bounded_due <= 3:
-                final_score += min(2.0, mastery_ratio * 2.0)
-            elif due_ratio > 0.5 and bounded_due >= 15:
-                final_score -= min(3.0, (due_ratio - 0.5) * 6.0)
-
-    final_score = round(max(0.0, min(100.0, final_score)), 1)
-
-    if final_score >= 85.0:
-        grade = "EXCELLENT"
-    elif final_score >= 75.0:
-        grade = "EXAM_READY"
-    elif final_score >= 45.0:
-        grade = "IN_PROGRESS"
-    else:
-        grade = "NOT_READY"
-
-    details = {
-        "readiness_score": final_score,
-        "grade": grade,
-        "srs_retention_pct": srs_retention_pct,
-        "pillars": {
-            "exam_mastery": round(p_exam, 1),
-            "accuracy": round(p_acc, 1),
-            "coverage": round(p_cov, 1),
-            "mistake_hygiene": round(p_mistakes, 1),
-            "pace_and_streak": round(p_pace, 1)
-        }
-    }
-    return details if return_details else final_score
-
-
 class BotDatabase:
     _ticket_schema_ready: bool = False
+    _ticket_ready_paths: Set[str] = set()
     _srs_ready_paths: Set[str] = set()
+    _schema_lock: Lock = Lock()
 
-    def __init__(self, db_path: str = "master_database.sqlite"):
-        self.db_path = db_path
+    def __init__(self, db_path: Optional[str] = None):
+        self.db_path = db_path or os.getenv("DB_PATH", "master_database.sqlite")
         if not is_turso_enabled():
             self._init_bot_schema()
 
     def _ensure_srs_schema(self, conn) -> None:
         key = "__turso__" if is_turso_enabled() else os.path.abspath(self.db_path)
-        if key in BotDatabase._srs_ready_paths:
-            return
+        with BotDatabase._schema_lock:
+            if key in BotDatabase._srs_ready_paths:
+                return
         try:
             execute_batch(
                 conn,
@@ -375,13 +82,16 @@ class BotDatabase:
                     "CREATE INDEX IF NOT EXISTS idx_srs_user_reps ON user_question_srs(user_id, repetitions, lapses)",
                 ],
             )
-            BotDatabase._srs_ready_paths.add(key)
+            with BotDatabase._schema_lock:
+                BotDatabase._srs_ready_paths.add(key)
         except Exception as exc:
             logger.warning("SRS lazy schema sync failed cleanly: %s", exc)
 
     def _ensure_ticket_progress_table(self, conn) -> None:
-        if BotDatabase._ticket_schema_ready:
-            return
+        key = "__turso__" if is_turso_enabled() else os.path.abspath(self.db_path)
+        with BotDatabase._schema_lock:
+            if BotDatabase._ticket_schema_ready and key in BotDatabase._ticket_ready_paths:
+                return
         try:
             cur = conn.cursor()
             cur.execute("PRAGMA table_info(session_answers)")
@@ -410,8 +120,16 @@ class BotDatabase:
             if "user_id" not in sa_cols:
                 stmts.append("ALTER TABLE session_answers ADD COLUMN user_id INTEGER DEFAULT NULL")
             stmts.append("CREATE INDEX IF NOT EXISTS idx_session_answers_user_canon ON session_answers(user_id, canonical_id, is_correct)")
+            stmts.append("CREATE INDEX IF NOT EXISTS idx_session_answers_user_recent ON session_answers(user_id, id DESC)")
+            stmts.append("""
+                UPDATE session_answers
+                SET user_id = (SELECT user_id FROM user_sessions WHERE user_sessions.session_id = session_answers.session_id)
+                WHERE user_id IS NULL
+            """.strip())
             execute_batch(conn, stmts)
-            BotDatabase._ticket_schema_ready = True
+            with BotDatabase._schema_lock:
+                BotDatabase._ticket_schema_ready = True
+                BotDatabase._ticket_ready_paths.add(key)
         except Exception as exc:
             logger.warning("Ticket progress lazy schema sync failed cleanly: %s", exc)
 
@@ -711,9 +429,19 @@ class BotDatabase:
             c.execute("CREATE INDEX IF NOT EXISTS idx_srs_user_due ON user_question_srs(user_id, next_review_at);")
             c.execute("CREATE INDEX IF NOT EXISTS idx_srs_user_reps ON user_question_srs(user_id, repetitions, lapses);")
 
+            try:
+                c.execute("""
+                    UPDATE session_answers
+                    SET user_id = (SELECT user_id FROM user_sessions WHERE user_sessions.session_id = session_answers.session_id)
+                    WHERE user_id IS NULL
+                """)
+            except Exception:
+                pass
             conn.commit()
-            BotDatabase._ticket_schema_ready = True
-            BotDatabase._srs_ready_paths.add(os.path.abspath(self.db_path))
+            with BotDatabase._schema_lock:
+                BotDatabase._ticket_schema_ready = True
+                BotDatabase._ticket_ready_paths.add(os.path.abspath(self.db_path))
+                BotDatabase._srs_ready_paths.add(os.path.abspath(self.db_path))
 
     # --- User Management ---
     def get_or_create_user(self, user_id: int, username: Optional[str] = None,
@@ -763,6 +491,7 @@ class BotDatabase:
                     WHERE user_id = ?
                     """, (username, first_name, last_name, now_ts, user_id))
                     user_dict["last_active_at"] = now_ts
+                    conn.commit()
 
                 return user_dict
             else:
@@ -770,6 +499,7 @@ class BotDatabase:
                 INSERT INTO telegram_users (user_id, username, first_name, last_name, language, is_language_selected, is_pro, subscription_tier, created_at, last_active_at)
                 VALUES (?, ?, ?, ?, ?, 0, 0, 'free', ?, ?)
                 """, (user_id, username, first_name, last_name, default_lang, now_ts, now_ts))
+                conn.commit()
                 c.execute("SELECT * FROM telegram_users WHERE user_id = ?", (user_id,))
                 user_dict = dict(c.fetchone())
                 user_dict["subscription"] = {"is_pro": False, "tier": "free", "expires_at": None}
@@ -829,10 +559,10 @@ class BotDatabase:
                 if strk_val is None:
                     c.execute("""
                     INSERT INTO learning_streak (user_id, current_streak, last_active_date, daily_goal_questions, today_questions_count, updated_at)
-                    VALUES (?, 1, ?, 20, 0, ?)
+                    VALUES (?, 0, ?, 20, 0, ?)
                     """, (user_id, today_str, now_ts))
                     streak = {
-                        "current_streak": 1,
+                        "current_streak": 0,
                         "last_active_date": today_str,
                         "daily_goal_questions": 20,
                         "today_questions_count": 0
@@ -841,7 +571,7 @@ class BotDatabase:
                     if last_date != today_str:
                         yesterday_str = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
                         if last_date != yesterday_str:
-                            strk_val = 1
+                            strk_val = 0
                         today_count = 0
                     streak = {
                         "current_streak": strk_val,
@@ -876,7 +606,7 @@ class BotDatabase:
                 """, (user_id, username, first_name, last_name, default_lang, now_ts, now_ts))
                 c.execute("""
                 INSERT INTO learning_streak (user_id, current_streak, last_active_date, daily_goal_questions, today_questions_count, updated_at)
-                VALUES (?, 1, ?, 20, 0, ?)
+                VALUES (?, 0, ?, 20, 0, ?)
                 """, (user_id, today_str, now_ts))
                 c.execute("SELECT * FROM telegram_users WHERE user_id = ?", (user_id,))
                 user_dict = dict(c.fetchone())
@@ -887,32 +617,15 @@ class BotDatabase:
                 }
                 user_dict["subscription"] = subscription
                 streak = {
-                    "current_streak": 1,
+                    "current_streak": 0,
                     "last_active_date": today_str,
                     "daily_goal_questions": 20,
                     "today_questions_count": 0
                 }
 
-            # 2. Consolidated Telemetry, Readiness & Free Tier Metrics (1 single compound query)
-            c.execute("""
-            SELECT
-              (SELECT COUNT(*) FROM exam_results WHERE user_id = ?) AS total_exams,
-              (SELECT COALESCE(SUM(passed), 0) FROM exam_results WHERE user_id = ?) AS passed_exams,
-              (SELECT COUNT(*) FROM session_answers sa JOIN user_sessions us ON sa.session_id = us.session_id WHERE us.user_id = ?) AS total_ans,
-              (SELECT COALESCE(SUM(is_correct), 0) FROM session_answers sa JOIN user_sessions us ON sa.session_id = us.session_id WHERE us.user_id = ?) AS correct_ans,
-              (SELECT COALESCE(SUM(CASE WHEN is_resolved = 0 THEN 1 ELSE 0 END), 0) FROM user_mistakes WHERE user_id = ?) AS unresolved_mistakes,
-              (SELECT COALESCE(SUM(CASE WHEN is_resolved = 1 THEN 1 ELSE 0 END), 0) FROM user_mistakes WHERE user_id = ?) AS resolved_mistakes,
-              (SELECT COUNT(DISTINCT sa.canonical_id) FROM session_answers sa JOIN user_sessions us ON sa.session_id = us.session_id WHERE us.user_id = ?) AS unique_qs,
-              (SELECT COUNT(DISTINCT cq.category_id) FROM session_answers sa JOIN user_sessions us ON sa.session_id = us.session_id LEFT JOIN canonical_questions cq ON sa.canonical_id = cq.canonical_id WHERE us.user_id = ?) AS categories_tested,
-              (SELECT COUNT(DISTINCT sa.canonical_id) FROM session_answers sa JOIN user_sessions us ON sa.session_id = us.session_id WHERE us.user_id = ? AND sa.is_correct = 1) AS unique_correct,
-              (SELECT COUNT(*) FROM user_sessions WHERE user_id = ? AND session_type = 'EXAM' AND status = 'IN_PROGRESS') AS active_in_progress_exams,
-              (SELECT COUNT(*) FROM (SELECT passed FROM exam_results WHERE user_id = ? ORDER BY id DESC LIMIT 5)) AS recent_exams_count,
-              (SELECT COALESCE(SUM(passed), 0) FROM (SELECT passed FROM exam_results WHERE user_id = ? ORDER BY id DESC LIMIT 5)) AS recent_exams_passed,
-              (SELECT COALESCE(AVG(time_taken_seconds), 0) FROM (SELECT time_taken_seconds FROM exam_results WHERE user_id = ? AND time_taken_seconds > 0 ORDER BY id DESC LIMIT 5)) AS recent_avg_exam_time,
-              (SELECT COUNT(*) FROM (SELECT sa.is_correct FROM session_answers sa JOIN user_sessions us ON sa.session_id = us.session_id WHERE us.user_id = ? ORDER BY sa.id DESC LIMIT 40)) AS recent_ans_total,
-              (SELECT COALESCE(SUM(is_correct), 0) FROM (SELECT sa.is_correct FROM session_answers sa JOIN user_sessions us ON sa.session_id = us.session_id WHERE us.user_id = ? ORDER BY sa.id DESC LIMIT 40)) AS recent_ans_correct
-            """, (user_id, user_id, user_id, user_id, user_id, user_id, user_id, user_id, user_id, user_id, user_id, user_id, user_id, user_id, user_id))
-            stats_row = dict(c.fetchone() or {})
+            # 2. Consolidated Telemetry & Free Tier Metrics (single indexed stats pass)
+            stats_row = self._query_user_core_metrics(conn, user_id, include_active_exams=True)
+            srs_agg = self._query_srs_aggregate(conn, user_id, now_iso=now_ts)
 
             total_exams = stats_row.get("total_exams") or 0
             passed_exams = stats_row.get("passed_exams") or 0
@@ -942,7 +655,10 @@ class BotDatabase:
                 recent_correct=recent_ans_correct,
                 categories_tested=categories_tested,
                 unresolved_mistakes=mistakes_cnt,
-                return_details=True
+                return_details=True,
+                srs_mastered=srs_agg["mastered_count"],
+                srs_due=srs_agg["due_now_count"],
+                srs_tracked=srs_agg["tracked_count"],
             )
             accuracy = accuracy_info["accuracy"]
 
@@ -959,7 +675,10 @@ class BotDatabase:
                 current_streak=streak["current_streak"],
                 avg_exam_time_seconds=avg_exam_time,
                 recent_pass_rate=recent_pass_rate,
-                return_details=True
+                return_details=True,
+                srs_mastered=srs_agg["mastered_count"],
+                srs_due=srs_agg["due_now_count"],
+                srs_tracked=srs_agg["tracked_count"],
             )
 
             stats = {
@@ -1298,9 +1017,11 @@ class BotDatabase:
             try:
                 c.execute("""
                 INSERT INTO session_answers (
-                    session_id, canonical_id, selected_key, correct_key, is_correct, answered_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                """, (session_id, canonical_id, selected_key, correct_key, 1 if is_correct else 0, now_ts))
+                    session_id, user_id, canonical_id, selected_key, correct_key, is_correct, answered_at
+                ) VALUES (
+                    ?, (SELECT user_id FROM user_sessions WHERE session_id = ? LIMIT 1), ?, ?, ?, ?, ?
+                )
+                """, (session_id, session_id, canonical_id, selected_key, correct_key, 1 if is_correct else 0, now_ts))
             except sqlite3.IntegrityError:
                 # Already answered, idempotent duplicate protection!
                 return False
@@ -1389,13 +1110,13 @@ class BotDatabase:
             yesterday_str = (now_dt - timedelta(days=1)).strftime("%Y-%m-%d")
             if st_row:
                 last_date = st_row["last_active_date"]
-                prev_streak = st_row["current_streak"] or 1
+                prev_streak = st_row["current_streak"] or 0
                 goal_q = st_row["daily_goal_questions"] or 20
                 if last_date == today_str:
-                    new_streak = prev_streak
+                    new_streak = max(1, prev_streak)
                     new_today = (st_row["today_questions_count"] or 0) + 1
                 elif last_date == yesterday_str:
-                    new_streak = prev_streak + 1
+                    new_streak = max(1, prev_streak + 1)
                     new_today = 1
                 else:
                     new_streak = 1
@@ -1428,6 +1149,9 @@ class BotDatabase:
             curr_incorrect = (sess_row["incorrect_count"] or 0) if sess_row else 0
             new_incorrect = curr_incorrect + (0 if is_correct else 1)
             is_exam_terminated = (session_type == "EXAM" and new_incorrect >= 3)
+
+            # Save pre-answer SM-2 snapshot so optional explicit user confidence rating recalibrates without double-counting
+            _PRE_ANSWER_SRS_CACHE.set((user_id, canonical_id), prev_srs)
 
             # Calculate SM-2 memory transition
             derived_q = derive_sm2_quality(
@@ -1666,30 +1390,58 @@ class BotDatabase:
             "retention_rate": retention,
         }
 
-    def get_user_stats(self, user_id: int) -> Dict[str, Any]:
-        now_ts = datetime.utcnow().isoformat()
-        with self._get_connection() as conn:
-            self._ensure_srs_schema(conn)
-            c = conn.cursor()
-            c.execute("""
+    def _query_user_core_metrics(self, conn: Any, user_id: int, include_active_exams: bool = False) -> Dict[str, Any]:
+        """Single indexed metrics sweep replacing 7 redundant session_answers JOIN subqueries."""
+        self._ensure_ticket_progress_table(conn)
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT
+                COUNT(sa.id) AS total_ans,
+                COALESCE(SUM(sa.is_correct), 0) AS correct_ans,
+                COUNT(DISTINCT sa.canonical_id) AS unique_qs,
+                COUNT(DISTINCT CASE WHEN sa.is_correct = 1 THEN sa.canonical_id END) AS unique_correct,
+                COUNT(DISTINCT cq.category_id) AS categories_tested
+            FROM session_answers sa
+            LEFT JOIN canonical_questions cq ON sa.canonical_id = cq.canonical_id
+            WHERE sa.user_id = ?
+            """,
+            (user_id,),
+        )
+        ans_agg = dict(c.fetchone() or {})
+
+        extra_active_sql = (
+            ", (SELECT COUNT(*) FROM user_sessions WHERE user_id = ? AND session_type = 'EXAM' AND status = 'IN_PROGRESS') AS active_in_progress_exams"
+            if include_active_exams
+            else ", 0 AS active_in_progress_exams"
+        )
+        params = tuple([user_id] * (11 if include_active_exams else 10))
+        c.execute(
+            f"""
             SELECT
               (SELECT COUNT(*) FROM exam_results WHERE user_id = ?) AS total_exams,
               (SELECT COALESCE(SUM(passed), 0) FROM exam_results WHERE user_id = ?) AS passed_exams,
-              (SELECT COUNT(*) FROM session_answers sa JOIN user_sessions us ON sa.session_id = us.session_id WHERE us.user_id = ?) AS total_ans,
-              (SELECT COALESCE(SUM(is_correct), 0) FROM session_answers sa JOIN user_sessions us ON sa.session_id = us.session_id WHERE us.user_id = ?) AS correct_ans,
               (SELECT COALESCE(SUM(CASE WHEN is_resolved = 0 THEN 1 ELSE 0 END), 0) FROM user_mistakes WHERE user_id = ?) AS unresolved_mistakes,
               (SELECT COALESCE(SUM(CASE WHEN is_resolved = 1 THEN 1 ELSE 0 END), 0) FROM user_mistakes WHERE user_id = ?) AS resolved_mistakes,
-              (SELECT COUNT(DISTINCT sa.canonical_id) FROM session_answers sa JOIN user_sessions us ON sa.session_id = us.session_id WHERE us.user_id = ?) AS unique_qs,
-              (SELECT COUNT(DISTINCT cq.category_id) FROM session_answers sa JOIN user_sessions us ON sa.session_id = us.session_id LEFT JOIN canonical_questions cq ON sa.canonical_id = cq.canonical_id WHERE us.user_id = ?) AS categories_tested,
-              (SELECT COUNT(DISTINCT sa.canonical_id) FROM session_answers sa JOIN user_sessions us ON sa.session_id = us.session_id WHERE us.user_id = ? AND sa.is_correct = 1) AS unique_correct,
               (SELECT COALESCE(current_streak, 0) FROM learning_streak WHERE user_id = ?) AS current_streak,
               (SELECT COUNT(*) FROM (SELECT passed FROM exam_results WHERE user_id = ? ORDER BY id DESC LIMIT 5)) AS recent_exams_count,
               (SELECT COALESCE(SUM(passed), 0) FROM (SELECT passed FROM exam_results WHERE user_id = ? ORDER BY id DESC LIMIT 5)) AS recent_exams_passed,
               (SELECT COALESCE(AVG(time_taken_seconds), 0) FROM (SELECT time_taken_seconds FROM exam_results WHERE user_id = ? AND time_taken_seconds > 0 ORDER BY id DESC LIMIT 5)) AS recent_avg_exam_time,
-              (SELECT COUNT(*) FROM (SELECT sa.is_correct FROM session_answers sa JOIN user_sessions us ON sa.session_id = us.session_id WHERE us.user_id = ? ORDER BY sa.id DESC LIMIT 40)) AS recent_ans_total,
-              (SELECT COALESCE(SUM(is_correct), 0) FROM (SELECT sa.is_correct FROM session_answers sa JOIN user_sessions us ON sa.session_id = us.session_id WHERE us.user_id = ? ORDER BY sa.id DESC LIMIT 40)) AS recent_ans_correct
-            """, tuple([user_id] * 15))
-            row = dict(c.fetchone() or {})
+              (SELECT COUNT(*) FROM (SELECT is_correct FROM session_answers WHERE user_id = ? ORDER BY id DESC LIMIT 40)) AS recent_ans_total,
+              (SELECT COALESCE(SUM(is_correct), 0) FROM (SELECT is_correct FROM session_answers WHERE user_id = ? ORDER BY id DESC LIMIT 40)) AS recent_ans_correct
+              {extra_active_sql}
+            """,
+            params,
+        )
+        row = dict(c.fetchone() or {})
+        row.update(ans_agg)
+        return row
+
+    def get_user_stats(self, user_id: int) -> Dict[str, Any]:
+        now_ts = datetime.utcnow().isoformat()
+        with self._get_connection() as conn:
+            self._ensure_srs_schema(conn)
+            row = self._query_user_core_metrics(conn, user_id, include_active_exams=False)
             srs_agg = self._query_srs_aggregate(conn, user_id, now_iso=now_ts)
 
             total_exams = int(row.get("total_exams") or 0)
@@ -1923,11 +1675,11 @@ class BotDatabase:
             if not row:
                 c.execute("""
                 INSERT INTO learning_streak (user_id, current_streak, last_active_date, daily_goal_questions, today_questions_count, updated_at)
-                VALUES (?, 1, ?, 20, 0, ?)
+                VALUES (?, 0, ?, 20, 0, ?)
                 """, (user_id, today_str, now_ts))
                 conn.commit()
                 return {
-                    "current_streak": 1,
+                    "current_streak": 0,
                     "last_active_date": today_str,
                     "daily_goal_questions": 20,
                     "today_questions_count": 0
@@ -1945,7 +1697,7 @@ class BotDatabase:
                 if last_date == yesterday_str:
                     pass  # Consecutive day
                 else:
-                    streak = 1  # Missed days, reset streak
+                    streak = 0  # Missed days, reset streak until user answers today
                 today_count = 0
                 c.execute("UPDATE learning_streak SET current_streak = ?, last_active_date = ?, today_questions_count = ?, updated_at = ? WHERE user_id = ?",
                           (streak, today_str, 0, now_ts, user_id))
@@ -2311,26 +2063,37 @@ class BotDatabase:
         canonical_id: str,
         quality: int,
         now_dt: Optional[datetime] = None,
+        recalibrate: bool = False,
     ) -> Dict[str, Any]:
         """
         Records a direct SM-2 spaced-repetition quality review (0..5) and keeps
         user_mistakes consistent inside a single atomic execute_batch().
+        When recalibrate=True, recomputes cleanly from the pre-answer snapshot so
+        a post-answer confidence button never double-increments repetitions.
         """
         ts_dt = now_dt or datetime.utcnow()
         now_ts = ts_dt.isoformat()
         with self._get_connection() as conn:
             self._ensure_srs_schema(conn)
-            c = conn.cursor()
-            c.execute(
-                """
-                SELECT ease_factor, interval_days, repetitions, lapses
-                FROM user_question_srs
-                WHERE user_id = ? AND canonical_id = ?
-                """,
-                (user_id, canonical_id),
-            )
-            row = c.fetchone()
-            prev = dict(row) if row else None
+            prev = None
+            has_snap = False
+            if recalibrate:
+                cached = _PRE_ANSWER_SRS_CACHE.get((user_id, canonical_id), default="__MISS__")
+                if cached != "__MISS__":
+                    prev = cached
+                    has_snap = True
+            if not has_snap:
+                c = conn.cursor()
+                c.execute(
+                    """
+                    SELECT ease_factor, interval_days, repetitions, lapses
+                    FROM user_question_srs
+                    WHERE user_id = ? AND canonical_id = ?
+                    """,
+                    (user_id, canonical_id),
+                )
+                row = c.fetchone()
+                prev = dict(row) if row else None
             next_srs = compute_next_sm2_state(prev, quality=quality, now=ts_dt)
 
             batch_stmts = [build_srs_upsert_stmt(user_id, canonical_id, next_srs)]

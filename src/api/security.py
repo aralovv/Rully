@@ -38,14 +38,12 @@ def get_allowed_bot_tokens() -> List[str]:
         if clean_rt and clean_rt not in tokens:
             tokens.append(clean_rt)
 
-    # In local testing/dev only: fallback to test tokens if no token set
-    if not is_production():
-        known_tokens = [
-            "5875526565:AAEwGdyseiyejQQkf67_WEkvKX0cz0EX94s"
-        ]
-        for kt in known_tokens:
-            if kt not in tokens:
-                tokens.append(kt)
+    # Explicit test/local development mock fallback only — never a real token
+    if not tokens and (
+        "PYTEST_CURRENT_TEST" in os.environ
+        or (not is_production() and os.getenv("ENVIRONMENT", "").strip().lower() in ("dev", "development", "test", "testing"))
+    ):
+        tokens.append("0000000000:TEST_MOCK_BOT_TOKEN_NOT_REAL")
 
     return tokens
 
@@ -155,9 +153,11 @@ def verify_telegram_init_data(init_data: str, bot_token: Optional[str] = None) -
 
 def generate_dev_init_data(user_id: int = 8809526955, bot_token: Optional[str] = None) -> str:
     """
-    Generates a cryptographically valid initData query string for automated tests.
+    Generates a cryptographically valid initData query string for automated tests and local development.
     """
-    token = bot_token or BOT_TOKEN
+    if is_production() and "PYTEST_CURRENT_TEST" not in os.environ:
+        raise RuntimeError("generate_dev_init_data is strictly disabled in production.")
+    token = (bot_token or BOT_TOKEN or os.getenv("BOT_TOKEN", "").strip() or "0000000000:TEST_MOCK_BOT_TOKEN_NOT_REAL")
     user_json = json.dumps({
         "id": user_id,
         "first_name": "Tester",

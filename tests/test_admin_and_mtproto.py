@@ -97,8 +97,13 @@ def create_test_admin_session() -> str:
     exp_str = (datetime.utcnow() + timedelta(hours=8)).isoformat()
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
-        c.execute("SELECT id FROM admin_users WHERE username = 'Anvarjon'")
-        admin_id = c.fetchone()[0]
+        c.execute("SELECT id FROM admin_users ORDER BY id ASC LIMIT 1")
+        row = c.fetchone()
+        if not row:
+            from src.admin.auth_service import ensure_admin_user_exists
+            admin_id = ensure_admin_user_exists()["id"]
+        else:
+            admin_id = row[0]
         c.execute("""
             INSERT INTO admin_sessions (session_id, admin_id, ip_address, user_agent, created_at, expires_at, is_revoked, last_activity_at)
             VALUES (?, ?, '127.0.0.1', 'pytest', ?, ?, 0, ?)
@@ -338,20 +343,30 @@ def test_payment_matching_unmatched_and_review():
 # 5. Admin Authentication & Session Management
 # -------------------------------------------------------------
 def test_admin_auth_flow():
-    # Ensure fresh cookies for this test
+    # Ensure fresh cookies for this test and deterministic test password inside isolated DB copy
     client.cookies.clear()
+    admin_pwd = "Pytest_Admin_Pass_2026!"
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute("SELECT id, username FROM admin_users ORDER BY id ASC LIMIT 1").fetchone()
+        if row:
+            admin_username = row[1]
+            conn.execute("UPDATE admin_users SET password_hash = ?, is_active = 1 WHERE id = ?", (hash_password(admin_pwd), row[0]))
+            conn.commit()
+        else:
+            from src.admin.auth_service import ensure_admin_user_exists
+            os.environ["ADMIN_PASSWORD"] = admin_pwd
+            admin_username = ensure_admin_user_exists()["username"]
 
     # Step 1: Failed login with invalid password
     res_bad = client.post("/api/admin/auth/login", json={
-        "username": "Anvarjon",
+        "username": admin_username,
         "password": "WrongPassword123"
     })
     assert res_bad.status_code == 401
 
     # Step 2: Successful initiate login with valid credentials
-    admin_pwd = os.getenv("ADMIN_PASSWORD", "test_admin_password_123")
     res_init = client.post("/api/admin/auth/login", json={
-        "username": "Anvarjon",
+        "username": admin_username,
         "password": admin_pwd
     })
     assert res_init.status_code == 200
@@ -386,28 +401,29 @@ def test_admin_auth_flow():
     assert res_ok_otp.status_code == 200
     auth_body = res_ok_otp.json()
     assert auth_body["ok"] is True
-    session_token = auth_body["data"]["session_token"]
-    assert len(session_token) > 20
+    assert "session_token" not in auth_body["data"], "Raw session_token must never leak in JSON body"
+    csrf_token = client.cookies.get("rully_csrf")
+    assert csrf_token and len(csrf_token) > 20
 
-    # Step 5: Access protected route with Bearer token
-    headers = {"Authorization": f"Bearer {session_token}"}
-    res_me = client.get("/api/admin/auth/me", headers=headers)
+    # Step 5: Access protected route using HttpOnly cookie session
+    res_me = client.get("/api/admin/auth/me")
     assert res_me.status_code == 200
-    assert res_me.json()["admin"]["username"] == "Anvarjon"
+    assert res_me.json()["admin"]["username"] == admin_username
 
-    # Step 6: Unauthorized access without token or cookies
+    # Step 6: Cookie mutation without CSRF header is blocked (403)
+    res_no_csrf = client.post("/api/admin/auth/logout")
+    assert res_no_csrf.status_code == 403
+
+    # Step 7: Logout / Revocation with valid CSRF token
+    res_logout = client.post("/api/admin/auth/logout", headers={"X-CSRF-Token": csrf_token})
+    assert res_logout.status_code == 200
+
+    # Step 8: Unauthorized access after logout / without cookies
+    res_revoked = client.get("/api/admin/auth/me")
+    assert res_revoked.status_code == 401
     client.cookies.clear()
     res_unauth = client.get("/api/admin/auth/me")
     assert res_unauth.status_code == 401
-
-    # Step 7: Logout / Revocation
-    res_logout = client.post("/api/admin/auth/logout", headers=headers)
-    assert res_logout.status_code == 200
-
-    # Step 8: Token is now invalidated
-    client.cookies.clear()
-    res_revoked = client.get("/api/admin/auth/me", headers=headers)
-    assert res_revoked.status_code == 401
 
 
 # -------------------------------------------------------------

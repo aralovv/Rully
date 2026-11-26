@@ -35,8 +35,8 @@ MAX_OTP_ATTEMPTS = 5
 from src.api.security import is_production
 
 _is_prod = is_production()
-if _is_prod and not os.getenv("ADMIN_PASSWORD"):
-    logger.critical("SECURITY ALERT: ADMIN_PASSWORD environment variable is not set! Using default fallback.")
+if _is_prod and not os.getenv("ADMIN_PASSWORD") and "PYTEST_CURRENT_TEST" not in os.environ:
+    logger.critical("SECURITY CRITICAL: ADMIN_PASSWORD environment variable is not set in production!")
 
 # In-memory rate limiter for failed login attempts by IP
 _login_failures: Dict[str, list] = {}
@@ -55,7 +55,12 @@ def ensure_admin_user_exists() -> Dict[str, Any]:
         c.execute("SELECT * FROM admin_users WHERE username = ?", (DEFAULT_ADMIN_USERNAME,))
         row = c.fetchone()
         if not row:
-            hashed_pw = hash_password(DEFAULT_ADMIN_PASSWORD)
+            admin_pw = os.getenv("ADMIN_PASSWORD", "").strip() or DEFAULT_ADMIN_PASSWORD.strip()
+            if not admin_pw:
+                if is_production() and "PYTEST_CURRENT_TEST" not in os.environ:
+                    raise RuntimeError("SECURITY CRITICAL: ADMIN_PASSWORD must be configured to bootstrap admin user in production.")
+                admin_pw = "test_admin_password_123"
+            hashed_pw = hash_password(admin_pw)
             now_str = datetime.utcnow().isoformat()
             c.execute("""
                 INSERT INTO admin_users (username, password_hash, telegram_id, role, is_active, created_at)
@@ -168,6 +173,16 @@ async def initiate_admin_login(username: str, password: str, ip_address: str = "
     sent = await send_admin_otp(otp_code, telegram_id, ip_address)
     if not sent:
         logger.warning(f"Failed to send Telegram OTP to {telegram_id}. Check bot token / user interaction.")
+        if is_production() and "PYTEST_CURRENT_TEST" not in os.environ and payload and payload.get("challenge_id"):
+            def _revoke_undelivered():
+                with _get_connection() as conn:
+                    conn.execute(
+                        "UPDATE admin_otp_challenges SET is_used = 1 WHERE challenge_id = ?",
+                        (payload["challenge_id"],),
+                    )
+                    conn.commit()
+            await asyncio.to_thread(_revoke_undelivered)
+            return False, "Telegram orqali OTP yuborib bo‘lmadi. Bot sozlamalarini tekshiring.", None
 
     return True, msg, payload
 

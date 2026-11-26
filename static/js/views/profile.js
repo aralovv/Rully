@@ -82,8 +82,8 @@
       const elTimer = document.getElementById('invoice-countdown-timer');
 
       if (elPlan) elPlan.textContent = ord.plan_name || planId;
-      if (elHolder) elHolder.textContent = ord.cardholder_name || 'ANVARJON ARALOV';
-      const rawCard = ord.card_number_raw || ord.card_number_masked || '9860 0000 0000 5370';
+      if (elHolder) elHolder.textContent = ord.cardholder_name || 'KARTA EGASI';
+      const rawCard = ord.card_number_raw || ord.card_number_masked || '•••• •••• •••• ••••';
       if (elCard) elCard.textContent = rawCard;
       const amtFmt = String(ord.final_amount_uzs || 0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
       if (elAmount) elAmount.textContent = amtFmt;
@@ -165,7 +165,7 @@
       const trapHtml = trapList.map(function (it) {
         return '<div class="surface-card" style="padding:12px;border-color:rgba(239,68,68,0.3);">' +
           '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:4px;"><strong>' + R.escHtml(it.term) + '</strong><span class="badge-pill badge-rose font-mono">' + R.escHtml(it.chip) + '</span></div>' +
-          '<div style="font-size:12px;color:var(--text-secondary);">' + it.hint + '</div>' +
+          '<div style="font-size:12px;color:var(--text-secondary);">' + R.safeRichHtml(it.hint) + '</div>' +
           '</div>';
       }).join('');
 
@@ -177,7 +177,7 @@
             return '<div class="cs-rule-item">' +
               (it.badge_val ? '<span class="badge-pill badge-' + R.escHtml(it.badge_color || 'neutral') + ' font-mono cs-badge-val">' + R.escHtml(it.badge_val) + '</span>' : '') +
               (it.k ? '<strong style="font-size:12.5px;">' + R.escHtml(it.k) + '</strong> ' : '') +
-              '<span style="font-size:12px;color:var(--text-secondary);line-height:1.45;">' + (it.v || '') + '</span>' +
+              '<span style="font-size:12px;color:var(--text-secondary);line-height:1.45;">' + R.safeRichHtml(it.v || '') + '</span>' +
               '</div>';
           }).join('') +
           '</div>' +
@@ -193,7 +193,7 @@
           ? '<div class="surface-card" style="background:var(--color-primary-soft);border-color:var(--color-primary-border);">' +
             '  <span class="badge-pill badge-primary" style="margin-bottom:6px;">' + R.escHtml(cs.collective.badge) + '</span>' +
             '  <div style="font-weight:700;margin-bottom:4px;">' + R.escHtml(cs.collective.title) + '</div>' +
-            '  <p style="font-size:12.5px;">' + cs.collective.desc + '</p>' +
+            '  <p style="font-size:12.5px;">' + R.safeRichHtml(cs.collective.desc) + '</p>' +
             '</div>'
           : '') +
         (hiHtml ? '<div class="section-heading" style="margin-top:6px;"><span>' + R.escHtml(cs.high_prob_title || '') + '</span></div><div class="list-stack">' + hiHtml + '</div>' : '') +
@@ -252,6 +252,41 @@
   R.renderProfile = function () {
     const root = document.getElementById('view-profile');
     if (!root) return;
+
+    if (R.state.isGuest) {
+      root.innerHTML =
+        '<section class="surface-card" style="margin-bottom:14px;">' +
+        '  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">' +
+        '    <div><strong>' + R.escHtml(R.t('guest_hero_badge')) + '</strong><p style="font-size:12.5px;color:var(--text-secondary);margin-top:3px;">' + R.escHtml(R.t('web_gate_desc')) + '</p></div>' +
+        '    <a href="https://t.me/rully_uz_bot" target="_blank" rel="noopener" class="btn btn-primary btn-sm">' + R.icon('telegram', 'xs') + '<span>' + R.escHtml(R.t('guest_sync_tg')) + '</span></a>' +
+        '  </div>' +
+        '</section>' +
+        '<section class="surface-card" style="margin-bottom:14px;display:flex;flex-direction:column;gap:14px;">' +
+        '  <div>' +
+        '    <div style="font-size:13px;font-weight:700;margin-bottom:6px;">' + R.escHtml(R.t('theme_title')) + '</div>' +
+        '    <div class="seg-pills" style="grid-template-columns:repeat(3,1fr);">' +
+        '      <button type="button" class="seg-pill ' + (R.theme.pref === 'auto' ? 'active' : '') + '" data-theme-opt="auto">' + R.escHtml(R.t('theme_auto')) + '</button>' +
+        '      <button type="button" class="seg-pill ' + (R.theme.pref === 'light' ? 'active' : '') + '" data-theme-opt="light">' + R.escHtml(R.t('theme_light')) + '</button>' +
+        '      <button type="button" class="seg-pill ' + (R.theme.pref === 'dark' ? 'active' : '') + '" data-theme-opt="dark">' + R.escHtml(R.t('theme_dark')) + '</button>' +
+        '    </div>' +
+        '  </div>' +
+        '  <div>' +
+        '    <div style="font-size:13px;font-weight:700;margin-bottom:6px;">' + R.escHtml(R.t('language_select_title')) + '</div>' +
+        '    <div class="seg-pills" style="grid-template-columns:repeat(3,1fr);">' +
+        '      <button type="button" class="seg-pill ' + (R.state.lang === 'uz_latn' ? 'active' : '') + '" data-lang-opt="uz_latn">O‘zbekcha</button>' +
+        '      <button type="button" class="seg-pill ' + (R.state.lang === 'uz_cyrl' ? 'active' : '') + '" data-lang-opt="uz_cyrl">Ўзбекча</button>' +
+        '      <button type="button" class="seg-pill ' + (R.state.lang === 'ru' ? 'active' : '') + '" data-lang-opt="ru">Русский</button>' +
+        '    </div>' +
+        '  </div>' +
+        '</section>';
+      root.querySelectorAll('[data-theme-opt]').forEach(function (btn) {
+        btn.addEventListener('click', function () { R.theme.apply(btn.dataset.themeOpt); R.renderProfile(); });
+      });
+      root.querySelectorAll('[data-lang-opt]').forEach(function (btn) {
+        btn.addEventListener('click', function () { R.changeLanguage(btn.dataset.langOpt); });
+      });
+      return;
+    }
 
     const u = R.state.user || {};
     const sub = R.state.subscription || {};

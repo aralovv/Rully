@@ -17,7 +17,7 @@ from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from src.admin.deps import get_current_admin
+from src.admin.deps import get_current_admin, require_admin_role
 from src.analytics.tracker import classify_user_activity
 from src.db_adapter import execute_batch, get_db_connection
 from src.security.telegram_notifier import send_user_subscription_granted_notification
@@ -45,31 +45,43 @@ class RevokeSubscriptionRequest(BaseModel):
 @router.get("")
 def list_users(
     q: Optional[str] = Query(None, description="Search by Telegram ID, username, or name"),
+    query_alias: Optional[str] = Query(None, alias="query", description="Backward-compatible search alias"),
     subscription_status: Optional[str] = Query("all", description="all, pro, free"),
+    filter_status: Optional[str] = Query(None, description="Frontend filter alias: all, pro, free, blocked"),
     is_blocked: Optional[int] = Query(None, description="0 (active) or 1 (blocked)"),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
-    sort_by: str = Query("created_at", description="created_at, last_active_at, user_id"),
+    sort_by: str = Query("created_at", description="created_at, last_active_at, user_id, paid_total"),
     sort_order: str = Query("desc", description="desc, asc"),
-    current_admin: dict = Depends(get_current_admin)
+    current_admin: dict = Depends(require_admin_role("FINANCE", "SUPPORT"))
 ):
     """Lists users with search, filters, pagination, and real-time revenue summaries."""
     offset = (page - 1) * limit
-    allowed_sort_fields = {"created_at": "u.created_at", "last_active_at": "u.last_active_at", "user_id": "u.user_id"}
+    allowed_sort_fields = {
+        "created_at": "u.created_at",
+        "last_active_at": "u.last_active_at",
+        "recent_activity": "u.last_active_at",
+        "user_id": "u.user_id",
+        "paid_total": "total_revenue_uzs",
+    }
     order_col = allowed_sort_fields.get(sort_by, "u.created_at")
     direction = "ASC" if sort_order.lower() == "asc" else "DESC"
 
     conditions = []
     params = []
 
-    if q:
-        q_clean = f"%{q.strip()}%"
+    effective_q = q if (q and q.strip()) else query_alias
+    if effective_q and effective_q.strip():
+        q_clean = f"%{effective_q.strip()}%"
         conditions.append("(u.username LIKE ? OR u.first_name LIKE ? OR CAST(u.user_id AS TEXT) LIKE ?)")
         params.extend([q_clean, q_clean, q_clean])
 
-    if subscription_status == "pro":
+    effective_sub = (filter_status or subscription_status or "all").strip().lower()
+    if effective_sub == "blocked" and is_blocked is None:
+        is_blocked = 1
+    elif effective_sub == "pro":
         conditions.append("u.is_pro = 1 AND u.subscription_expires_at > datetime('now')")
-    elif subscription_status == "free":
+    elif effective_sub == "free":
         conditions.append("(u.is_pro = 0 OR u.subscription_expires_at <= datetime('now') OR u.subscription_expires_at IS NULL)")
 
     if is_blocked is not None:
@@ -123,7 +135,7 @@ def list_users(
 
 
 @router.get("/{user_id}")
-def get_user_profile(user_id: int, current_admin: dict = Depends(get_current_admin)):
+def get_user_profile(user_id: int, current_admin: dict = Depends(require_admin_role("FINANCE", "SUPPORT"))):
     """Returns complete user dossier including subscriptions, payments, orders, and activity telemetry."""
     with _get_connection() as conn:
         c = conn.cursor()
@@ -191,7 +203,7 @@ def get_user_profile(user_id: int, current_admin: dict = Depends(get_current_adm
 
 
 @router.post("/{user_id}/block")
-def block_user(user_id: int, req: BlockUserRequest, current_admin: dict = Depends(get_current_admin)):
+def block_user(user_id: int, req: BlockUserRequest, current_admin: dict = Depends(require_admin_role("FINANCE"))):
     """Blocks a user and records administrative audit details atomically."""
     now_str = datetime.utcnow().isoformat()
     admin_name = current_admin["username"]
@@ -237,7 +249,7 @@ def block_user(user_id: int, req: BlockUserRequest, current_admin: dict = Depend
 
 
 @router.post("/{user_id}/unblock")
-def unblock_user(user_id: int, current_admin: dict = Depends(get_current_admin)):
+def unblock_user(user_id: int, current_admin: dict = Depends(require_admin_role("FINANCE"))):
     """Unblocks a user and restores their service access atomically."""
     now_str = datetime.utcnow().isoformat()
 
@@ -350,7 +362,7 @@ def _grant_subscription_sync(
 async def grant_subscription(
     user_id: int,
     req: GrantSubscriptionRequest,
-    current_admin: dict = Depends(get_current_admin)
+    current_admin: dict = Depends(require_admin_role("FINANCE"))
 ):
     """
     Manually grants or extends a subscription (14 or 30 days) atomically via execute_batch().
@@ -366,6 +378,12 @@ async def grant_subscription(
         req.reason,
         current_admin["id"],
     )
+
+    try:
+        from src.api.deps import invalidate_user_cache
+        invalidate_user_cache(user_id)
+    except Exception:
+        pass
 
     try:
         await send_user_subscription_granted_notification(
@@ -387,7 +405,7 @@ async def grant_subscription(
 def revoke_subscription(
     user_id: int,
     req: RevokeSubscriptionRequest,
-    current_admin: dict = Depends(get_current_admin)
+    current_admin: dict = Depends(require_admin_role("FINANCE"))
 ):
     """
     Manually revokes an active subscription immediately and atomically.

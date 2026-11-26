@@ -44,7 +44,7 @@ _CSP_USER_MINIAPP = (
 )
 _CSP_ADMIN_PANEL = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline'; "
+    "script-src 'self'; "
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
     "font-src 'self' https://fonts.gstatic.com data:; "
     "img-src 'self' data: blob: https://cdn.jsdelivr.net https://raw.githubusercontent.com; "
@@ -321,7 +321,18 @@ _web_app_url = os.getenv("WEB_APP_URL", "").strip()
 if _web_app_url and _web_app_url not in ALLOWED_ORIGINS:
     ALLOWED_ORIGINS.append(_web_app_url)
 
-STRICT_CORS_ORIGIN_REGEX = r"^https?:\/\/(localhost|127\.0\.0\.1|rully[a-zA-Z0-9-]*\.vercel\.app|rully[a-zA-Z0-9-]*\.onrender\.com|web[kz]?\.telegram\.org|t\.me)(:[0-9]+)?$"
+for _deploy_host in (os.getenv("VERCEL_URL", "").strip(), os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()):
+    if _deploy_host:
+        _deploy_origin = _deploy_host if _deploy_host.startswith("http") else f"https://{_deploy_host}"
+        if _deploy_origin not in ALLOWED_ORIGINS:
+            ALLOWED_ORIGINS.append(_deploy_origin)
+
+_is_cloud_prod = (
+    os.getenv("ENVIRONMENT", "").strip().lower() in ("production", "prod", "standalone-cloud")
+    or bool(os.getenv("VERCEL"))
+    or bool(os.getenv("RENDER"))
+)
+STRICT_CORS_ORIGIN_REGEX = None if _is_cloud_prod else r"^https?:\/\/(localhost|127\.0\.0\.1)(:[0-9]+)?$"
 
 
 def create_app(public_only: Optional[bool] = None) -> FastAPI:
@@ -515,7 +526,6 @@ def create_app(public_only: Optional[bool] = None) -> FastAPI:
             "canonical_db": "master_database.sqlite",
             "turso_configured": bool(os.getenv("TURSO_DATABASE_URL")),
             "gemini_api_key_set": bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")),
-            "gemini_key_len": len((os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "")),
             "mtproto_status": mtproto_status,
             "bot_active": _bot_instance is not None
         }

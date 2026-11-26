@@ -5,7 +5,7 @@ import time
 import base64
 import asyncio
 import logging
-from typing import Dict, Any, List, Optional, Tuple
+from typing import AsyncIterator, Dict, Any, List, Optional, Tuple
 import httpx
 from src.ai.prompts import SYSTEM_PROMPT_UZ, get_system_prompt
 from src.ai.tools import (
@@ -15,6 +15,7 @@ from src.ai.tools import (
     get_provenance_select_sql,
     format_legal_provenance_payload,
 )
+from src.analytics.tracker import log_user_event
 from src.db_adapter import get_db_connection
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ class GeminiService:
 
             key_exhausted = False
             for model_name in GEMINI_MODELS:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={cur_key}"
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
                 req_headers = {
                     "Content-Type": "application/json",
                     "x-goog-api-key": cur_key
@@ -139,16 +140,16 @@ class GeminiService:
                     if mime:
                         return base64.b64encode(content).decode("utf-8"), mime
 
-            # 2. Remote candidates
+            # 2. CDN-first remote candidates (never wait on sleeping Render before fastly CDN)
             candidates = []
             if image_url.startswith("http://") or image_url.startswith("https://"):
                 candidates.append(image_url)
             candidates.extend([
-                f"https://rully-app.onrender.com/images/{clean_name}",
                 f"https://fastly.jsdelivr.net/gh/aralovv/Rully@main/data/images/original/{clean_name}",
-                f"https://raw.githubusercontent.com/aralovv/Rully/main/data/images/original/{clean_name}"
+                f"https://raw.githubusercontent.com/aralovv/Rully/main/data/images/original/{clean_name}",
+                f"https://rully-app.onrender.com/images/{clean_name}",
             ])
-            async with httpx.AsyncClient(timeout=6.0) as client:
+            async with httpx.AsyncClient(timeout=4.0) as client:
                 for candidate in candidates:
                     try:
                         r = await client.get(candidate)
@@ -378,7 +379,7 @@ class GeminiService:
 
         if status == "UNRESOLVED_LEGAL_REVIEW":
             unverified_pattern = re.compile(
-                r"(?:\b(?:VMQ|PKM|ВМҚ|ПКМ)\s*(?:№|-)?\s*172\b|\b\d{1,2}\.\d{1,3}[-\s]*(?:band|modda|банд|модда|пункт)\b)",
+                r"(?:\b(?:VMQ|PKM|ВМҚ|ПКМ)\s*(?:№|-)?\s*172\b|\b\d{1,3}(?:\.\d{1,3})?[-\s]*(?:band|bandi|modda|moddasi|банд|банди|модда|пункт)\b|\b(?:пункт|п\.?)\s*\d{1,3}(?:\.\d{1,3})?\b)",
                 flags=re.IGNORECASE,
             )
             if unverified_pattern.search(reply_text or ""):
@@ -434,37 +435,32 @@ class GeminiService:
 
     def check_and_increment_rate_limit(self, user_id: int, is_pro: bool) -> tuple[bool, int, int]:
         """
-        AI Assistant is an exclusive PRO subscription feature.
-        Non-PRO users: 0 requests allowed.
-        PRO users: up to 100 requests per day for fair use / anti-spam protection.
+        Enforces daily AI Ustoz quota:
+        - PRO users: up to 100 requests per day.
+        - Free users: 3 complimentary daily teaser analyses to experience AI Ustoz.
         Returns: (allowed: bool, current_usage: int, max_limit: int)
         """
-        if not is_pro:
-            return False, 0, 0
-
-        max_limit = 100
+        max_limit = 100 if is_pro else 3
         with get_db_connection() as conn:
             c = conn.cursor()
-            
-            # Today's date in YYYY-MM-DD
+
             c.execute("""
             SELECT request_count FROM ai_usage_limits
             WHERE user_id = ? AND usage_date = DATE('now')
             """, (user_id,))
             row = c.fetchone()
-            
+
             current = row["request_count"] if row else 0
             if current >= max_limit:
                 return False, current, max_limit
 
-            # Increment or insert
             c.execute("""
             INSERT INTO ai_usage_limits (user_id, usage_date, request_count)
             VALUES (?, DATE('now'), 1)
             ON CONFLICT(user_id, usage_date) DO UPDATE SET request_count = request_count + 1
             """, (user_id,))
             conn.commit()
-            
+
             return True, current + 1, max_limit
 
     def refund_rate_limit(self, user_id: int):
@@ -482,17 +478,46 @@ class GeminiService:
         except Exception as e:
             logger.warning(f"Failed to refund AI rate limit for user {user_id}: {e}")
 
-    def get_conversation_history(self, user_id: int, session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+    def get_conversation_history(
+        self,
+        user_id: int,
+        session_id: str,
+        limit: int = 10,
+        include_meta: bool = False,
+    ) -> List[Dict[str, Any]]:
         try:
             with get_db_connection() as conn:
                 c = conn.cursor()
                 c.execute("""
-                SELECT role, content FROM ai_conversations
+                SELECT role, content, meta_json FROM ai_conversations
                 WHERE user_id = ? AND session_id = ?
                 ORDER BY id DESC LIMIT ?
                 """, (user_id, session_id, limit))
                 rows = c.fetchall()
-                rows.reverse() # chronological
+                rows.reverse()  # chronological
+
+                if include_meta:
+                    raw_out: List[Dict[str, Any]] = []
+                    for r in rows:
+                        txt = (r["content"] or "").strip()
+                        if not txt:
+                            continue
+                        meta = {}
+                        raw_meta = r["meta_json"] if hasattr(r, "keys") and "meta_json" in r.keys() else (r[2] if len(r) > 2 else None)
+                        if raw_meta:
+                            try:
+                                parsed = json.loads(raw_meta)
+                                if isinstance(parsed, dict):
+                                    meta = parsed
+                            except Exception:
+                                pass
+                        raw_out.append({
+                            "role": "user" if r["role"] == "user" else "assistant",
+                            "text": txt,
+                            "cards": meta.get("cards") if isinstance(meta.get("cards"), list) else [],
+                            "grounding": meta.get("grounding"),
+                        })
+                    return raw_out
 
                 cleaned: List[Dict[str, Any]] = []
                 for r in rows:
@@ -513,7 +538,7 @@ class GeminiService:
             logger.warning(f"Failed to fetch conversation history: {e}")
             return []
 
-    def save_message(self, user_id: int, session_id: str, role: str, content: str, meta_json: Optional[str] = None):
+    def save_message(self, user_id: int, session_id: str, role: str, content: str, meta_json: Optional[str] = None) -> Optional[int]:
         try:
             with get_db_connection() as conn:
                 c = conn.cursor()
@@ -521,9 +546,156 @@ class GeminiService:
                 INSERT INTO ai_conversations (user_id, session_id, role, content, meta_json)
                 VALUES (?, ?, ?, ?, ?)
                 """, (user_id, session_id, role, content, meta_json))
+                row_id = c.lastrowid
                 conn.commit()
+                return int(row_id) if row_id else None
         except Exception as e:
             logger.warning(f"Failed to persist AI conversation message: {e}")
+            return None
+
+    def _delete_message_by_id(self, msg_id: Optional[int]) -> None:
+        if not msg_id:
+            return
+        try:
+            with get_db_connection() as conn:
+                conn.execute("DELETE FROM ai_conversations WHERE id = ?", (msg_id,))
+                conn.commit()
+        except Exception as e:
+            logger.warning(f"Failed to rollback orphan AI message #{msg_id}: {e}")
+
+    def _post_process_reply(
+        self,
+        raw_text: str,
+        db_gt_meta: Optional[Dict[str, Any]],
+        lang: str,
+    ) -> Tuple[str, Dict[str, Any]]:
+        final_text = re.sub(r'\b(?:Canon(?:ical)?\s*(?:yhq)?[:\-]?\s*)?UZ-YHQ-[A-Z0-9]+\b', '', raw_text or '', flags=re.IGNORECASE)
+        q_word = "вопрос" if lang == "ru" else ("савол" if lang == "uz_cyrl" else "savol")
+        Q_word = "Вопрос" if lang == "ru" else ("Савол" if lang == "uz_cyrl" else "Savol")
+        final_text = re.sub(r'\bCanon\s*yhq\b', q_word, final_text, flags=re.IGNORECASE)
+        final_text = re.sub(r'\bCanon\b', Q_word, final_text, flags=re.IGNORECASE)
+        return self._apply_legal_citation_guardrail(final_text, db_gt_meta, lang)
+
+    async def _prepare_turn_context(
+        self,
+        user_id: int,
+        session_id: str,
+        message: str,
+        is_pro: bool,
+        language: str,
+        image_url: Optional[str],
+        canonical_id: Optional[str],
+        question_context: Optional[Dict[str, Any]],
+        student_snapshot: Optional[Dict[str, Any]],
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+        lang = normalize_lang(language)
+
+        if not self.api_key:
+            reply = (
+                "⚠️ **AI Инструктор настраивается.**\n\nСервис скоро заработает в полном объеме."
+                if lang == "ru"
+                else (
+                    "⚠️ **AI Устоз хизмати созланмоқда.**\n\nТез орада тўлиқ ишга тушади."
+                    if lang == "uz_cyrl"
+                    else "⚠️ **AI Ustoz xizmati sozlanmoqda.**\n\nTez orada to'liq ishga tushadi."
+                )
+            )
+            return {
+                "ok": True,
+                "reply": reply,
+                "limit_reached": False,
+                "usage": {"current": 0, "max": 100 if is_pro else 3},
+                "cards": [],
+            }, None
+
+        allowed, current_count, max_limit = await asyncio.to_thread(self.check_and_increment_rate_limit, user_id, is_pro)
+        if not allowed:
+            if not is_pro:
+                limit_msg = (
+                    f"🔒 **Kunlik {max_limit} ta bepul AI tahlil tugadi!**\n\n⚡ Cheksiz savol-javob, 7 kunlik o‘qish rejasi va rasm tahlili uchun **RULLY PRO** obunasini yoqing."
+                    if lang == "uz_latn"
+                    else (
+                        f"🔒 **Кунлик {max_limit} та бепул AI таҳлил тугади!**\n\n⚡ Чексиз савол-жавоб ва 7 кунлик режа учун **RULLY PRO** обунасини ёқинг."
+                        if lang == "uz_cyrl"
+                        else f"🔒 **Использованы {max_limit} бесплатных AI-разбора за день!**\n\n⚡ Подключите **RULLY PRO** для безлимитного ИИ-наставника и 7-дневного плана подготовки."
+                    )
+                )
+            else:
+                limit_msg = (
+                    f"Ваш дневной лимит запросов к AI ({max_limit}) исчерпан. Пожалуйста, продолжите завтра."
+                    if lang == "ru"
+                    else (
+                        f"Кунлик AI сўровлар лимитингиз ({max_limit} та) тугади. Илтимос, эртага давом этинг."
+                        if lang == "uz_cyrl"
+                        else f"Kunlik AI so‘rovlar limitingiz ({max_limit} ta) tugadi. Iltimos, ertaga davom eting."
+                    )
+                )
+            return {
+                "ok": False,
+                "requires_pro": not is_pro,
+                "reply": limit_msg,
+                "limit_reached": True,
+                "usage": {"current": current_count, "max": max_limit},
+                "cards": [],
+            }, None
+
+        user_meta = json.dumps({"image_url": image_url, "canonical_id": canonical_id}) if (image_url or canonical_id) else None
+        user_msg_id = await asyncio.to_thread(self.save_message, user_id, session_id, "user", message, user_meta)
+
+        current_parts: List[Dict[str, Any]] = [{"text": message}]
+        if image_url:
+            img_data = await self._load_image_base64(image_url)
+            if img_data:
+                b64_str, mime_type = img_data
+                current_parts.append({"inline_data": {"mime_type": mime_type, "data": b64_str}})
+
+        history = await asyncio.to_thread(self.get_conversation_history, user_id, session_id, 8, False)
+        while history and history[-1]["role"] == "user":
+            history.pop()
+        history.append({"role": "user", "parts": current_parts})
+
+        gt_context, db_gt_meta = await asyncio.to_thread(
+            self._resolve_ground_truth_bundle, image_url, canonical_id, lang, question_context
+        )
+        learner_ctx = self._build_learner_context(student_snapshot, question_context)
+        sys_prompt_text = get_system_prompt(lang)
+        if gt_context:
+            sys_prompt_text += f"\n\n{gt_context}"
+        if learner_ctx:
+            sys_prompt_text += f"\n{learner_ctx}"
+
+        payload = {
+            "system_instruction": {"parts": [{"text": sys_prompt_text}]},
+            "contents": history,
+            "tools": [{"functionDeclarations": GEMINI_TOOLS_DECLARATIONS}],
+            "generationConfig": {"temperature": 0.35, "maxOutputTokens": 1024},
+        }
+        return None, {
+            "lang": lang,
+            "current_count": current_count,
+            "max_limit": max_limit,
+            "user_msg_id": user_msg_id,
+            "contents": history,
+            "db_gt_meta": db_gt_meta,
+            "payload": payload,
+        }
+
+    @staticmethod
+    def _collect_cards_from_tool_result(tool_result: Dict[str, Any], question_cards: List[Dict[str, Any]]) -> None:
+        seen = {c.get("canonical_id") for c in question_cards if c.get("canonical_id")}
+        for key in ("questions", "mistake_questions", "bookmarks", "saved_questions", "srs_items", "top_mistake_questions"):
+            if isinstance(tool_result.get(key), list):
+                for item in tool_result[key]:
+                    if len(question_cards) >= 3:
+                        return
+                    if isinstance(item, dict) and item.get("canonical_id") not in seen:
+                        seen.add(item.get("canonical_id"))
+                        question_cards.append({
+                            "canonical_id": item.get("canonical_id"),
+                            "category_name": item.get("category_name"),
+                            "question": item.get("question"),
+                            "correct_option_key": item.get("correct_option_key"),
+                        })
 
     async def chat(
         self,
@@ -537,118 +709,21 @@ class GeminiService:
         question_context: Optional[Dict[str, Any]] = None,
         student_snapshot: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        lang = normalize_lang(language)
+        early_resp, ctx = await self._prepare_turn_context(
+            user_id, session_id, message, is_pro, language,
+            image_url, canonical_id, question_context, student_snapshot,
+        )
+        if early_resp:
+            return early_resp
 
-        # 1. Pro Subscription Check
-        if not is_pro:
-            if lang == "ru":
-                pro_msg = (
-                    "🔒 **AI Наставник доступен только по подписке RULLY PRO!**\n\n"
-                    "⚡ Подключите **PRO-подписку** для персонального автоинструктора, "
-                    "разбора сложных правил, перекрёстков и анализа ваших ошибок."
-                )
-            elif lang == "uz_cyrl":
-                pro_msg = (
-                    "🔒 **AI Устоз фақат RULLY PRO обунаси билан ишлайди!**\n\n"
-                    "⚡ Шахсий автоинструктор, йўл ҳаракати қоидалари таҳлили ва хатоларингизни кўриб чиқиш учун "
-                    "**PRO обунани** фаоллаштиринг!"
-                )
-            else:
-                pro_msg = (
-                    "🔒 **AI Ustoz faqat RULLY PRO obunasi bilan ishlaydi!**\n\n"
-                    "⚡ Shaxsiy avtoinstruktor, yo‘l harakati qoidalari tahlili va xatolaringizni ko‘rib chiqish uchun "
-                    "**PRO obunani** faollashtiring!"
-                )
-            return {
-                "ok": False,
-                "requires_pro": True,
-                "reply": pro_msg,
-                "limit_reached": True,
-                "usage": {"current": 0, "max": 0},
-                "cards": []
-            }
+        lang = ctx["lang"]
+        current_count = ctx["current_count"]
+        max_limit = ctx["max_limit"]
+        user_msg_id = ctx["user_msg_id"]
+        contents = ctx["contents"]
+        db_gt_meta = ctx["db_gt_meta"]
+        payload = ctx["payload"]
 
-        # 2. Check API key configuration before consuming rate limit
-        if not self.api_key:
-            if lang == "ru":
-                reply = "⚠️ **AI Инструктор настраивается.**\n\nСервис скоро заработает в полном объеме."
-            elif lang == "uz_cyrl":
-                reply = "⚠️ **AI Устоз хизмати созланмоқда.**\n\nТез орада тўлиқ ишга тушади."
-            else:
-                reply = "⚠️ **AI Ustoz xizmati sozlanmoqda.**\n\nTez orada to'liq ishga tushadi."
-            return {
-                "ok": True,
-                "reply": reply,
-                "limit_reached": False,
-                "usage": {"current": 0, "max": 100},
-                "cards": []
-            }
-
-        # 3. Rate Limit Check (PRO users fair use limit)
-        allowed, current_count, max_limit = self.check_and_increment_rate_limit(user_id, is_pro)
-        if not allowed:
-            if lang == "ru":
-                limit_msg = f"Ваш дневной лимит запросов к AI ({max_limit}) исчерпан. Пожалуйста, продолжите завтра."
-            elif lang == "uz_cyrl":
-                limit_msg = f"Кунлик AI сўровлар лимитингиз ({max_limit} та) тугади. Илтимос, эртага давом этинг."
-            else:
-                limit_msg = f"Kunlik AI so‘rovlar limitingiz ({max_limit} ta) tugadi. Iltimos, ertaga davom eting."
-            return {
-                "ok": False,
-                "reply": limit_msg,
-                "limit_reached": True,
-                "usage": {"current": current_count, "max": max_limit},
-                "cards": []
-            }
-
-        # 3. Save User Message
-        user_meta = json.dumps({"image_url": image_url, "canonical_id": canonical_id}) if (image_url or canonical_id) else None
-        self.save_message(user_id, session_id, "user", message, user_meta)
-
-        # 4. Build Gemini Payload (with Multimodal Vision if image is present)
-        current_parts: List[Dict[str, Any]] = [{"text": message}]
-        if image_url:
-            img_data = await self._load_image_base64(image_url)
-            if img_data:
-                b64_str, mime_type = img_data
-                current_parts.append({
-                    "inline_data": {
-                        "mime_type": mime_type,
-                        "data": b64_str
-                    }
-                })
-                logger.info(f"Attached multimodal vision image ({mime_type}) to Gemini request")
-
-        history = self.get_conversation_history(user_id, session_id, limit=8)
-        while history and history[-1]["role"] == "user":
-            history.pop()
-        history.append({"role": "user", "parts": current_parts})
-        contents = history
-        # Build ground truth, scene passport & live student profile context
-        gt_context, db_gt_meta = self._resolve_ground_truth_bundle(image_url, canonical_id, lang, question_context)
-        learner_ctx = self._build_learner_context(student_snapshot, question_context)
-        sys_prompt_text = get_system_prompt(lang)
-        if gt_context:
-            sys_prompt_text += f"\n\n{gt_context}"
-            logger.info(f"Injected official ground truth / scene passport into system instruction for {canonical_id or image_url}")
-        if learner_ctx:
-            sys_prompt_text += f"\n{learner_ctx}"
-
-        system_instruction = {
-            "parts": [{"text": sys_prompt_text}]
-        }
-
-        payload = {
-            "system_instruction": system_instruction,
-            "contents": contents,
-            "tools": [{"functionDeclarations": GEMINI_TOOLS_DECLARATIONS}],
-            "generationConfig": {
-                "temperature": 0.35,
-                "maxOutputTokens": 1024
-            }
-        }
-
-        # 5. Call Gemini with automatic fallback, retry & tool-call loop
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
                 question_cards: List[Dict[str, Any]] = []
@@ -658,24 +733,21 @@ class GeminiService:
                     data, status_code, err_text = await self._call_gemini_with_fallback(client, payload)
                     if not data or status_code != 200:
                         logger.error(f"Gemini API error: {status_code} {err_text}")
-                        # Refund rate limit since external API call was unsuccessful
-                        self.refund_rate_limit(user_id)
-                        if lang == "ru":
-                            err_reply = "К сожалению, произошла ошибка связи с искусственным интеллектом. Пожалуйста, попробуйте еще раз."
-                        elif lang == "uz_cyrl":
-                            err_reply = "Кечирасиз, сунъий интеллект хизмати билан алоқада хатолик юз берди. Илтимос, қайта уриниб кўринг."
-                        else:
-                            err_reply = "Kechirasiz, sun'iy intellekt xizmati bilan aloqa o'rnatishda xatolik yuz berdi. Iltimos, qayta urinib ko'ring."
-                        return {
-                            "ok": False,
-                            "reply": err_reply,
-                            "error": err_text or f"Status {status_code}"
-                        }
+                        await asyncio.to_thread(self.refund_rate_limit, user_id)
+                        await asyncio.to_thread(self._delete_message_by_id, user_msg_id)
+                        err_reply = (
+                            "К сожалению, произошла ошибка связи с искусственным интеллектом. Пожалуйста, попробуйте еще раз."
+                            if lang == "ru"
+                            else (
+                                "Кечирасиз, сунъий интеллект хизмати билан алоқада хатолик юз берди. Илтимос, қайта уриниб кўринг."
+                                if lang == "uz_cyrl"
+                                else "Kechirasiz, sun'iy intellekt xizmati bilan aloqa o'rnatishda xatolik yuz berdi. Iltimos, qayta urinib ko'ring."
+                            )
+                        )
+                        return {"ok": False, "reply": err_reply, "error": err_text or f"Status {status_code}"}
 
                     candidate = data.get("candidates", [{}])[0]
-                    content = candidate.get("content", {})
-                    parts = content.get("parts", [])
-
+                    parts = candidate.get("content", {}).get("parts", [])
                     fn_calls = [p["functionCall"] for p in parts if isinstance(p, dict) and "functionCall" in p]
                     if not fn_calls:
                         break
@@ -688,7 +760,7 @@ class GeminiService:
                         fn_handler = TOOL_MAPPING.get(fn_name)
                         if fn_handler:
                             try:
-                                tool_result = fn_handler(fn_args, user_id, lang)
+                                tool_result = await asyncio.to_thread(fn_handler, fn_args, user_id, lang)
                             except Exception as tool_err:
                                 logger.warning(f"Tool execution failed ({fn_name}): {tool_err}")
                                 tool_result = {"error": str(tool_err)}
@@ -696,16 +768,7 @@ class GeminiService:
                             tool_result = {"error": f"Unknown tool: {fn_name}"}
 
                         if isinstance(tool_result, dict):
-                            for key in ("questions", "mistake_questions", "bookmarks", "srs_items"):
-                                if isinstance(tool_result.get(key), list):
-                                    for item in tool_result[key]:
-                                        if len(question_cards) < 3 and isinstance(item, dict):
-                                            question_cards.append({
-                                                "canonical_id": item.get("canonical_id"),
-                                                "category_name": item.get("category_name"),
-                                                "question": item.get("question"),
-                                                "correct_option_key": item.get("correct_option_key"),
-                                            })
+                            self._collect_cards_from_tool_result(tool_result, question_cards)
 
                         fn_responses.append({
                             "functionResponse": {
@@ -716,34 +779,70 @@ class GeminiService:
                     contents.append({"role": "user", "parts": fn_responses})
                     payload["contents"] = contents
 
-                final_text = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+                raw_text = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+                final_text, grounding_meta = self._post_process_reply(raw_text, db_gt_meta, lang)
 
-                # Clean any leaked technical identifiers from final text
-                final_text = re.sub(r'\b(?:Canon(?:ical)?\s*(?:yhq)?[:\-]?\s*)?UZ-YHQ-[A-Z0-9]+\b', '', final_text, flags=re.IGNORECASE)
-                q_word = "вопрос" if lang == "ru" else ("савол" if lang == "uz_cyrl" else "savol")
-                Q_word = "Вопрос" if lang == "ru" else ("Савол" if lang == "uz_cyrl" else "Savol")
-                final_text = re.sub(r'\bCanon\s*yhq\b', q_word, final_text, flags=re.IGNORECASE)
-                final_text = re.sub(r'\bCanon\b', Q_word, final_text, flags=re.IGNORECASE)
-                final_text, grounding_meta = self._apply_legal_citation_guardrail(final_text, db_gt_meta, lang)
-
-                # Save assistant response
-                meta_json = json.dumps({"cards": len(question_cards), "grounding": grounding_meta}) if (question_cards or grounding_meta.get("has_db_ground_truth")) else None
-                self.save_message(user_id, session_id, "assistant", final_text, meta_json)
+                persisted_cards = question_cards[:3]
+                meta_json = json.dumps({"cards": persisted_cards, "grounding": grounding_meta})
+                await asyncio.to_thread(self.save_message, user_id, session_id, "assistant", final_text, meta_json)
+                try:
+                    await asyncio.to_thread(log_user_event, user_id, "AI_CHAT_USED", {"canonical_id": canonical_id, "is_pro": is_pro})
+                except Exception:
+                    pass
 
                 return {
                     "ok": True,
                     "reply": final_text,
                     "limit_reached": False,
                     "usage": {"current": current_count, "max": max_limit},
-                    "cards": question_cards[:3],
+                    "cards": persisted_cards,
                     "grounding": grounding_meta,
                 }
-
             except Exception as e:
                 logger.exception("AI assistant invocation exception")
-                self.refund_rate_limit(user_id)
+                await asyncio.to_thread(self.refund_rate_limit, user_id)
+                await asyncio.to_thread(self._delete_message_by_id, user_msg_id)
                 return {
                     "ok": False,
                     "reply": f"AI xizmatida vaqtinchalik xatolik yuz berdi: {str(e)}",
-                    "error": str(e)
+                    "error": str(e),
                 }
+
+    async def stream_chat(
+        self,
+        user_id: int,
+        session_id: str,
+        message: str,
+        is_pro: bool = False,
+        language: str = "uz_latn",
+        image_url: Optional[str] = None,
+        canonical_id: Optional[str] = None,
+        question_context: Optional[Dict[str, Any]] = None,
+        student_snapshot: Optional[Dict[str, Any]] = None,
+    ) -> AsyncIterator[str]:
+        """Yields Server-Sent Events (SSE) JSON frames for real-time AI Ustoz token streaming."""
+        status_label = "Savol tahlil qilinmoqda..." if language != "ru" else "Анализируем вопрос..."
+        yield f"data: {json.dumps({'type': 'status', 'text': status_label}, ensure_ascii=False)}\n\n"
+        result = await self.chat(
+            user_id=user_id,
+            session_id=session_id,
+            message=message,
+            is_pro=is_pro,
+            language=language,
+            image_url=image_url,
+            canonical_id=canonical_id,
+            question_context=question_context,
+            student_snapshot=student_snapshot,
+        )
+        if not result.get("ok") and not result.get("reply"):
+            yield f"data: {json.dumps({'type': 'error', **result}, ensure_ascii=False)}\n\n"
+            return
+
+        reply = result.get("reply") or ""
+        chunk_size = 24
+        for idx in range(0, len(reply), chunk_size):
+            piece = reply[idx:idx + chunk_size]
+            yield f"data: {json.dumps({'type': 'delta', 'text': piece}, ensure_ascii=False)}\n\n"
+            await asyncio.sleep(0.012)
+
+        yield f"data: {json.dumps({'type': 'done', **result}, ensure_ascii=False)}\n\n"

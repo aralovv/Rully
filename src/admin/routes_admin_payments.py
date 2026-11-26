@@ -15,7 +15,7 @@ from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from src.admin.deps import get_current_admin
+from src.admin.deps import get_current_admin, require_admin_role
 from src.db_adapter import execute_batch, get_db_connection
 try:
     from src.mtproto.service import get_mtproto_manager
@@ -28,7 +28,11 @@ from src.payments.matching_engine import (
 )
 from src.security.telegram_notifier import send_user_payment_success_notification, send_late_payment_approved_alert
 
-router = APIRouter(prefix="/api/admin/payments", tags=["Admin Payments & Reconciliation"])
+router = APIRouter(
+    prefix="/api/admin/payments",
+    tags=["Admin Payments & Reconciliation"],
+    dependencies=[Depends(require_admin_role("FINANCE"))],
+)
 DB_PATH = os.getenv("DB_PATH", "master_database.sqlite")
 
 def _get_connection():
@@ -37,6 +41,10 @@ def _get_connection():
 
 class ResolveReviewRequest(BaseModel):
     notes: Optional[str] = Field("", description="Admin resolution notes")
+    note: Optional[str] = Field(None, description="Backward-compatible alias for resolution notes")
+
+    def resolved_notes(self) -> str:
+        return (self.notes or self.note or "").strip()
 
 
 class ResolveUnmatchedRequest(BaseModel):
@@ -106,14 +114,14 @@ def list_unmatched_payments(
     params = []
 
     if status:
-        conditions.append("status = ?")
+        conditions.append("u.status = ?")
         params.append(status)
 
     where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
 
     with _get_connection() as conn:
         c = conn.cursor()
-        c.execute(f"SELECT COUNT(*) FROM unmatched_payments {where_clause}", params)
+        c.execute(f"SELECT COUNT(*) FROM unmatched_payments u {where_clause}", params)
         total_items = c.fetchone()[0]
 
         c.execute(f"""
@@ -372,7 +380,7 @@ async def approve_late_payment(
     res = await asyncio.to_thread(
         _approve_late_payment_sync,
         case_id,
-        req.notes or "",
+        req.resolved_notes(),
         current_admin["id"],
         admin_name,
     )
@@ -408,6 +416,7 @@ def reject_late_payment(
         if not c.fetchone():
             raise HTTPException(status_code=404, detail="Pending review case not found")
 
+        notes_val = req.resolved_notes()
         execute_batch(conn, [
             (
                 """
@@ -415,14 +424,14 @@ def reject_late_payment(
                 SET status = 'REJECTED', admin_notes = ?, resolved_by_admin = ?, resolved_at = ?
                 WHERE id = ? AND status = 'PENDING'
                 """,
-                [req.notes, current_admin["username"], now_str, case_id],
+                [notes_val, current_admin["username"], now_str, case_id],
             ),
             (
                 """
                 INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
                 VALUES (?, 'LATE_PAYMENT_REJECTED', ?, ?)
                 """,
-                [current_admin["id"], f"Case: {case_id}, Notes: {req.notes}", now_str],
+                [current_admin["id"], f"Case: {case_id}, Notes: {notes_val}", now_str],
             ),
         ])
 
@@ -445,11 +454,11 @@ def get_reconciliation_report(current_admin: dict = Depends(get_current_admin)):
         c.execute("""
             SELECT 
                 COUNT(*) as total_events,
-                SUM(CASE WHEN transaction_type = 'INCOMING' THEN 1 ELSE 0 END) as incoming_events,
+                COALESCE(SUM(CASE WHEN transaction_type = 'INCOMING' THEN 1 ELSE 0 END), 0) as incoming_events,
                 COALESCE(SUM(CASE WHEN transaction_type = 'INCOMING' THEN incoming_amount_uzs ELSE 0 END), 0) as total_incoming_uzs,
-                SUM(CASE WHEN status = 'MATCHED' THEN 1 ELSE 0 END) as matched_events,
-                SUM(CASE WHEN status = 'UNMATCHED' THEN 1 ELSE 0 END) as unmatched_events,
-                SUM(CASE WHEN status = 'LATE_REVIEW' THEN 1 ELSE 0 END) as late_review_events
+                COALESCE(SUM(CASE WHEN status = 'MATCHED' THEN 1 ELSE 0 END), 0) as matched_events,
+                COALESCE(SUM(CASE WHEN status = 'UNMATCHED' THEN 1 ELSE 0 END), 0) as unmatched_events,
+                COALESCE(SUM(CASE WHEN status = 'LATE_REVIEW' THEN 1 ELSE 0 END), 0) as late_review_events
             FROM payment_events
         """)
         events_summary = dict(c.fetchone() or {})
@@ -467,16 +476,16 @@ def get_reconciliation_report(current_admin: dict = Depends(get_current_admin)):
         c.execute("""
             SELECT 
                 COUNT(*) as total_subs,
-                SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) as active_subs,
-                SUM(CASE WHEN status = 'MANUAL_GRANT' THEN 1 ELSE 0 END) as manual_grants,
-                SUM(CASE WHEN status = 'REVOKED' THEN 1 ELSE 0 END) as revoked_subs
+                COALESCE(SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END), 0) as active_subs,
+                COALESCE(SUM(CASE WHEN status = 'MANUAL_GRANT' THEN 1 ELSE 0 END), 0) as manual_grants,
+                COALESCE(SUM(CASE WHEN status = 'REVOKED' THEN 1 ELSE 0 END), 0) as revoked_subs
             FROM user_subscriptions
         """)
         sub_summary = dict(c.fetchone() or {})
 
         # Calculate Discrepancy
-        matched_events = events_summary.get("matched_events", 0)
-        ledger_count = ledger_summary.get("total_ledger_tx", 0)
+        matched_events = int(events_summary.get("matched_events") or 0)
+        ledger_count = int(ledger_summary.get("total_ledger_tx") or 0)
         discrepancy_count = abs(matched_events - ledger_count)
         is_balanced = (discrepancy_count == 0)
 

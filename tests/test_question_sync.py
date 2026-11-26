@@ -16,15 +16,16 @@ from datetime import datetime, timedelta
 from src.security.crypto import generate_session_token
 
 client = TestClient(app)
+DB_PATH = os.getenv("DB_PATH", "master_database.sqlite")
 
 @pytest.fixture
 def admin_token():
     token = generate_session_token()
     now_str = datetime.utcnow().isoformat()
     exp_str = (datetime.utcnow() + timedelta(hours=4)).isoformat()
-    with sqlite3.connect("master_database.sqlite") as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
-        c.execute("SELECT id FROM admin_users WHERE username = 'Anvarjon'")
+        c.execute("SELECT id FROM admin_users ORDER BY id ASC LIMIT 1")
         row = c.fetchone()
         admin_id = row[0] if row else 1
         c.execute("""
@@ -57,14 +58,14 @@ def test_diff_detector_hash_deterministic():
     assert len(h1) == 64
 
 def test_incremental_unifier_canonical_sequence():
-    unifier = IncrementalUnifier("master_database.sqlite")
-    conn = sqlite3.connect("master_database.sqlite")
+    unifier = IncrementalUnifier(DB_PATH)
+    conn = sqlite3.connect(DB_PATH)
     next_int = unifier._get_next_canonical_int(conn)
     conn.close()
     assert next_int >= 1296
 
 def test_question_sync_service_metrics():
-    service = QuestionSyncService("master_database.sqlite")
+    service = QuestionSyncService(DB_PATH)
     metrics = service.get_database_metrics()
     assert metrics["canonical_questions"] >= 1295
     assert metrics["canonical_translations"] >= 3885
@@ -105,7 +106,7 @@ def test_staging_lifecycle_and_moderation(admin_token):
     test_slot = 99999
     
     # 1. Insert mock staged question
-    with sqlite3.connect("master_database.sqlite") as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         cur = conn.cursor()
         prev_cat_ver_row = cur.execute("SELECT value FROM system_settings WHERE key = 'catalog_version'").fetchone()
         prev_cat_ver = prev_cat_ver_row[0] if prev_cat_ver_row else None
@@ -154,7 +155,7 @@ def test_staging_lifecycle_and_moderation(admin_token):
         assert created_cq_id.startswith("CQ-")
 
         # 4. Verify canonical database has the approved question
-        with sqlite3.connect("master_database.sqlite") as conn:
+        with sqlite3.connect(DB_PATH) as conn:
             cur = conn.cursor()
             cur.execute("SELECT review_status, published_canonical_id FROM staged_questions WHERE id = ?", (staged_id,))
             staged_row = cur.fetchone()
@@ -170,8 +171,8 @@ def test_staging_lifecycle_and_moderation(admin_token):
             assert trans_row[0] == "Tahrirlangan test savol matni?"
 
     finally:
-        # Clean up test artifacts from master DB
-        with sqlite3.connect("master_database.sqlite") as conn:
+        # Clean up test artifacts from isolated DB
+        with sqlite3.connect(DB_PATH) as conn:
             cur = conn.cursor()
             cur.execute("SELECT published_canonical_id FROM staged_questions WHERE id = ?", (staged_id,))
             row = cur.fetchone()
@@ -198,7 +199,7 @@ def test_staging_rejection(admin_token):
     """
     headers = {"Authorization": f"Bearer {admin_token}"}
     
-    with sqlite3.connect("master_database.sqlite") as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO staged_questions (
@@ -227,14 +228,14 @@ def test_staging_rejection(admin_token):
         assert reject_res.status_code == 200
         assert reject_res.json()["success"] is True
 
-        with sqlite3.connect("master_database.sqlite") as conn:
+        with sqlite3.connect(DB_PATH) as conn:
             cur = conn.cursor()
             cur.execute("SELECT review_status, reviewer_notes FROM staged_questions WHERE id = ?", (staged_id,))
             row = cur.fetchone()
             assert row[0] == "REJECTED"
             assert row[1] == "Format talabiga mos emas"
     finally:
-        with sqlite3.connect("master_database.sqlite") as conn:
+        with sqlite3.connect(DB_PATH) as conn:
             cur = conn.cursor()
             cur.execute("DELETE FROM staged_questions WHERE id = ?", (staged_id,))
             conn.commit()

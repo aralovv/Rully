@@ -8,7 +8,7 @@ import time
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, Depends, Query
 
-from src.admin.deps import get_current_admin
+from src.admin.deps import get_current_admin, require_admin_role
 try:
     from src.mtproto.service import get_mtproto_manager
 except ImportError:
@@ -17,7 +17,11 @@ from src.payments.order_manager import get_active_orders_count
 from src.security.observability import observability
 from src.security.rate_limiter import rate_limiter
 
-router = APIRouter(prefix="/api/admin/system", tags=["Admin System Health & Logs"])
+router = APIRouter(
+    prefix="/api/admin/system",
+    tags=["Admin System Health & Logs"],
+    dependencies=[Depends(require_admin_role("SUPERADMIN"))],
+)
 DB_PATH = os.getenv("DB_PATH", "master_database.sqlite")
 
 
@@ -106,7 +110,7 @@ def get_system_health(current_admin: dict = Depends(get_current_admin)):
 
         catalog_version = None
         try:
-            c.execute("SELECT value FROM app_settings WHERE key = 'catalog_version'")
+            c.execute("SELECT value FROM system_settings WHERE key = 'catalog_version'")
             cv_row = c.fetchone()
             catalog_version = int(cv_row[0]) if cv_row else None
         except Exception:

@@ -8,14 +8,17 @@
 
   R.state = {
     authPending: true,
+    isGuest: false,
     isExternalWebBlocked: false,
     initData: '',
     lang: 'uz_latn',
     user: null,
     stats: null,
-    streak: { current_streak: 1, daily_goal_questions: 20, today_questions_count: 0 },
+    streak: { current_streak: 0, daily_goal_questions: 20, today_questions_count: 0 },
     subscription: { is_pro: false, tier: 'free', days_left: 0 },
     freeTier: { has_access: true, remaining_exams: 2, allowed_exams: 2 },
+    publicOverview: null,
+    guestDiag: { questions: [], index: 0, answers: {}, checked: null },
     history: [],
     bookmarksCount: 0,
     categories: [],
@@ -97,6 +100,48 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  };
+
+  R.safeUrl = function safeUrl(url) {
+    const raw = String(url || '').trim();
+    if (!raw) return '';
+    if (raw.startsWith('/') && !raw.startsWith('//')) return raw;
+    if (/^https?:\/\//i.test(raw) || /^tg:\/\//i.test(raw)) return raw;
+    return '';
+  };
+
+  R.safeRichHtml = function safeRichHtml(raw) {
+    if (!raw) return '';
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(String(raw), 'text/html');
+      const allowed = new Set(['B', 'STRONG', 'I', 'EM', 'CODE', 'BR', 'SPAN']);
+      function walk(node) {
+        if (node.nodeType === Node.TEXT_NODE) return R.escHtml(node.textContent || '');
+        if (node.nodeType !== Node.ELEMENT_NODE) return '';
+        const tag = node.tagName.toUpperCase();
+        const inner = Array.from(node.childNodes).map(walk).join('');
+        if (!allowed.has(tag)) return inner;
+        if (tag === 'BR') return '<br>';
+        const lower = tag.toLowerCase();
+        return '<' + lower + '>' + inner + '</' + lower + '>';
+      }
+      return Array.from(doc.body.childNodes).map(walk).join('');
+    } catch (e) {
+      return R.escHtml(raw);
+    }
+  };
+
+  R.loadLocaleJson = async function (lang) {
+    const valid = R.normalizeLang(lang);
+    try {
+      const resp = await fetch('/static/i18n/' + valid + '.json?v=5.0.0');
+      if (resp.ok) {
+        const bundle = await resp.json();
+        window.I18N = window.I18N || {};
+        window.I18N[valid] = Object.assign({}, window.I18N[valid] || {}, bundle);
+      }
+    } catch (e) {}
   };
 
   R.icon = function icon(name, cls) {

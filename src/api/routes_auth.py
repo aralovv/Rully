@@ -19,6 +19,11 @@ _AUTH_BUNDLE_CACHE = BoundedTTLCache[int, Dict[str, Any]](maxsize=2000, ttl_seco
 
 def invalidate_auth_cache(user_id: int):
     _AUTH_BUNDLE_CACHE.pop(user_id, None)
+    try:
+        from src.api.deps import _user_cache
+        _user_cache.pop(user_id, None)
+    except Exception:
+        pass
 
 class TelegramAuthRequest(BaseModel):
     init_data: str = Field(..., description="Raw initData string from Telegram WebApp")
@@ -60,6 +65,8 @@ def auth_telegram(req: TelegramAuthRequest, request: Request, db: BotDatabase = 
 
     cached = _AUTH_BUNDLE_CACHE.get(user_id)
     if cached:
+        if int((cached.get("user") or {}).get("is_blocked") or 0) == 1:
+            raise HTTPException(status_code=403, detail="USER_BLOCKED: Sizning hisobingiz bloklangan.")
         return {
             "ok": True,
             **cached
@@ -73,6 +80,8 @@ def auth_telegram(req: TelegramAuthRequest, request: Request, db: BotDatabase = 
     )
 
     _AUTH_BUNDLE_CACHE.set(user_id, bundle)
+    if int((bundle.get("user") or {}).get("is_blocked") or 0) == 1:
+        raise HTTPException(status_code=403, detail="USER_BLOCKED: Sizning hisobingiz bloklangan.")
 
     return {
         "ok": True,
@@ -115,6 +124,13 @@ def set_daily_goal(req: DailyGoalRequest, user: Dict[str, Any] = Depends(get_cur
 # --- Subscription API Endpoints ---
 @router.get("/subscription/plans")
 def get_subscription_plans():
+    try:
+        from src.payments.order_manager import list_active_subscription_plans
+        plans = list_active_subscription_plans()
+        if plans:
+            return {"plans": plans}
+    except Exception:
+        pass
     return {
         "plans": list(SUBSCRIPTION_PLANS.values())
     }

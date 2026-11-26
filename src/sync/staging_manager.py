@@ -18,8 +18,8 @@ from src.sync.diff_detector import QuestionDiffItem
 from src.sync.media_sync import MediaSyncPipeline
 
 class StagingManager:
-    def __init__(self, db_path: str = "master_database.sqlite", backup_dir: str = "data/backups"):
-        self.db_path = db_path
+    def __init__(self, db_path: Optional[str] = None, backup_dir: str = "data/backups"):
+        self.db_path = db_path or os.getenv("DB_PATH", "master_database.sqlite")
         self.backup_dir = backup_dir
         try:
             os.makedirs(self.backup_dir, exist_ok=True)

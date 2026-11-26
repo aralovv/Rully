@@ -1,6 +1,7 @@
 """
 Bot Middlewares: User Registration, Database Dependency Injection, and Rate Limiting.
 """
+import asyncio
 import time
 from typing import Callable, Dict, Any, Awaitable
 from aiogram import BaseMiddleware
@@ -23,15 +24,18 @@ class DependencyInjectionMiddleware(BaseMiddleware):
         data["db"] = self.db
         data["product_engine"] = self.product_engine
 
-        # User tracking
+        # User tracking & block enforcement off the event loop
         event_user: User = data.get("event_from_user")
         if event_user and not event_user.is_bot:
-            self.db.get_or_create_user(
+            db_user = await asyncio.to_thread(
+                self.db.get_or_create_user,
                 user_id=event_user.id,
                 username=event_user.username,
                 first_name=event_user.first_name,
                 last_name=event_user.last_name
             )
+            if isinstance(db_user, dict) and int(db_user.get("is_blocked") or 0) == 1:
+                return None
 
         return await handler(event, data)
 

@@ -1,24 +1,30 @@
-/**
- * RULLY Admin Control Panel (v2.3.0)
- * Mobile-First, Clean UX Single Page Application Controller
- */
-
 (function () {
   'use strict';
 
-  // Global App State
+  // ================= STATE & HELPERS =================
   const state = {
     currentAdmin: null,
     activeView: 'overview',
+    currentPaymentTab: 'ALL',
     otpChallengeId: null,
     otpTimerInterval: null,
-    currentPaymentTab: 'ALL',
     searchDebounce: null,
     ordersCache: [],
-    usersCache: []
+    reviewCasesCache: [],
+    unmatchedCache: [],
+    transactionsCache: [],
+    usersCache: [],
+    stagedCache: [],
+    selectedEditorialIds: new Set(),
+    editorial: {
+      status: 'PENDING_EDITORIAL_REVIEW',
+      page: 1,
+      limit: 20,
+      total: 0,
+      items: []
+    }
   };
 
-  // Helper: Escape HTML to avoid XSS in dynamically rendered strings
   function escapeHtml(str) {
     if (str == null) return '';
     return String(str)
@@ -29,11 +35,61 @@
       .replace(/'/g, '&#039;');
   }
 
-  // Helper: API Fetch with JSON and Credentials
+  function safeUrl(url) {
+    const raw = String(url || '').trim();
+    if (!raw) return '';
+    if (raw.startsWith('/') && !raw.startsWith('//')) return raw;
+    if (/^https?:\/\//i.test(raw) || /^tg:\/\//i.test(raw)) return raw;
+    return '';
+  }
+
+  function sanitizeTelegramPreviewHtml(raw) {
+    if (!raw || !raw.trim()) return '<i>Xabar matni kiritilmagan...</i>';
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(raw, 'text/html');
+      const allowed = new Set(['B', 'STRONG', 'I', 'EM', 'CODE', 'PRE', 'S', 'DEL', 'U', 'A', 'BR']);
+
+      function walk(node) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          return escapeHtml(node.textContent || '');
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) return '';
+        const tag = node.tagName.toUpperCase();
+        const childrenHtml = Array.from(node.childNodes).map(walk).join('');
+        if (!allowed.has(tag)) return childrenHtml;
+        if (tag === 'BR') return '<br>';
+        if (tag === 'A') {
+          const href = safeUrl(node.getAttribute('href') || '');
+          if (!href) return childrenHtml;
+          return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" style="color:#60a5fa;text-decoration:underline;">${childrenHtml}</a>`;
+        }
+        const lower = tag.toLowerCase();
+        return `<${lower}>${childrenHtml}</${lower}>`;
+      }
+
+      return Array.from(doc.body.childNodes).map(walk).join('') || escapeHtml(raw);
+    } catch {
+      return escapeHtml(raw);
+    }
+  }
+
+  function getCookie(name) {
+    const match = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]*)'));
+    return match ? decodeURIComponent(match[1]) : '';
+  }
+
   async function apiFetch(endpoint, options = {}) {
     options.headers = options.headers || {};
     if (!options.headers['Content-Type'] && !(options.body instanceof FormData)) {
       options.headers['Content-Type'] = 'application/json';
+    }
+    const method = String(options.method || 'GET').toUpperCase();
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+      const csrf = getCookie('rully_csrf');
+      if (csrf && !options.headers['X-CSRF-Token']) {
+        options.headers['X-CSRF-Token'] = csrf;
+      }
     }
     options.credentials = 'same-origin';
 
@@ -41,12 +97,13 @@
     const data = await res.json().catch(() => ({}));
 
     if (!res.ok) {
-      throw new Error(data.detail || data.message || `Xatolik yuz berdi (${res.status})`);
+      const err = new Error(data.detail || data.message || `Xatolik yuz berdi (${res.status})`);
+      err.status = res.status;
+      throw err;
     }
     return data;
   }
 
-  // Toast Notifications
   function showToast(message, type = 'success') {
     const container = document.getElementById('toast-container');
     if (!container) return;
@@ -62,7 +119,7 @@
   }
 
   function formatMoney(amount) {
-    if (amount == null) return '0 UZS';
+    if (amount == null || isNaN(Number(amount))) return '0 UZS';
     return Number(amount).toLocaleString('ru-RU') + ' UZS';
   }
 
@@ -70,53 +127,64 @@
     if (!isoStr) return '-';
     try {
       const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return String(isoStr).slice(0, 16);
       return d.toLocaleDateString('uz-UZ', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
     } catch {
-      return isoStr;
+      return String(isoStr);
     }
   }
 
-  // ================= ACCORDION CONTROLLER =================
-  window.toggleAccordion = function (accId) {
+  function setText(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  }
+
+  function hasRole(required) {
+    const role = String(state.currentAdmin?.role || '').toUpperCase();
+    if (!role || role === 'SUPERADMIN') return true;
+    return role === String(required || '').toUpperCase();
+  }
+
+  function openModal(modalId) {
+    const el = document.getElementById(modalId);
+    if (el) el.style.display = 'flex';
+  }
+
+  function closeModal(modalId) {
+    const el = document.getElementById(modalId);
+    if (el) el.style.display = 'none';
+  }
+
+  function toggleAccordion(accId) {
     const el = document.getElementById(accId);
-    if (!el) return;
-    el.classList.toggle('open');
-  };
+    if (el) el.classList.toggle('open');
+  }
 
   // ================= VIEW SWITCHER =================
-  window.switchView = function (viewName) {
+  function switchView(viewName) {
+    if (!viewName) return;
     state.activeView = viewName;
 
-    // 1. Update Desktop Sidebar Nav
     document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => {
       el.classList.toggle('active', el.getAttribute('data-view') === viewName);
     });
-
-    // 2. Update Mobile Bottom Nav
     document.querySelectorAll('.mobile-bottom-nav .m-nav-item').forEach(el => {
       el.classList.toggle('active', el.getAttribute('data-view') === viewName);
     });
-
-    // 3. Update Panels
     document.querySelectorAll('.view-panel').forEach(el => el.classList.remove('active'));
     const targetPane = document.getElementById(`view-${viewName}`);
     if (targetPane) targetPane.classList.add('active');
 
-    // 4. Update Header Title
     const titles = {
       overview: 'Asosiy Panel',
-      payments: 'To‘lovlar & Buyurtmalar',
+      payments: 'To‘lovlar & Yarashuv',
       users: 'Foydalanuvchilar',
       broadcast: 'Xabarnoma (Broadcast)',
-      settings: 'MTProto & Sozlamalar'
+      settings: 'Tizim & Tahririyat'
     };
-    const titleEl = document.getElementById('topbar-view-title');
-    if (titleEl) titleEl.textContent = titles[viewName] || 'Boshqaruv';
-
-    // 5. Scroll main container to top
+    setText('topbar-view-title', titles[viewName] || 'Boshqaruv');
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
-    // 6. Load data for active view
     switch (viewName) {
       case 'overview': loadOverview(); break;
       case 'payments': loadPaymentsHub(); break;
@@ -124,80 +192,119 @@
       case 'broadcast': loadBroadcastView(); break;
       case 'settings': loadSettings(); break;
     }
-  };
+  }
 
-  // ================= 1. ASOSIY PANEL (OVERVIEW) =================
+  // ================= 1. OVERVIEW & BI ANALYTICS =================
+  async function loadBiAnalytics() {
+    const card = document.getElementById('ov-analytics-card');
+    if (!card) return;
+    if (!hasRole('FINANCE')) {
+      card.style.display = 'none';
+      return;
+    }
+    card.style.display = 'block';
+    const range = document.getElementById('ov-sales-range')?.value || '30d';
+
+    const [actRes, retRes, salesRes] = await Promise.allSettled([
+      apiFetch('/api/admin/analytics/activity'),
+      apiFetch('/api/admin/analytics/retention'),
+      apiFetch(`/api/admin/dashboard/sales-analytics?range_filter=${encodeURIComponent(range)}`)
+    ]);
+
+    if (actRes.status === 'fulfilled') {
+      const a = actRes.value.analytics || {};
+      setText('bi-dau-wau-mau', `${a.dau ?? 0} / ${a.wau ?? 0} / ${a.mau ?? 0}`);
+      const feat = Object.entries(a.feature_distribution || {}).sort((x, y) => y[1] - x[1])[0];
+      setText('bi-top-feature', feat ? `${feat[0]} (${feat[1]})` : 'Ma’lumot yo‘q');
+    }
+
+    if (retRes.status === 'fulfilled') {
+      const r = retRes.value.retention || {};
+      setText('bi-retention', `${r.d1_pct ?? 0}% / ${r.d7_pct ?? 0}% / ${r.d30_pct ?? 0}%`);
+    }
+
+    if (salesRes.status === 'fulfilled') {
+      const s = salesRes.value.summary || {};
+      setText('bi-conversion', `${s.conversion_rate_pct ?? 0}% • ${formatMoney(s.average_transaction_uzs || 0)}`);
+      const chartEl = document.getElementById('ov-sales-chart');
+      if (chartEl) {
+        const pts = (salesRes.value.daily_chart || []).slice(-14);
+        if (!pts.length) {
+          chartEl.innerHTML = '<div class="text-[11px] text-muted self-center m-auto">Tanlangan davrda savdo grafik ma’lumoti yo‘q</div>';
+        } else {
+          const maxVal = Math.max(1, ...pts.map(p => Number(p.revenue_uzs || p.amount_uzs || 0)));
+          chartEl.innerHTML = pts.map(p => {
+            const val = Number(p.revenue_uzs || p.amount_uzs || 0);
+            const pct = Math.max(6, Math.round((val / maxVal) * 100));
+            const label = escapeHtml(`${p.date || ''}: ${formatMoney(val)}`);
+            return `<div class="bi-bar-col" title="${label}"><div class="bi-bar-fill" style="height:${pct}%"></div></div>`;
+          }).join('');
+        }
+      }
+    }
+  }
+
   async function loadOverview() {
     try {
-      // 1. Load Real Financial KPIs
-      const res = await apiFetch('/api/admin/dashboard/kpi');
-      const kpis = res.kpis || {};
+      const [kpiRes, mtRes, ordRes] = await Promise.allSettled([
+        apiFetch('/api/admin/dashboard/kpi'),
+        apiFetch('/api/admin/mtproto/status'),
+        apiFetch('/api/admin/orders?limit=5')
+      ]);
 
-      const elUsers = document.getElementById('kpi-total-users');
-      const elNewToday = document.getElementById('kpi-new-today');
-      const elActiveSubs = document.getElementById('kpi-active-subs');
-      const elSubsToday = document.getElementById('kpi-subs-today');
-      const elTodayRev = document.getElementById('kpi-today-rev');
-      const elTotalRev = document.getElementById('kpi-total-rev');
-      const elMonthRev = document.getElementById('kpi-month-rev');
-
-      if (elUsers) elUsers.textContent = kpis.total_users || 0;
-      if (elNewToday) elNewToday.textContent = `${kpis.new_users_today || 0} yangi`;
-      if (elActiveSubs) elActiveSubs.textContent = kpis.active_subscribers || 0;
-      if (elSubsToday) elSubsToday.textContent = kpis.subscriptions_today || 0;
-      if (elTodayRev) elTodayRev.textContent = formatMoney(kpis.today_revenue_uzs || 0);
-      if (elTotalRev) elTotalRev.textContent = formatMoney(kpis.total_revenue_uzs || 0);
-      if (elMonthRev) elMonthRev.textContent = formatMoney(kpis.month_revenue_uzs || 0);
-
-      // 2. Load MTProto Status Banner
-      const mtRes = await apiFetch('/api/admin/mtproto/status');
-      const st = mtRes.status || {};
-      const isConn = st.connection_status === 'CONNECTED';
-
-      const badge = document.getElementById('overview-mtproto-badge');
-      const desc = document.getElementById('ov-mtproto-desc');
-      const icon = document.getElementById('ov-mtproto-icon');
-      const btnTxt = document.getElementById('ov-mtproto-btn-txt');
-
-      if (badge) {
-        badge.className = `badge ${isConn ? 'badge-emerald' : 'badge-amber'}`;
-        badge.textContent = isConn ? 'FAOL — TINGLAMOQDA' : 'NOFAOL (ULANMAGAN)';
-      }
-      if (desc) {
-        desc.textContent = isConn
-          ? `Ulangan hisob: ${st.account_info?.first_name || ''} (${st.account_info?.phone || ''}). Humocardbot real-vaqtda tinglanmoqda.`
-          : 'Humocardbot to‘lov xabarnomalarini avtomat ushlash uchun Telegram akkauntingizni ulang.';
-      }
-      if (btnTxt) {
-        btnTxt.textContent = isConn ? 'Holatni Ko‘rish' : 'Akkauntni Ulash';
-      }
-      if (icon) {
-        icon.style.background = isConn ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)';
-        icon.style.color = isConn ? '#10b981' : '#f59e0b';
+      if (kpiRes.status === 'fulfilled') {
+        const k = kpiRes.value.kpis || {};
+        setText('kpi-total-users', Number(k.total_users || 0).toLocaleString());
+        setText('kpi-new-today', `${k.new_users_today || 0} yangi`);
+        setText('kpi-active-subs', Number(k.active_subscribers || 0).toLocaleString());
+        setText('kpi-subs-today', String(k.subscriptions_today || 0));
+        setText('kpi-today-rev', formatMoney(k.today_revenue_uzs || 0));
+        setText('kpi-total-rev', formatMoney(k.total_revenue_uzs || 0));
+        setText('kpi-month-rev', formatMoney(k.month_revenue_uzs || 0));
+        setText('kpi-unmatched-badge', `${k.pending_orders || 0} / ${k.unmatched_payments || 0}`);
       }
 
-      // 3. Load Recent Orders (Cards for Mobile)
-      const ordRes = await apiFetch('/api/admin/orders?limit=5');
-      const orders = ordRes.orders || [];
+      if (mtRes.status === 'fulfilled') {
+        const st = mtRes.value.status || {};
+        const isConn = st.connection_status === 'CONNECTED';
+        const badge = document.getElementById('overview-mtproto-badge');
+        const desc = document.getElementById('ov-mtproto-desc');
+        const icon = document.getElementById('ov-mtproto-icon');
+        if (badge) {
+          badge.className = `badge ${isConn ? 'badge-emerald' : 'badge-amber'}`;
+          badge.textContent = isConn ? 'FAOL — TINGLAMOQDA' : escapeHtml(st.connection_status || 'NOFAOL');
+        }
+        if (desc) {
+          desc.textContent = isConn
+            ? `Ulangan hisob: ${st.account_info?.first_name || ''} (${st.account_info?.phone || ''}). Humocardbot tinglanmoqda.`
+            : 'Humocardbot to‘lov xabarnomalarini avtomatik ushlash holati.';
+        }
+        setText('ov-mtproto-btn-txt', isConn ? 'Holatni Ko‘rish' : 'Akkauntni Ulash');
+        if (icon) {
+          icon.style.background = isConn ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)';
+          icon.style.color = isConn ? '#10b981' : '#f59e0b';
+        }
+      }
+
       const container = document.getElementById('overview-orders-container');
-
-      if (container) {
+      if (container && ordRes.status === 'fulfilled') {
+        const orders = ordRes.value.orders || [];
         if (!orders.length) {
           container.innerHTML = '<div class="text-center text-muted text-xs py-8">Hozircha buyurtmalar yo‘q</div>';
         } else {
           container.innerHTML = orders.map(o => `
             <div class="mobile-card-row">
               <div class="m-card-top">
-                <span class="font-mono font-bold text-xs text-slate-200">#${o.order_id}</span>
+                <span class="font-mono font-bold text-xs text-slate-200">#${escapeHtml(o.order_id)}</span>
                 ${renderStatusBadge(o.status)}
               </div>
               <div class="m-card-body">
                 <div>
-                  <div class="font-bold text-slate-100 text-sm">${o.username ? '@' + escapeHtml(o.username) : 'ID: ' + o.user_id}</div>
-                  <div class="text-[11px] text-muted">${formatDate(o.created_at)}</div>
+                  <div class="font-bold text-slate-100 text-sm">${o.username ? '@' + escapeHtml(o.username) : 'ID: ' + escapeHtml(o.user_id)}</div>
+                  <div class="text-[11px] text-muted">${escapeHtml(formatDate(o.created_at))}</div>
                 </div>
                 <div class="text-right">
-                  <div class="font-mono font-bold text-emerald text-sm">${formatMoney(o.final_amount_uzs)}</div>
+                  <div class="font-mono font-bold text-emerald text-sm">${escapeHtml(formatMoney(o.final_amount_uzs))}</div>
                   <div class="text-[10px] text-muted"><span class="badge badge-blue text-[10px] py-0">${escapeHtml(o.plan_name || o.plan_id)}</span></div>
                 </div>
               </div>
@@ -206,8 +313,9 @@
         }
       }
 
+      await loadBiAnalytics();
     } catch (e) {
-      console.error("Dashboard yuklashda xatolik:", e);
+      console.error('Overview load error:', e);
     }
   }
 
@@ -221,42 +329,207 @@
     }
   }
 
-  // ================= 2. TO‘LOVLAR & BUYURTMALAR (PAYMENTS HUB) =================
-  window.setPaymentTab = function (tab) {
+  // ================= 2. PAYMENTS & RECONCILIATION HUB =================
+  function setPaymentTab(tab) {
     state.currentPaymentTab = tab;
-    document.querySelectorAll('.subtab-btn').forEach(b => {
+    document.querySelectorAll('#payments-subtabs .subtab-btn').forEach(b => {
       b.classList.toggle('active', b.getAttribute('data-ptab') === tab);
     });
-    renderPaymentsCards();
-  };
+    renderPaymentsHub();
+  }
 
   async function loadPaymentsHub() {
+    const container = document.getElementById('payments-list-container');
+    if (!hasRole('FINANCE')) {
+      if (container) container.innerHTML = '<div class="text-center text-muted text-xs py-8">Bu bo‘lim uchun FINANCE huquqi talab etiladi.</div>';
+      return;
+    }
+
     try {
-      const res = await apiFetch('/api/admin/orders?limit=100');
-      state.ordersCache = res.orders || [];
-      renderPaymentsCards();
+      const [ordRes, revRes, unmRes, txRes] = await Promise.allSettled([
+        apiFetch('/api/admin/orders?limit=100'),
+        apiFetch('/api/admin/payments/review-cases?status=PENDING'),
+        apiFetch('/api/admin/payments/unmatched?status=UNRESOLVED&limit=50'),
+        apiFetch('/api/admin/payments/transactions?limit=50')
+      ]);
+
+      state.ordersCache = ordRes.status === 'fulfilled' ? (ordRes.value.orders || []) : [];
+      state.reviewCasesCache = revRes.status === 'fulfilled' ? (revRes.value.cases || []) : [];
+      state.unmatchedCache = unmRes.status === 'fulfilled' ? (unmRes.value.unmatched || []) : [];
+      state.transactionsCache = txRes.status === 'fulfilled' ? (txRes.value.transactions || []) : [];
+
+      setText('ptab-badge-review', String(state.reviewCasesCache.length));
+      setText('ptab-badge-unmatched', String(state.unmatchedCache.length));
+
+      await renderPaymentsHub();
     } catch (e) {
       showToast(e.message, 'error');
     }
   }
 
-  window.filterPaymentsList = function () {
-    renderPaymentsCards();
-  };
-
-  function renderPaymentsCards() {
+  async function renderPaymentsHub() {
     const container = document.getElementById('payments-list-container');
+    const summaryBox = document.getElementById('payments-reconcile-summary');
     if (!container) return;
 
+    const tab = state.currentPaymentTab;
     const query = (document.getElementById('payments-search-input')?.value || '').toLowerCase().trim();
+    if (summaryBox) summaryBox.style.display = tab === 'RECONCILE' ? 'block' : 'none';
+
+    if (tab === 'RECONCILE') {
+      try {
+        const rep = await apiFetch('/api/admin/payments/reconciliation');
+        const ev = rep.events_summary || {};
+        const ld = rep.ledger_summary || {};
+        const sub = rep.subscription_summary || {};
+        if (summaryBox) {
+          summaryBox.innerHTML = `
+            <div class="card p-4 space-y-3">
+              <div class="flex items-center justify-between">
+                <h4 class="font-bold text-sm text-slate-100">Moliyaviy Yarashuv Hisoboti</h4>
+                <span class="badge ${rep.is_balanced ? 'badge-emerald' : 'badge-red'}">${rep.is_balanced ? 'BALANS MOS (0 FARQ)' : 'TAFOVUT: ' + escapeHtml(rep.discrepancy_count)}</span>
+              </div>
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div class="bg-slate-900/80 border border-slate-800 rounded p-2.5">
+                  <div class="text-[11px] text-muted">Bank Kirim Events</div>
+                  <div class="font-bold text-sm font-mono">${escapeHtml(ev.incoming_events || 0)} (${escapeHtml(formatMoney(ev.total_incoming_uzs || 0))})</div>
+                </div>
+                <div class="bg-slate-900/80 border border-slate-800 rounded p-2.5">
+                  <div class="text-[11px] text-muted">Tasdiqlangan Ledger</div>
+                  <div class="font-bold text-sm font-mono text-emerald">${escapeHtml(ld.total_ledger_tx || 0)} (${escapeHtml(formatMoney(ld.total_ledger_uzs || 0))})</div>
+                </div>
+                <div class="bg-slate-900/80 border border-slate-800 rounded p-2.5">
+                  <div class="text-[11px] text-muted">Noma’lum / Kechiktirilgan</div>
+                  <div class="font-bold text-sm font-mono text-amber-300">${escapeHtml(ev.unmatched_events || 0)} / ${escapeHtml(ev.late_review_events || 0)}</div>
+                </div>
+                <div class="bg-slate-900/80 border border-slate-800 rounded p-2.5">
+                  <div class="text-[11px] text-muted">Obunalar (Faol / Grant / Bekor)</div>
+                  <div class="font-bold text-sm font-mono">${escapeHtml(sub.active_subs || 0)} / ${escapeHtml(sub.manual_grants || 0)} / ${escapeHtml(sub.revoked_subs || 0)}</div>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+        container.innerHTML = '';
+      } catch (e) {
+        container.innerHTML = `<div class="text-xs text-rose p-4">${escapeHtml(e.message)}</div>`;
+      }
+      return;
+    }
+
+    if (tab === 'REVIEW') {
+      let cases = state.reviewCasesCache;
+      if (query) {
+        cases = cases.filter(c =>
+          String(c.order_id || '').toLowerCase().includes(query) ||
+          String(c.user_id || '').includes(query) ||
+          String(c.username || '').toLowerCase().includes(query)
+        );
+      }
+      if (!cases.length) {
+        container.innerHTML = '<div class="text-center text-muted text-xs py-8">Kechiktirilgan yoki tekshiruvdagi to‘lovlar yo‘q.</div>';
+        return;
+      }
+      container.innerHTML = cases.map(c => `
+        <div class="mobile-card-row">
+          <div class="m-card-top">
+            <span class="font-mono font-bold text-xs text-slate-200">Case #${escapeHtml(c.case_id)} • Order #${escapeHtml(c.order_id)}</span>
+            <span class="badge badge-red">${escapeHtml(c.status)}</span>
+          </div>
+          <div class="m-card-body">
+            <div>
+              <div class="font-bold text-sm text-slate-100">${c.username ? '@' + escapeHtml(c.username) : 'ID: ' + escapeHtml(c.user_id)}</div>
+              <div class="text-[11px] text-muted">${escapeHtml(c.reason || '')} • ${escapeHtml(formatDate(c.created_at))}</div>
+            </div>
+            <div class="text-right">
+              <div class="font-mono font-bold text-emerald text-sm">${escapeHtml(formatMoney(c.incoming_amount_uzs || c.expected_amount_uzs))}</div>
+              <div class="text-[10px] text-muted">${escapeHtml(c.plan_name || c.plan_id || '')}</div>
+            </div>
+          </div>
+          <div class="m-card-footer">
+            <span class="text-xs text-muted font-mono">User ID: ${escapeHtml(c.user_id)}</span>
+            <div class="flex gap-2">
+              <button type="button" class="btn btn-primary btn-sm" data-action="approve-review" data-case-id="${escapeHtml(c.case_id)}" data-order-id="${escapeHtml(c.order_id)}">✅ Tasdiqlash</button>
+              <button type="button" class="btn btn-danger btn-sm" data-action="reject-review" data-case-id="${escapeHtml(c.case_id)}">❌ Rad etish</button>
+            </div>
+          </div>
+        </div>
+      `).join('');
+      return;
+    }
+
+    if (tab === 'UNMATCHED') {
+      let unm = state.unmatchedCache;
+      if (query) {
+        unm = unm.filter(u =>
+          String(u.incoming_amount_uzs || '').includes(query) ||
+          String(u.raw_message || '').toLowerCase().includes(query) ||
+          String(u.candidate_order_id || '').toLowerCase().includes(query)
+        );
+      }
+      if (!unm.length) {
+        container.innerHTML = '<div class="text-center text-muted text-xs py-8">Bog‘lanmagan to‘lovlar mavjud emas.</div>';
+        return;
+      }
+      container.innerHTML = unm.map(u => `
+        <div class="mobile-card-row">
+          <div class="m-card-top">
+            <span class="font-mono font-bold text-xs text-amber-300">Unmatched #${escapeHtml(u.id)} • ${escapeHtml(formatMoney(u.incoming_amount_uzs))}</span>
+            <span class="badge badge-amber">${escapeHtml(u.status || 'UNRESOLVED')}</span>
+          </div>
+          <div class="text-xs text-slate-300 mt-1">${escapeHtml(u.raw_message || u.reason || 'Bank xabari')}</div>
+          <div class="text-[11px] text-muted mt-1">
+            Karta: •••• ${escapeHtml(u.card_suffix || '—')} | Vaqt: ${escapeHtml(formatDate(u.created_at))}
+            ${u.candidate_order_id ? ` | Tavsiya: <b class="font-mono text-slate-200">${escapeHtml(u.candidate_order_id)}</b>` : ''}
+          </div>
+          <div class="m-card-footer mt-2">
+            <button type="button" class="btn btn-primary btn-sm" data-action="link-unmatched" data-unmatched-id="${escapeHtml(u.id)}" data-candidate-order="${escapeHtml(u.candidate_order_id || '')}">🔗 Buyurtmaga bog‘lash</button>
+            <button type="button" class="btn btn-ghost btn-sm text-xs" data-action="resolve-unmatched" data-unmatched-id="${escapeHtml(u.id)}">Ignor / Qaytarildi</button>
+          </div>
+        </div>
+      `).join('');
+      return;
+    }
+
+    if (tab === 'TRANSACTIONS') {
+      let txs = state.transactionsCache;
+      if (query) {
+        txs = txs.filter(t =>
+          String(t.order_id || '').toLowerCase().includes(query) ||
+          String(t.user_id || '').includes(query) ||
+          String(t.username || '').toLowerCase().includes(query)
+        );
+      }
+      if (!txs.length) {
+        container.innerHTML = '<div class="text-center text-muted text-xs py-8">Tasdiqlangan tranzaksiyalar topilmadi.</div>';
+        return;
+      }
+      container.innerHTML = txs.map(t => `
+        <div class="mobile-card-row">
+          <div class="m-card-top">
+            <span class="font-mono font-bold text-xs text-slate-200">TX #${escapeHtml(t.id)} • Order #${escapeHtml(t.order_id)}</span>
+            <span class="badge badge-emerald">${escapeHtml(t.source || 'HUMO')}</span>
+          </div>
+          <div class="m-card-body">
+            <div>
+              <div class="font-bold text-sm text-slate-100">${t.username ? '@' + escapeHtml(t.username) : 'ID: ' + escapeHtml(t.user_id)}</div>
+              <div class="text-[11px] text-muted">${escapeHtml(formatDate(t.created_at))}</div>
+            </div>
+            <div class="text-right">
+              <div class="font-mono font-bold text-emerald text-sm">${escapeHtml(formatMoney(t.amount_uzs))}</div>
+              <div class="text-[10px] text-muted">${escapeHtml(t.plan_id || '')}</div>
+            </div>
+          </div>
+        </div>
+      `).join('');
+      return;
+    }
+
+    // Default Orders view (ALL, PAID, PENDING)
     let list = state.ordersCache;
+    if (tab === 'PAID') list = list.filter(o => o.status === 'PAID');
+    else if (tab === 'PENDING') list = list.filter(o => o.status === 'PENDING');
 
-    // Filter by Tab
-    if (state.currentPaymentTab === 'PAID') list = list.filter(o => o.status === 'PAID');
-    else if (state.currentPaymentTab === 'PENDING') list = list.filter(o => o.status === 'PENDING');
-    else if (state.currentPaymentTab === 'REVIEW') list = list.filter(o => o.status === 'PAYMENT_REVIEW_REQUIRED');
-
-    // Filter by Search
     if (query) {
       list = list.filter(o =>
         String(o.order_id).toLowerCase().includes(query) ||
@@ -274,68 +547,130 @@
       <div class="mobile-card-row">
         <div class="m-card-top">
           <div class="flex items-center gap-2">
-            <span class="font-mono font-bold text-xs text-slate-200">#${o.order_id}</span>
-            <span class="text-muted text-[11px] font-mono">ID: ${o.user_id}</span>
+            <span class="font-mono font-bold text-xs text-slate-200">#${escapeHtml(o.order_id)}</span>
+            <span class="text-muted text-[11px] font-mono">ID: ${escapeHtml(o.user_id)}</span>
           </div>
           ${renderStatusBadge(o.status)}
         </div>
         <div class="m-card-body">
           <div>
             <div class="font-bold text-slate-100 text-sm">${o.username ? '@' + escapeHtml(o.username) : 'Foydalanuvchi'}</div>
-            <div class="text-[11px] text-muted">${formatDate(o.created_at)}</div>
+            <div class="text-[11px] text-muted">${escapeHtml(formatDate(o.created_at))}</div>
           </div>
           <div class="text-right">
-            <div class="font-mono font-bold text-emerald text-base">${formatMoney(o.final_amount_uzs)}</div>
-            <div class="text-[10px] text-muted font-mono">Asosiy: ${formatMoney(o.base_price_uzs)} (${o.suffix_uzs > 0 ? '+' + o.suffix_uzs : '0'})</div>
+            <div class="font-mono font-bold text-emerald text-base">${escapeHtml(formatMoney(o.final_amount_uzs))}</div>
+            <div class="text-[10px] text-muted font-mono">Asosiy: ${escapeHtml(formatMoney(o.base_price_uzs))} (${o.suffix_uzs > 0 ? '+' + escapeHtml(o.suffix_uzs) : '0'})</div>
           </div>
         </div>
         <div class="m-card-footer">
           <span class="badge badge-blue text-[10px]">${escapeHtml(o.plan_name || o.plan_id)}</span>
           ${o.status === 'PAYMENT_REVIEW_REQUIRED'
-            ? `<button class="btn btn-primary btn-sm" onclick="approveOrderReview('${o.order_id}')">Tasdiqlash</button>`
-            : `<span class="text-muted text-xs font-mono">—</span>`
+            ? `<button type="button" class="btn btn-primary btn-sm" data-action="approve-order-review" data-order-id="${escapeHtml(o.order_id)}">Tasdiqlash</button>`
+            : '<span class="text-muted text-xs font-mono">—</span>'
           }
         </div>
       </div>
     `).join('');
   }
 
-  window.approveOrderReview = async function (orderId) {
-    if (!confirm(`Buyurtmani (${orderId}) qo‘lda tasdiqlamoqchimisiz? PRO obuna darhol faollashadi.`)) return;
+  async function approveReviewCase(caseId, orderId) {
+    if (!confirm(`Kechiktirilgan to‘lovni (Case #${caseId} / Order ${orderId || ''}) tasdiqlamoqchimisiz? PRO obuna darhol faollashadi.`)) return;
     try {
-      const res = await apiFetch(`/api/admin/payments/review-cases`);
-      const c = (res.cases || []).find(x => x.order_id === orderId);
-      if (c) {
-        await apiFetch(`/api/admin/payments/review/${c.case_id}/approve`, {
-          method: 'POST',
-          body: JSON.stringify({ note: 'Admin qo‘lda tasdiqladi' })
-        });
-      }
-      showToast("Buyurtma muvaffaqiyatli tasdiqlandi!");
-      loadPaymentsHub();
+      await apiFetch(`/api/admin/payments/review/${encodeURIComponent(caseId)}/approve`, {
+        method: 'POST',
+        body: JSON.stringify({ notes: 'Admin qo‘lda tasdiqladi' })
+      });
+      showToast('Buyurtma muvaffaqiyatli tasdiqlandi!');
+      await loadPaymentsHub();
       loadOverview();
     } catch (e) {
       showToast(e.message, 'error');
     }
-  };
+  }
 
-  // ================= 3. FOYDALANUVCHILAR (USERS) =================
-  window.debounceUserSearch = function () {
-    clearTimeout(state.searchDebounce);
-    state.searchDebounce = setTimeout(loadUsers, 300);
-  };
+  async function rejectReviewCase(caseId) {
+    const notes = prompt(`Case #${caseId} rad etish sababini kiriting:`, 'To‘lov topilmadi');
+    if (notes === null) return;
+    try {
+      await apiFetch(`/api/admin/payments/review/${encodeURIComponent(caseId)}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ notes: notes.trim() || 'Admin rad etdi' })
+      });
+      showToast('Kechiktirilgan holat rad etildi', 'info');
+      await loadPaymentsHub();
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
+  }
 
+  async function approveOrderReview(orderId) {
+    if (!confirm(`Buyurtmani (${orderId}) qo‘lda tasdiqlamoqchimisiz? PRO obuna darhol faollashadi.`)) return;
+    try {
+      const res = await apiFetch('/api/admin/payments/review-cases?status=PENDING');
+      const c = (res.cases || []).find(x => x.order_id === orderId);
+      if (!c) {
+        showToast('Ushbu buyurtma uchun ochiq review case topilmadi.', 'error');
+        return;
+      }
+      await apiFetch(`/api/admin/payments/review/${encodeURIComponent(c.case_id)}/approve`, {
+        method: 'POST',
+        body: JSON.stringify({ notes: 'Admin qo‘lda tasdiqladi' })
+      });
+      showToast('Buyurtma muvaffaqiyatli tasdiqlandi!');
+      await loadPaymentsHub();
+      loadOverview();
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
+  }
+
+  async function linkUnmatchedToOrder(unmatchedId, suggestedOrderId) {
+    const orderId = prompt('Qaysi buyurtma ID siga bog‘lansin?', suggestedOrderId || '');
+    if (!orderId || !orderId.trim()) return;
+    const notes = prompt('Izoh (audit uchun):', 'Admin unmatched payment bog‘ladi') || '';
+    try {
+      const res = await apiFetch(`/api/admin/payments/unmatched/${encodeURIComponent(unmatchedId)}/link-order`, {
+        method: 'POST',
+        body: JSON.stringify({ order_id: orderId.trim(), notes: notes.trim() })
+      });
+      showToast(res.message || 'To‘lov buyurtmaga bog‘landi!');
+      await loadPaymentsHub();
+      loadOverview();
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
+  }
+
+  async function resolveUnmatched(unmatchedId) {
+    const statusChoice = prompt('Holat (RESOLVED_REFUNDED yoki IGNORED):', 'RESOLVED_REFUNDED');
+    if (!statusChoice) return;
+    const notes = prompt('Sabab / Izoh:', 'Pul qaytarildi yoki xatolik');
+    if (!notes) return;
+    try {
+      const res = await apiFetch(`/api/admin/payments/unmatched/${encodeURIComponent(unmatchedId)}/resolve`, {
+        method: 'POST',
+        body: JSON.stringify({ status: statusChoice.trim(), notes: notes.trim() })
+      });
+      showToast(res.message || 'Holat hal qilindi.');
+      await loadPaymentsHub();
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
+  }
+
+  // ================= 3. FOYDALANUVCHILAR & USER DOSSIER =================
   async function loadUsers() {
     const query = document.getElementById('users-search-input')?.value || '';
     const filter = document.getElementById('users-filter-sub')?.value || 'all';
+    const sortBy = document.getElementById('users-sort-by')?.value || 'created_at';
     const container = document.getElementById('users-list-container');
 
     try {
-      const res = await apiFetch(`/api/admin/users?query=${encodeURIComponent(query)}&filter_status=${filter}`);
+      const params = new URLSearchParams({ q: query, filter_status: filter, sort_by: sortBy, limit: '50' });
+      const res = await apiFetch(`/api/admin/users?${params.toString()}`);
       state.usersCache = res.users || [];
 
       if (!container) return;
-
       if (!state.usersCache.length) {
         container.innerHTML = '<div class="text-center text-muted text-xs py-8">Foydalanuvchilar topilmadi</div>';
         return;
@@ -343,60 +678,50 @@
 
       container.innerHTML = state.usersCache.map(u => {
         const displayName = u.username ? '@' + escapeHtml(u.username) : escapeHtml(u.first_name || ('ID: ' + u.user_id));
-        const jsName = escapeHtml(u.username || u.first_name || u.user_id);
+        const rawLabel = u.username || u.first_name || String(u.user_id);
+        const seg = u.activity_classification?.segment || '';
 
         return `
           <div class="mobile-card-row">
             <div class="m-card-top">
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 flex-wrap">
                 <span class="font-bold text-slate-100 text-sm">${displayName}</span>
-                <span class="text-muted text-[11px] font-mono">ID: ${u.user_id}</span>
+                <span class="text-muted text-[11px] font-mono">ID: ${escapeHtml(u.user_id)}</span>
+                ${seg ? `<span class="badge badge-indigo text-[10px]">${escapeHtml(seg)}</span>` : ''}
               </div>
               <div>
-                ${u.is_pro
-                  ? '<span class="badge badge-emerald">PRO FAOL</span>'
-                  : '<span class="badge badge-gray">BEPUL</span>'
-                }
+                ${u.is_pro ? '<span class="badge badge-emerald">PRO FAOL</span>' : '<span class="badge badge-gray">BEPUL</span>'}
               </div>
             </div>
 
             <div class="m-card-body">
               <div class="text-xs">
                 ${u.is_pro
-                  ? `<span class="text-emerald font-semibold">Tugash vaqti:</span> <span class="font-mono text-slate-300">${formatDate(u.subscription_expires_at)}</span>`
-                  : `<span class="text-muted">Faol obuna mavjud emas</span>`
+                  ? `<span class="text-emerald font-semibold">Tugash vaqti:</span> <span class="font-mono text-slate-300">${escapeHtml(formatDate(u.subscription_expires_at))}</span>`
+                  : '<span class="text-muted">Faol obuna mavjud emas</span>'
                 }
-                <div class="text-[10px] text-muted mt-0.5">Ro‘yxatdan: ${formatDate(u.created_at)}</div>
+                <div class="text-[10px] text-muted mt-0.5">Ro‘yxatdan: ${escapeHtml(formatDate(u.created_at))}</div>
               </div>
               <div class="text-right">
                 ${u.is_blocked ? '<span class="badge badge-red text-[10px]">BLOKLANGAN</span>' : ''}
               </div>
             </div>
 
-            <!-- SMART ACTION BUTTONS: OBUNANI OLISH vs PRO BERISH -->
             <div class="m-card-footer">
               <div class="flex items-center gap-1.5 flex-wrap">
+                <button type="button" class="btn btn-secondary btn-sm" data-action="user-dossier" data-user-id="${escapeHtml(u.user_id)}">📋 Profil</button>
                 ${u.is_pro
                   ? `
-                    <button class="btn btn-danger btn-sm" onclick="revokeUserSubscription(${u.user_id}, '${jsName}')">
-                      Obunani Olish
-                    </button>
-                    <button class="btn btn-secondary btn-sm" onclick="openGrantSubModal(${u.user_id}, '${jsName}', true)">
-                      + Uzaytirish
-                    </button>
+                    <button type="button" class="btn btn-danger btn-sm" data-action="revoke-sub" data-user-id="${escapeHtml(u.user_id)}" data-user-label="${escapeHtml(rawLabel)}">Obunani Olish</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-action="open-grant-sub" data-user-id="${escapeHtml(u.user_id)}" data-user-label="${escapeHtml(rawLabel)}" data-extend="1">+ Uzaytirish</button>
                   `
-                  : `
-                    <button class="btn btn-primary btn-sm" onclick="openGrantSubModal(${u.user_id}, '${jsName}', false)">
-                      + PRO Berish
-                    </button>
-                  `
+                  : `<button type="button" class="btn btn-primary btn-sm" data-action="open-grant-sub" data-user-id="${escapeHtml(u.user_id)}" data-user-label="${escapeHtml(rawLabel)}" data-extend="0">+ PRO Berish</button>`
                 }
               </div>
-
               <div>
                 ${u.is_blocked
-                  ? `<button class="btn btn-ghost btn-sm text-emerald text-xs" onclick="toggleUserBlock(${u.user_id}, false)">Blokdan chiqarish</button>`
-                  : `<button class="btn btn-ghost btn-sm text-rose text-xs" onclick="toggleUserBlock(${u.user_id}, true)">Bloklash</button>`
+                  ? `<button type="button" class="btn btn-ghost btn-sm text-emerald text-xs" data-action="toggle-block" data-user-id="${escapeHtml(u.user_id)}" data-block="0">Blokdan chiqarish</button>`
+                  : `<button type="button" class="btn btn-ghost btn-sm text-rose text-xs" data-action="toggle-block" data-user-id="${escapeHtml(u.user_id)}" data-block="1">Bloklash</button>`
                 }
               </div>
             </div>
@@ -408,168 +733,222 @@
     }
   }
 
-  // Revoke Subscription Immediately with Reason
-  window.revokeUserSubscription = async function (userId, name) {
-    const reason = prompt(`${name} (ID: ${userId}) ning PRO obunasini bekor qilish sababini yozing:`, "Admin qarori bilan bekor qilindi");
-    if (reason === null) return;
-    const cleanReason = reason.trim() || "Admin qarori bilan bekor qilindi";
+  async function openUserDossier(userId) {
+    const body = document.getElementById('dossier-modal-body');
+    setText('dossier-modal-title', `Foydalanuvchi Dossier — ID: ${userId}`);
+    if (body) body.innerHTML = '<div class="text-muted py-4 text-center">Ma’lumotlar yuklanmoqda...</div>';
+    openModal('modal-user-dossier');
 
     try {
-      const res = await apiFetch(`/api/admin/users/${userId}/revoke-subscription`, {
+      const res = await apiFetch(`/api/admin/users/${encodeURIComponent(userId)}`);
+      const u = res.user || {};
+      const ex = res.exam_stats || {};
+      const subs = res.subscriptions || [];
+      const txs = res.payments || [];
+      const acts = res.activity_events || [];
+
+      if (body) {
+        body.innerHTML = `
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <div class="bg-slate-900/80 border border-slate-800 rounded p-2.5">
+              <div class="text-[11px] text-muted">Ism / Username</div>
+              <div class="font-bold text-slate-100">${escapeHtml(u.first_name || '')} ${u.username ? '(@' + escapeHtml(u.username) + ')' : ''}</div>
+            </div>
+            <div class="bg-slate-900/80 border border-slate-800 rounded p-2.5">
+              <div class="text-[11px] text-muted">Segment / Faollik</div>
+              <div class="font-bold text-indigo-200">${escapeHtml(u.activity_classification?.segment || 'UNKNOWN')}</div>
+            </div>
+            <div class="bg-slate-900/80 border border-slate-800 rounded p-2.5">
+              <div class="text-[11px] text-muted">Imtihonlar (O‘tgan / Jami)</div>
+              <div class="font-bold text-emerald font-mono">${escapeHtml(ex.passed_exams || 0)} / ${escapeHtml(ex.total_exams || 0)} (${Math.round(Number(ex.avg_score || 0))}%)</div>
+            </div>
+          </div>
+
+          <div class="bg-slate-900/60 border border-slate-800 rounded p-2.5">
+            <div class="font-bold text-slate-200 mb-1">Obunalar tarixi (${subs.length})</div>
+            ${subs.length ? subs.slice(0, 5).map(s => `<div class="text-[11px] text-slate-300 font-mono">${escapeHtml(s.status)} • ${escapeHtml(s.plan_id || '')} • ${escapeHtml(formatDate(s.starts_at))} → ${escapeHtml(formatDate(s.expires_at))}</div>`).join('') : '<div class="text-muted">Obuna tarixi yo‘q</div>'}
+          </div>
+
+          <div class="bg-slate-900/60 border border-slate-800 rounded p-2.5">
+            <div class="font-bold text-slate-200 mb-1">To‘lovlar (${txs.length})</div>
+            ${txs.length ? txs.slice(0, 5).map(t => `<div class="text-[11px] text-emerald font-mono">${escapeHtml(formatMoney(t.amount_uzs))} • #${escapeHtml(t.order_id)} • ${escapeHtml(formatDate(t.created_at))}</div>`).join('') : '<div class="text-muted">To‘lovlar yo‘q</div>'}
+          </div>
+
+          <div class="bg-slate-900/60 border border-slate-800 rounded p-2.5">
+            <div class="font-bold text-slate-200 mb-1">So‘nggi harakatlar (${acts.length})</div>
+            ${acts.length ? acts.slice(0, 8).map(ev => `<div class="text-[11px] text-slate-400 font-mono">${escapeHtml(ev.event_name)} (${escapeHtml(ev.feature_area || '')}) • ${escapeHtml(formatDate(ev.created_at))}</div>`).join('') : '<div class="text-muted">Telemetriya yo‘q</div>'}
+          </div>
+        `;
+      }
+    } catch (e) {
+      if (body) body.innerHTML = `<div class="text-rose p-3">${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  async function revokeUserSubscription(userId, name) {
+    const reason = prompt(`${name} (ID: ${userId}) ning PRO obunasini bekor qilish sababini yozing:`, 'Admin qarori bilan bekor qilindi');
+    if (reason === null) return;
+    try {
+      const res = await apiFetch(`/api/admin/users/${encodeURIComponent(userId)}/revoke-subscription`, {
         method: 'POST',
-        body: JSON.stringify({ reason: cleanReason })
+        body: JSON.stringify({ reason: reason.trim() || 'Admin qarori bilan bekor qilindi' })
       });
-      showToast(res.message || "PRO obuna darhol bekor qilindi!");
+      showToast(res.message || 'PRO obuna bekor qilindi!');
       loadUsers();
       loadOverview();
     } catch (err) {
       showToast(err.message, 'error');
     }
-  };
+  }
 
-  window.openGrantSubModal = function (userId, name, isExtend = false) {
+  function openGrantSubModal(userId, name, isExtend) {
     document.getElementById('grant-user-id').value = userId;
-    document.getElementById('grant-user-display').textContent = `${name} (ID: ${userId})`;
-    document.getElementById('grant-modal-title').textContent = isExtend
-      ? "PRO Obunani Uzaytirish"
-      : "Foydalanuvchiga PRO Obuna Berish";
+    setText('grant-user-display', `${name} (ID: ${userId})`);
+    setText('grant-modal-title', isExtend ? 'PRO Obunani Uzaytirish' : 'Foydalanuvchiga PRO Obuna Berish');
     document.getElementById('grant-reason').value = '';
-    document.getElementById('modal-grant-sub').style.display = 'flex';
-  };
+    openModal('modal-grant-sub');
+  }
 
-  window.toggleUserBlock = async function (userId, shouldBlock) {
-    const actionText = shouldBlock ? "bloklamoqchimisiz" : "blokdan chiqarmoqchimisiz";
+  async function toggleUserBlock(userId, shouldBlock) {
+    const actionText = shouldBlock ? 'bloklamoqchimisiz' : 'blokdan chiqarmoqchimisiz';
     if (!confirm(`Foydalanuvchini (${userId}) ${actionText}?`)) return;
-
     try {
       if (shouldBlock) {
-        await apiFetch(`/api/admin/users/${userId}/block`, {
+        await apiFetch(`/api/admin/users/${encodeURIComponent(userId)}/block`, {
           method: 'POST',
-          body: JSON.stringify({ reason: "Admin qarori" })
+          body: JSON.stringify({ reason: 'Admin qarori bilan bloklandi' })
         });
-        showToast("Foydalanuvchi bloklandi");
+        showToast('Foydalanuvchi bloklandi');
       } else {
-        await apiFetch(`/api/admin/users/${userId}/unblock`, { method: 'POST' });
-        showToast("Foydalanuvchi blokdan chiqarildi");
+        await apiFetch(`/api/admin/users/${encodeURIComponent(userId)}/unblock`, { method: 'POST' });
+        showToast('Foydalanuvchi blokdan chiqarildi');
       }
       loadUsers();
     } catch (e) {
       showToast(e.message, 'error');
     }
-  };
-
-  // ================= 4. MTProto & SOZLAMALAR =================
-  async function loadSettings() {
-    try {
-      // 1. MTProto Status
-      const mtRes = await apiFetch('/api/admin/mtproto/status');
-      const st = mtRes.status || {};
-      const isConn = st.connection_status === 'CONNECTED';
-
-      const badge = document.getElementById('mtproto-status-badge');
-      if (badge) {
-        badge.className = `badge ${isConn ? 'badge-emerald' : 'badge-amber'}`;
-        badge.textContent = isConn ? 'ULANGAN (FAOL)' : 'ULANMAGAN';
-      }
-
-      const disBox = document.getElementById('mtproto-disconnected-box');
-      const connBox = document.getElementById('mtproto-connected-box');
-      if (disBox) disBox.style.display = isConn ? 'none' : 'block';
-      if (connBox) connBox.style.display = isConn ? 'block' : 'none';
-
-      if (isConn) {
-        const titleEl = document.getElementById('mtproto-account-title');
-        const phoneEl = document.getElementById('mtproto-account-phone');
-        if (titleEl) titleEl.textContent = st.account_info?.first_name || 'Telegram Akkaunt Ulangan';
-        if (phoneEl) phoneEl.textContent = st.account_info?.phone || '';
-      }
-
-      // 2. Receiving Bank Card Details & Form Pre-fill
-      const cardRes = await apiFetch('/api/admin/cards');
-      const cards = cardRes.cards || [];
-      if (cards.length) {
-        const c = cards[0];
-        const editId = document.getElementById('edit-card-id');
-        const dispNum = document.getElementById('disp-card-number');
-        const dispHolder = document.getElementById('disp-card-holder');
-        const dispType = document.getElementById('disp-card-type');
-        const accSummary = document.getElementById('acc-card-summary');
-        const inpHolder = document.getElementById('inp-card-holder');
-        const inpType = document.getElementById('inp-card-type');
-
-        const activeCardId = c.id || c.card_id || 1;
-        if (editId) editId.value = activeCardId;
-        if (dispNum) dispNum.textContent = c.card_number_masked;
-        if (dispHolder) dispHolder.textContent = c.cardholder_name;
-        if (dispType) dispType.textContent = (c.card_type || 'HUMO') + ' CARD';
-        if (accSummary) accSummary.textContent = `${c.card_type || 'HUMO'} •••• ${c.card_suffix || c.suffix_digits || '5370'}`;
-        if (inpHolder) inpHolder.value = c.cardholder_name;
-        if (inpType) inpType.value = c.card_type || 'HUMO';
-      }
-
-      // 3. Subscription Plans Pricing
-      const planRes = await apiFetch('/api/admin/plans');
-      const plans = planRes.plans || [];
-      const planContainer = document.getElementById('plans-pricing-container');
-
-      if (planContainer) {
-        planContainer.innerHTML = plans.map(p => `
-          <div class="mobile-card-row">
-            <div class="flex items-center justify-between">
-              <div>
-                <div class="font-bold text-slate-100 text-sm">${escapeHtml(p.name)}</div>
-                <div class="text-xs text-muted font-mono">${p.duration_days} kunlik muddat</div>
-              </div>
-              <div class="flex items-center gap-3">
-                <span class="font-mono text-emerald font-bold text-sm">${formatMoney(p.base_price_uzs)}</span>
-                <button class="btn btn-secondary btn-sm" onclick="openPriceModal('${p.id}', '${escapeHtml(p.name)}', ${p.base_price_uzs})">O‘zgartirish</button>
-              </div>
-            </div>
-          </div>
-        `).join('');
-      }
-
-      // 4. Load Question Sync, Editorial Legal Queue, and System Observability concurrently
-      await Promise.allSettled([
-        loadQuestionSyncStatus(),
-        loadEditorialQueue(1),
-        loadSystemObservability(),
-      ]);
-
-    } catch (e) {
-      console.error("Sozlamalar yuklashda xatolik:", e);
-    }
   }
 
-  // ================= 4.1 QUESTION SYNC & HUMAN-IN-THE-LOOP REVIEW CONTROLLER =================
-  let cachedStagedQuestions = [];
+  // ================= 4. SETTINGS, SYNC, EDITORIAL & OBSERVABILITY =================
+  async function loadSettings() {
+    const loaders = [];
+
+    // MTProto
+    loaders.push((async () => {
+      try {
+        const mtRes = await apiFetch('/api/admin/mtproto/status');
+        const st = mtRes.status || {};
+        const isConn = st.connection_status === 'CONNECTED';
+        const badge = document.getElementById('mtproto-status-badge');
+        if (badge) {
+          badge.className = `badge ${isConn ? 'badge-emerald' : 'badge-amber'}`;
+          badge.textContent = isConn ? 'ULANGAN (FAOL)' : (st.connection_status || 'ULANMAGAN');
+        }
+        const disBox = document.getElementById('mtproto-disconnected-box');
+        const connBox = document.getElementById('mtproto-connected-box');
+        if (disBox) disBox.style.display = isConn ? 'none' : 'block';
+        if (connBox) connBox.style.display = isConn ? 'block' : 'none';
+        if (isConn) {
+          setText('mtproto-account-title', st.account_info?.first_name || 'Telegram Akkaunt Ulangan');
+          setText('mtproto-account-phone', st.account_info?.phone || '—');
+        }
+      } catch {}
+    })());
+
+    // Cards & Plans (FINANCE)
+    if (hasRole('FINANCE')) {
+      document.getElementById('acc-card')?.style.removeProperty('display');
+      document.getElementById('acc-pricing')?.style.removeProperty('display');
+      loaders.push((async () => {
+        try {
+          const cardRes = await apiFetch('/api/admin/cards');
+          const cards = cardRes.cards || [];
+          if (cards.length) {
+            const c = cards[0];
+            const editId = document.getElementById('edit-card-id');
+            if (editId) editId.value = c.id;
+            setText('disp-card-number', c.card_number_masked || '•••• •••• •••• ••••');
+            setText('disp-card-holder', c.cardholder_name || 'KARTA EGASI');
+            setText('disp-card-type', (c.card_type || 'HUMO') + ' CARD');
+            setText('acc-card-summary', `${c.card_type || 'HUMO'} •••• ${c.card_suffix || c.suffix_digits || '****'}`);
+            const inpHolder = document.getElementById('inp-card-holder');
+            const inpType = document.getElementById('inp-card-type');
+            if (inpHolder) inpHolder.value = c.cardholder_name || '';
+            if (inpType) inpType.value = c.card_type || 'HUMO';
+          }
+        } catch {}
+      })());
+
+      loaders.push((async () => {
+        try {
+          const planRes = await apiFetch('/api/admin/plans');
+          const plans = planRes.plans || [];
+          const planContainer = document.getElementById('plans-pricing-container');
+          if (planContainer) {
+            planContainer.innerHTML = plans.map(p => `
+              <div class="mobile-card-row">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <div class="font-bold text-slate-100 text-sm">${escapeHtml(p.name)}</div>
+                    <div class="text-xs text-muted font-mono">${escapeHtml(p.duration_days)} kunlik muddat</div>
+                  </div>
+                  <div class="flex items-center gap-3">
+                    <span class="font-mono text-emerald font-bold text-sm">${escapeHtml(formatMoney(p.base_price_uzs))}</span>
+                    <button type="button" class="btn btn-secondary btn-sm" data-action="edit-plan-price" data-plan-id="${escapeHtml(p.id)}" data-plan-name="${escapeHtml(p.name)}" data-plan-price="${escapeHtml(p.base_price_uzs)}">O‘zgartirish</button>
+                  </div>
+                </div>
+              </div>
+            `).join('');
+          }
+        } catch {}
+      })());
+    } else {
+      const accCard = document.getElementById('acc-card');
+      const accPrice = document.getElementById('acc-pricing');
+      if (accCard) accCard.style.display = 'none';
+      if (accPrice) accPrice.style.display = 'none';
+    }
+
+    // Question Sync & Editorial (MODERATOR)
+    if (hasRole('MODERATOR')) {
+      document.getElementById('acc-sync')?.style.removeProperty('display');
+      document.getElementById('acc-editorial')?.style.removeProperty('display');
+      loaders.push(loadQuestionSyncStatus(), loadEditorialQueue(state.editorial.page));
+    } else {
+      const accSync = document.getElementById('acc-sync');
+      const accEd = document.getElementById('acc-editorial');
+      if (accSync) accSync.style.display = 'none';
+      if (accEd) accEd.style.display = 'none';
+    }
+
+    // Observability (SUPERADMIN)
+    if (hasRole('SUPERADMIN')) {
+      document.getElementById('acc-observability')?.style.removeProperty('display');
+      loaders.push(loadSystemObservability());
+    } else {
+      const accObs = document.getElementById('acc-observability');
+      if (accObs) accObs.style.display = 'none';
+    }
+
+    await Promise.allSettled(loaders);
+  }
 
   async function loadQuestionSyncStatus() {
     try {
       const res = await apiFetch('/api/admin/questions/sync/status');
       if (!res.success) return;
-
       const db = res.database || {};
-      const cqEl = document.getElementById('sync-kpi-cq');
-      const ctEl = document.getElementById('sync-kpi-ct');
-      const imgEl = document.getElementById('sync-kpi-img');
-      const pendingEl = document.getElementById('sync-kpi-pending');
-      const overallBadge = document.getElementById('sync-overall-badge');
-      const stagedBadge = document.getElementById('staged-count-badge');
-      const approveAllBtn = document.getElementById('btn-approve-all-sync');
-
-      if (cqEl) cqEl.textContent = Number(db.canonical_questions || 0).toLocaleString();
-      if (ctEl) ctEl.textContent = Number(db.canonical_translations || 0).toLocaleString();
-      if (imgEl) imgEl.textContent = Number(db.total_images || 0).toLocaleString();
-      if (pendingEl) pendingEl.textContent = Number(db.pending_staged_reviews || 0).toLocaleString();
-      if (overallBadge) overallBadge.textContent = `${Number(db.canonical_questions || 0).toLocaleString()} ta savol`;
-
+      setText('sync-kpi-cq', Number(db.canonical_questions || 0).toLocaleString());
+      setText('sync-kpi-ct', Number(db.canonical_translations || 0).toLocaleString());
+      setText('sync-kpi-img', Number(db.total_images || 0).toLocaleString());
+      setText('sync-kpi-pending', Number(db.pending_staged_reviews || 0).toLocaleString());
+      setText('sync-overall-badge', `${Number(db.canonical_questions || 0).toLocaleString()} ta savol`);
       const pendingCount = db.pending_staged_reviews || 0;
-      if (stagedBadge) stagedBadge.textContent = `${pendingCount} kutilmoqda`;
+      setText('staged-count-badge', `${pendingCount} kutilmoqda`);
+      const approveAllBtn = document.getElementById('btn-approve-all-sync');
       if (approveAllBtn) approveAllBtn.style.display = pendingCount > 0 ? 'inline-flex' : 'none';
 
-      const sources = res.sources || [];
-      sources.forEach(s => {
+      (res.sources || []).forEach(s => {
         const badge = document.getElementById(`sync-badge-${s.source_code}`);
         const meta = document.getElementById(`sync-meta-${s.source_code}`);
         if (badge) {
@@ -577,220 +956,156 @@
           badge.textContent = s.is_online ? `Onlayn (${s.tickets_count} bilet)` : 'Oflayn';
         }
         if (meta) {
-          meta.textContent = s.is_online 
-            ? `Tezlik: ${s.response_time_ms}ms | ~${s.estimated_questions} ta savol`
-            : (s.error || 'Ulanishda xatolik');
+          meta.textContent = s.is_online ? `Tezlik: ${s.response_time_ms}ms | ~${s.estimated_questions} ta savol` : (s.error || 'Xatolik');
         }
       });
 
       await loadStagedQuestions();
     } catch (e) {
-      console.warn("Question sync status fetch error:", e);
+      console.warn('Question sync status error:', e);
     }
   }
 
-  window.loadStagedQuestions = async function () {
+  async function loadStagedQuestions() {
     const listEl = document.getElementById('staged-questions-list');
     if (!listEl) return;
 
     try {
       const res = await apiFetch('/api/admin/questions/staging?status=PENDING_REVIEW');
-      cachedStagedQuestions = res.questions || [];
-      const count = cachedStagedQuestions.length;
-
-      const badge = document.getElementById('staged-count-badge');
-      const pendingKpi = document.getElementById('sync-kpi-pending');
+      state.stagedCache = res.questions || [];
+      const count = state.stagedCache.length;
+      setText('staged-count-badge', `${count} kutilmoqda`);
+      setText('sync-kpi-pending', String(count));
       const approveAllBtn = document.getElementById('btn-approve-all-sync');
-
-      if (badge) badge.textContent = `${count} kutilmoqda`;
-      if (pendingKpi) pendingKpi.textContent = count;
       if (approveAllBtn) approveAllBtn.style.display = count > 0 ? 'inline-flex' : 'none';
 
-      if (!cachedStagedQuestions.length) {
-        listEl.innerHTML = `
-          <div class="text-xs text-muted text-center py-4 bg-slate-900/40 rounded border border-slate-800">
-            ✅ Kutilayotgan savollar yo‘q. Hamma savollar ko‘rib chiqilgan va asosiy bazada tasdiqlangan.
-          </div>
-        `;
+      if (!count) {
+        listEl.innerHTML = '<div class="text-xs text-muted text-center py-4 bg-slate-900/40 rounded border border-slate-800">✅ Kutilayotgan savollar yo‘q.</div>';
         return;
       }
 
-      listEl.innerHTML = cachedStagedQuestions.map(q => {
-        const options = q.options || [];
-        const optHtml = options.map(opt => `
+      listEl.innerHTML = state.stagedCache.map(q => {
+        const optHtml = (q.options || []).map(opt => `
           <div class="staged-opt-item ${opt.is_correct ? 'correct' : ''}">
-            <span class="staged-opt-key">${opt.key})</span>
+            <span class="staged-opt-key">${escapeHtml(opt.key)})</span>
             <span>${escapeHtml(opt.text_uz_latn || '')}</span>
             ${opt.is_correct ? '<span class="ml-auto text-emerald-400 font-bold text-xs">✓ To‘g‘ri</span>' : ''}
           </div>
         `).join('');
-
-        const imgHtml = q.image_src ? `
-          <img src="${q.image_src}" class="staged-image-preview" alt="Savol rasmi" onclick="window.open('${q.image_src}', '_blank')">
-        ` : '';
-
-        const changeBadge = q.change_type === 'AMENDMENT' 
-          ? '<span class="badge badge-amber text-[10px]">JAVOB TUZATISH</span>' 
+        const imgUrl = safeUrl(q.image_src);
+        const imgHtml = imgUrl ? `<img src="${escapeHtml(imgUrl)}" class="staged-image-preview ed-thumb-img" alt="Savol rasmi" data-action="open-image" data-url="${escapeHtml(imgUrl)}">` : '';
+        const changeBadge = q.change_type === 'AMENDMENT'
+          ? '<span class="badge badge-amber text-[10px]">JAVOB TUZATISH</span>'
           : '<span class="badge badge-emerald text-[10px]">YANGI SAVOL</span>';
 
         return `
-          <div class="staged-card" id="staged-card-${q.id}">
+          <div class="staged-card" id="staged-card-${escapeHtml(q.id)}">
             <div class="staged-card-top">
               <div class="staged-source-meta">
-                <span class="font-bold text-slate-200">${q.source_code.toUpperCase()}</span>
+                <span class="font-bold text-slate-200">${escapeHtml((q.source_code || '').toUpperCase())}</span>
                 <span>•</span>
-                <span>Bilet ${q.source_ticket || '?'}, №${q.source_position || '?'}</span>
+                <span>Bilet ${escapeHtml(q.source_ticket || '?')}, №${escapeHtml(q.source_position || '?')}</span>
                 <span>•</span>
                 ${changeBadge}
               </div>
-              <div class="text-[11px] text-muted">${q.created_at ? q.created_at.substring(0, 16) : ''}</div>
+              <div class="text-[11px] text-muted">${escapeHtml((q.created_at || '').substring(0, 16))}</div>
             </div>
-
             <div class="staged-content-grid">
               ${imgHtml}
-
               <div class="staged-text-box">
                 <div class="staged-text-lang">🇺🇿 Lotincha:</div>
                 <div>${escapeHtml(q.text_uz_latn || '')}</div>
               </div>
-
               ${q.text_ru && q.text_ru !== q.text_uz_latn ? `
                 <div class="staged-text-box">
-                  <div class="staged-text-lang" style="color: #a5b4fc;">🇷🇺 Ruscha:</div>
+                  <div class="staged-text-lang" style="color:#a5b4fc;">🇷🇺 Ruscha:</div>
                   <div class="text-xs text-slate-300">${escapeHtml(q.text_ru)}</div>
                 </div>
               ` : ''}
-
-              <div class="staged-options-list">
-                ${optHtml}
-              </div>
-
-              ${q.explanation ? `
-                <div class="text-[11px] text-slate-400 p-2 bg-slate-900/60 rounded border border-slate-800">
-                  <span class="font-bold text-slate-300">💡 Izoh:</span> ${escapeHtml(q.explanation)}
-                </div>
-              ` : ''}
+              <div class="staged-options-list">${optHtml}</div>
             </div>
-
             <div class="staged-actions-row">
-              <button type="button" class="btn btn-emerald btn-sm" onclick="approveStagedQuestion(${q.id})">
-                ✅ Tasdiqlash & Bazaga Qo‘shish
-              </button>
-              <button type="button" class="btn btn-secondary btn-sm" onclick="openEditStagedModal(${q.id})">
-                ✏️ Tahrirlash
-              </button>
-              <button type="button" class="btn btn-danger btn-sm" onclick="rejectStagedQuestion(${q.id})">
-                ❌ Rad etish
-              </button>
+              <button type="button" class="btn btn-emerald btn-sm" data-action="approve-staged" data-staged-id="${escapeHtml(q.id)}">✅ Tasdiqlash</button>
+              <button type="button" class="btn btn-secondary btn-sm" data-action="edit-staged" data-staged-id="${escapeHtml(q.id)}">✏️ Tahrirlash</button>
+              <button type="button" class="btn btn-danger btn-sm" data-action="reject-staged" data-staged-id="${escapeHtml(q.id)}">❌ Rad etish</button>
             </div>
           </div>
         `;
       }).join('');
-
     } catch (e) {
-      console.error("Staged questions fetch error:", e);
-      listEl.innerHTML = `<div class="text-xs text-red-400 p-3">Kutilayotgan savollarni yuklashda xatolik: ${e.message}</div>`;
+      listEl.innerHTML = `<div class="text-xs text-red-400 p-3">Xatolik: ${escapeHtml(e.message)}</div>`;
     }
-  };
+  }
 
-  window.approveStagedQuestion = async function (stagedId) {
+  async function approveStagedQuestion(stagedId) {
     try {
       const card = document.getElementById(`staged-card-${stagedId}`);
       if (card) card.style.opacity = '0.5';
-
-      const res = await apiFetch(`/api/admin/questions/staging/${stagedId}/approve`, { method: 'POST' });
-      showToast(res.message || "Savol tasdiqlandi va bazaga qo‘shildi!", "success");
+      const res = await apiFetch(`/api/admin/questions/staging/${encodeURIComponent(stagedId)}/approve`, { method: 'POST' });
+      showToast(res.message || 'Savol tasdiqlandi!', 'success');
       await loadQuestionSyncStatus();
     } catch (err) {
-      showToast(err.message, "error");
+      showToast(err.message, 'error');
       const card = document.getElementById(`staged-card-${stagedId}`);
       if (card) card.style.opacity = '1';
     }
-  };
+  }
 
-  window.rejectStagedQuestion = async function (stagedId) {
-    const reason = prompt("Ushbu savolni rad etish sababini kiriting:", "Noto‘g‘ri yoki dublikat savol");
+  async function rejectStagedQuestion(stagedId) {
+    const reason = prompt('Rad etish sababini kiriting:', 'Noto‘g‘ri yoki dublikat savol');
     if (!reason) return;
-
     try {
-      const res = await apiFetch(`/api/admin/questions/staging/${stagedId}/reject`, {
+      const res = await apiFetch(`/api/admin/questions/staging/${encodeURIComponent(stagedId)}/reject`, {
         method: 'POST',
         body: JSON.stringify({ reason })
       });
-      showToast(res.message || "Savol rad etildi", "info");
+      showToast(res.message || 'Savol rad etildi', 'info');
       await loadQuestionSyncStatus();
     } catch (err) {
-      showToast(err.message, "error");
+      showToast(err.message, 'error');
     }
-  };
+  }
 
-  window.openEditStagedModal = function (stagedId) {
-    const q = cachedStagedQuestions.find(item => item.id === stagedId);
+  function openEditStagedModal(stagedId) {
+    const q = state.stagedCache.find(item => String(item.id) === String(stagedId));
     if (!q) return;
-
     document.getElementById('inp-edit-staged-id').value = q.id;
     document.getElementById('inp-edit-staged-latn').value = q.text_uz_latn || '';
     document.getElementById('inp-edit-staged-cyrl').value = q.text_uz_cyrl || '';
     document.getElementById('inp-edit-staged-ru').value = q.text_ru || '';
     document.getElementById('inp-edit-staged-correct-key').value = q.correct_option_key || 'A';
     document.getElementById('inp-edit-staged-explanation').value = q.explanation || '';
-    if (document.getElementById('inp-edit-staged-expl-cyrl')) {
-      document.getElementById('inp-edit-staged-expl-cyrl').value = '';
-    }
-    if (document.getElementById('inp-edit-staged-expl-ru')) {
-      document.getElementById('inp-edit-staged-expl-ru').value = '';
-    }
-    if (document.getElementById('inp-edit-staged-legal-status')) {
-      document.getElementById('inp-edit-staged-legal-status').value = 'UNRESOLVED_LEGAL_REVIEW';
-      document.getElementById('inp-edit-staged-legal-doc-title').value = '';
-      document.getElementById('inp-edit-staged-legal-chapter').value = '';
-      document.getElementById('inp-edit-staged-legal-clause').value = '';
-      document.getElementById('inp-edit-staged-legal-doc-url').value = '';
-    }
-
-    const titleEl = document.getElementById('edit-staged-title');
-    if (titleEl) titleEl.textContent = `Savol #${q.id} ni Tahrirlash & Tasdiqlash (${q.source_code.toUpperCase()})`;
-
+    setText('edit-staged-title', `Savol #${q.id} ni Tahrirlash (${(q.source_code || '').toUpperCase()})`);
     openModal('modal-edit-staged');
-  };
+  }
 
-  // ================= 4.2 EDITORIAL PROVENANCE & LEGAL QUALITY CONTROLLER =================
-  const editorialState = {
-    status: 'PENDING_EDITORIAL_REVIEW',
-    page: 1,
-    limit: 20,
-    total: 0,
-    items: []
-  };
-
-  window.setEditorialStatusFilter = function (newStatus) {
-    editorialState.status = newStatus;
-    document.querySelectorAll('#ed-status-pills .subtab-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.edStatus === newStatus);
-    });
-    loadEditorialQueue(1);
-  };
-
-  window.changeEditorialPage = function (delta) {
-    const maxPage = Math.max(1, Math.ceil((editorialState.total || 0) / editorialState.limit));
-    const target = Math.min(maxPage, Math.max(1, editorialState.page + delta));
-    if (target !== editorialState.page) {
-      loadEditorialQueue(target);
+  // ================= 4.2 EDITORIAL PROVENANCE & BULK APPROVAL =================
+  function updateEditorialSelectionUi() {
+    const count = state.selectedEditorialIds.size;
+    setText('ed-selected-count', String(count));
+    const bulkBtn = document.getElementById('btn-ed-bulk-approve');
+    if (bulkBtn) bulkBtn.disabled = count === 0;
+    const selectAll = document.getElementById('ed-select-all');
+    if (selectAll && state.editorial.items.length) {
+      selectAll.checked = state.editorial.items.every(i => state.selectedEditorialIds.has(Number(i.id)));
     }
-  };
+  }
 
-  window.loadEditorialQueue = async function (page = 1) {
+  async function loadEditorialQueue(page = 1) {
     const listEl = document.getElementById('editorial-queue-list');
     if (!listEl) return;
+    state.editorial.page = page;
+    state.selectedEditorialIds.clear();
+    const selectAll = document.getElementById('ed-select-all');
+    if (selectAll) selectAll.checked = false;
 
-    editorialState.page = page;
-    const offset = (page - 1) * editorialState.limit;
+    const offset = (page - 1) * state.editorial.limit;
     const qVal = (document.getElementById('ed-filter-q')?.value || '').trim();
     const flagVal = (document.getElementById('ed-filter-flag')?.value || '').trim();
 
     const params = new URLSearchParams({
-      status: editorialState.status,
-      limit: String(editorialState.limit),
+      status: state.editorial.status,
+      limit: String(state.editorial.limit),
       offset: String(offset)
     });
     if (qVal) params.set('q', qVal);
@@ -798,133 +1113,114 @@
 
     try {
       const res = await apiFetch(`/api/admin/questions/editorial?${params.toString()}`);
-      editorialState.items = res.items || [];
-      editorialState.total = Number(res.total || 0);
+      state.editorial.items = res.items || [];
+      state.editorial.total = Number(res.total || 0);
 
       const sc = res.status_counts || {};
       const pendingCount = Number(sc.PENDING_EDITORIAL_REVIEW || 0);
       const aiCount = Number(sc.AI_DRAFT_PENDING_REVIEW || 0);
-      const approvedCount = Number(sc.APPROVED || 0);
-      const rejectedCount = Number(sc.REJECTED || 0);
+      setText('ed-count-pending', pendingCount.toLocaleString());
+      setText('ed-count-ai', aiCount.toLocaleString());
+      setText('ed-count-approved', Number(sc.APPROVED || 0).toLocaleString());
+      setText('ed-count-rejected', Number(sc.REJECTED || 0).toLocaleString());
+      setText('editorial-overall-badge', `${(pendingCount + aiCount).toLocaleString()} ta ko‘rib chiqilmagan`);
 
-      const setTxt = (id, v) => {
-        const el = document.getElementById(id);
-        if (el) el.textContent = v;
-      };
-      setTxt('ed-count-pending', pendingCount.toLocaleString());
-      setTxt('ed-count-ai', aiCount.toLocaleString());
-      setTxt('ed-count-approved', approvedCount.toLocaleString());
-      setTxt('ed-count-rejected', rejectedCount.toLocaleString());
-      setTxt('editorial-overall-badge', `${(pendingCount + aiCount).toLocaleString()} ta ko‘rib chiqilmagan`);
-
-      const maxPage = Math.max(1, Math.ceil(editorialState.total / editorialState.limit));
-      setTxt('ed-pagination-summary', `Jami: ${editorialState.total.toLocaleString()} ta savol (${page}/${maxPage}-sahifa)`);
-      setTxt('ed-page-label', `${page} / ${maxPage}`);
+      const maxPage = Math.max(1, Math.ceil(state.editorial.total / state.editorial.limit));
+      setText('ed-pagination-summary', `Jami: ${state.editorial.total.toLocaleString()} ta savol (${page}/${maxPage}-sahifa)`);
+      setText('ed-page-label', `${page} / ${maxPage}`);
       const prevBtn = document.getElementById('ed-btn-prev');
       const nextBtn = document.getElementById('ed-btn-next');
       if (prevBtn) prevBtn.disabled = page <= 1;
       if (nextBtn) nextBtn.disabled = page >= maxPage;
+      updateEditorialSelectionUi();
 
-      if (!editorialState.items.length) {
-        listEl.innerHTML = `
-          <div class="text-xs text-muted text-center py-4 bg-slate-900/40 rounded border border-slate-800">
-            Tanlangan filtr bo‘yicha tahririyat elementlari topilmadi.
-          </div>
-        `;
+      if (!state.editorial.items.length) {
+        listEl.innerHTML = '<div class="text-xs text-muted text-center py-4 bg-slate-900/40 rounded border border-slate-800">Tanlangan filtr bo‘yicha elementlar topilmadi.</div>';
         return;
       }
 
-      listEl.innerHTML = editorialState.items.map(item => {
-        const flags = item.issue_flags || [];
-        const flagsHtml = flags.map(f => {
+      listEl.innerHTML = state.editorial.items.map(item => {
+        const flagsHtml = (item.issue_flags || []).map(f => {
           const isBleed = f.includes('BLEED') || f.includes('MISMATCH');
           return `<span class="editorial-flag-pill ${isBleed ? 'bleed' : ''}">${escapeHtml(f)}</span>`;
         }).join('');
-
         const legalBadgeClass = item.current_legal_status === 'VERIFIED_PRIMARY_LAW'
           ? 'badge-emerald'
           : (item.current_legal_status === 'VERIFIED_FIRST_AID_OR_TECH' ? 'badge-blue' : 'badge-amber');
-
         const tr = item.translations || {};
         const uzLatnQ = (tr.uz_latn && tr.uz_latn.question_text) || item.preview_text_uz_latn || '';
-        const draftBanner = item.draft_explanation ? `
-          <div class="text-[11px] p-2 rounded bg-indigo-950/40 border border-indigo-500/30 text-indigo-200">
-            <b>🤖 Qoralama (${escapeHtml(item.language)}):</b> ${escapeHtml(item.draft_explanation)}
-          </div>
-        ` : '';
+        const imgUrl = safeUrl(item.image_url);
+        const optionsHtml = (item.options || []).map(opt => {
+          const isCorr = Boolean(opt.is_correct) || (opt.key && opt.key === item.correct_option_key);
+          return `<div class="text-[11px] px-2 py-0.5 rounded ${isCorr ? 'bg-slate-900 text-emerald font-bold' : 'text-slate-400'}">${escapeHtml(opt.key)}) ${escapeHtml(opt.text_uz_latn || '')} ${isCorr ? '✓' : ''}</div>`;
+        }).join('');
 
         return `
-          <div class="staged-card" id="editorial-card-${item.id}">
+          <div class="staged-card" id="editorial-card-${escapeHtml(item.id)}">
             <div class="staged-card-top">
               <div class="staged-source-meta">
+                <input type="checkbox" class="ed-row-checkbox" data-queue-id="${escapeHtml(item.id)}">
                 <span class="font-bold text-slate-200 font-mono">${escapeHtml(item.canonical_id)}</span>
                 <span>•</span>
                 <span>${escapeHtml(item.category_name || 'Kategoriyasiz')}</span>
-                <span>•</span>
                 <span class="badge ${legalBadgeClass} text-[10px]">${escapeHtml(item.current_legal_status || 'UNRESOLVED_LEGAL_REVIEW')}</span>
               </div>
-              <div class="text-[11px] text-muted">${escapeHtml(item.source_type || 'AUDIT_FLAG')} • #${item.id}</div>
+              <div class="text-[11px] text-muted">${escapeHtml(item.source_type || 'AUDIT_FLAG')} • #${escapeHtml(item.id)}</div>
             </div>
+
+            ${imgUrl ? `<div><img src="${escapeHtml(imgUrl)}" class="ed-thumb-img" alt="Savol rasmi" data-action="open-image" data-url="${escapeHtml(imgUrl)}"></div>` : ''}
 
             <div class="text-xs text-slate-200 leading-relaxed">${escapeHtml(uzLatnQ)}</div>
 
-            ${item.current_legal_hint ? `
-              <div class="text-[11px] text-slate-400">
-                <b>Joriy havola izi:</b> ${escapeHtml(item.current_legal_hint)}
-              </div>
-            ` : ''}
+            ${optionsHtml ? `<div class="space-y-1 bg-slate-900/40 p-2 rounded border border-slate-800">${optionsHtml}</div>` : ''}
 
-            ${draftBanner}
+            ${item.current_legal_hint ? `<div class="text-[11px] text-slate-400"><b>Joriy havola:</b> ${escapeHtml(item.current_legal_hint)}</div>` : ''}
+
+            ${item.draft_explanation ? `<div class="text-[11px] p-2 rounded bg-indigo-950/40 border border-indigo-500/30 text-indigo-200"><b>🤖 Qoralama (${escapeHtml(item.language)}):</b> ${escapeHtml(item.draft_explanation)}</div>` : ''}
 
             ${flagsHtml ? `<div class="flex flex-wrap gap-1">${flagsHtml}</div>` : ''}
 
             <div class="staged-actions-row">
-              <button type="button" class="btn btn-primary btn-sm" onclick="openEditEditorialModal(${item.id})">
-                ✏️ Huquqiy Asos & 3 Tilli Izoh
-              </button>
-              ${item.review_status !== 'REJECTED' ? `
-                <button type="button" class="btn btn-danger btn-sm" onclick="rejectEditorialQueueItem(${item.id})">
-                  ❌ Rad etish
-                </button>
-              ` : ''}
+              <button type="button" class="btn btn-primary btn-sm" data-action="ed-open-modal" data-queue-id="${escapeHtml(item.id)}">✏️ Tahrir &amp; Tasdiqlash</button>
+              <button type="button" class="btn btn-secondary btn-sm" data-action="ed-ai-draft" data-queue-id="${escapeHtml(item.id)}">✨ AI Qoralama</button>
+              ${item.review_status !== 'REJECTED' ? `<button type="button" class="btn btn-danger btn-sm" data-action="ed-reject" data-queue-id="${escapeHtml(item.id)}">❌ Rad etish</button>` : ''}
             </div>
           </div>
         `;
       }).join('');
     } catch (e) {
-      console.error("Editorial queue load error:", e);
-      listEl.innerHTML = `<div class="text-xs text-red-400 p-3">Tahririyat navbatini yuklashda xatolik: ${escapeHtml(e.message)}</div>`;
+      listEl.innerHTML = `<div class="text-xs text-red-400 p-3">Tahririyat navbati xatoligi: ${escapeHtml(e.message)}</div>`;
     }
-  };
+  }
 
-  window.runEditorialAuditSeed = async function () {
-    const btn = document.getElementById('btn-editorial-audit-seed');
-    if (btn) btn.disabled = true;
-    try {
-      const res = await apiFetch('/api/admin/questions/editorial/audit-seed', { method: 'POST' });
-      showToast(`Audit yakunlandi: ${res.queued_new_items || 0} ta yangi element qo‘shildi.`, 'success');
-      await loadEditorialQueue(1);
-    } catch (e) {
-      showToast(e.message, 'error');
-    } finally {
-      if (btn) btn.disabled = false;
-    }
-  };
-
-  window.openEditEditorialModal = function (queueId) {
-    const item = editorialState.items.find(x => x.id === queueId);
+  function openEditEditorialModal(queueId) {
+    const item = state.editorial.items.find(x => String(x.id) === String(queueId));
     if (!item) return;
 
     const tr = item.translations || {};
     document.getElementById('ed-modal-queue-id').value = item.id;
-    document.getElementById('ed-modal-title').textContent = `${item.canonical_id} — Huquqiy Asos & Izoh`;
+    setText('ed-modal-title', `${item.canonical_id} — Huquqiy Asos & Izoh`);
 
     const flagsText = (item.issue_flags || []).join(', ') || 'Yo‘q';
     document.getElementById('ed-modal-meta-box').innerHTML = `
-      <div><b>Kategoriya:</b> ${escapeHtml(item.category_name || '')} &nbsp;|&nbsp; <b>Til doirasi:</b> ${escapeHtml(item.language)}</div>
+      <div><b>Kategoriya:</b> ${escapeHtml(item.category_name || '')} &nbsp;|&nbsp; <b>Til:</b> ${escapeHtml(item.language)} &nbsp;|&nbsp; <b>To‘g‘ri kalit:</b> ${escapeHtml(item.correct_option_key || '—')}</div>
       <div><b>Joriy havola izi:</b> ${escapeHtml(item.current_legal_hint || 'Mavjud emas')}</div>
       <div><b>Aniqlangan belgilar:</b> ${escapeHtml(flagsText)}</div>
     `;
+
+    const visBox = document.getElementById('ed-modal-visual-box');
+    const imgUrl = safeUrl(item.image_url);
+    const opts = item.options || [];
+    if (visBox && (imgUrl || opts.length)) {
+      visBox.style.display = 'block';
+      visBox.innerHTML = `
+        ${imgUrl ? `<img src="${escapeHtml(imgUrl)}" class="ed-thumb-img" alt="Savol rasmi">` : ''}
+        ${opts.map(o => `<div class="text-[11px] ${o.is_correct ? 'text-emerald font-bold' : 'text-slate-400'}">${escapeHtml(o.key)}) ${escapeHtml(o.text_uz_latn || '')} ${o.is_correct ? '✓' : ''}</div>`).join('')}
+      `;
+    } else if (visBox) {
+      visBox.style.display = 'none';
+      visBox.innerHTML = '';
+    }
 
     document.getElementById('ed-modal-q-latn').value = (tr.uz_latn && tr.uz_latn.question_text) || '';
     document.getElementById('ed-modal-q-cyrl').value = (tr.uz_cyrl && tr.uz_cyrl.question_text) || '';
@@ -939,7 +1235,7 @@
 
     const defaultStatus = item.current_legal_status === 'VERIFIED_FIRST_AID_OR_TECH'
       ? 'VERIFIED_FIRST_AID_OR_TECH'
-      : (item.current_legal_status === 'UNRESOLVED_LEGAL_REVIEW' ? 'VERIFIED_PRIMARY_LAW' : (item.current_legal_status || 'VERIFIED_PRIMARY_LAW'));
+      : 'VERIFIED_PRIMARY_LAW';
     document.getElementById('ed-modal-legal-status').value = defaultStatus;
     document.getElementById('ed-modal-legal-doc-title').value = item.current_legal_doc_title || item.draft_legal_doc_title || '';
     document.getElementById('ed-modal-legal-doc-url').value = item.current_legal_doc_url || item.draft_legal_doc_url || '';
@@ -949,189 +1245,497 @@
     document.getElementById('ed-modal-reviewer-notes').value = 'Human verified';
 
     openModal('modal-edit-editorial');
-  };
+  }
 
-  window.rejectEditorialQueueItem = async function (queueId) {
-    const reason = prompt("Ushbu tahririyat yozuvini rad etish sababini kiriting:", "Qo‘shimcha tekshiruv uchun rad etildi");
+  async function requestAiDraft(queueId, populateModal = false) {
+    try {
+      showToast('AI qoralama yaratilmoqda...', 'info');
+      const res = await apiFetch(`/api/admin/questions/editorial/${encodeURIComponent(queueId)}/ai-draft`, { method: 'POST' });
+      const drafts = res.drafts || {};
+      if (populateModal) {
+        if (drafts.uz_latn) document.getElementById('ed-modal-expl-latn').value = drafts.uz_latn;
+        if (drafts.uz_cyrl) document.getElementById('ed-modal-expl-cyrl').value = drafts.uz_cyrl;
+        if (drafts.ru) document.getElementById('ed-modal-expl-ru').value = drafts.ru;
+      } else {
+        await loadEditorialQueue(state.editorial.page);
+      }
+      showToast('AI qoralama karantinga saqlandi (tasdiqlashdan oldin tekshiring).', 'success');
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
+  }
+
+  async function bulkApproveSelectedEditorial() {
+    const ids = Array.from(state.selectedEditorialIds);
+    if (!ids.length) return;
+    const legalStatus = document.getElementById('ed-bulk-legal-status')?.value || 'VERIFIED_PRIMARY_LAW';
+    const clause = (document.getElementById('ed-bulk-clause')?.value || '').trim();
+    if (!confirm(`${ids.length} ta tanlangan tahririyat yozuvini tasdiqlamoqchimisiz?`)) return;
+
+    try {
+      const res = await apiFetch('/api/admin/questions/editorial/bulk-approve', {
+        method: 'POST',
+        body: JSON.stringify({
+          queue_ids: ids,
+          legal_verification_status: legalStatus,
+          legal_doc_title: 'Vazirlar Mahkamasining 2022-yil 12-apreldagi 172-son qarori (YHQ)',
+          legal_clause: clause || null,
+          reviewer_notes: 'Bulk admin approved'
+        })
+      });
+      showToast(`Tasdiqlandi: ${(res.approved || []).length} ta, Xato: ${(res.failed || []).length} ta`, 'success');
+      await loadEditorialQueue(state.editorial.page);
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
+  }
+
+  async function rejectEditorialQueueItem(queueId) {
+    const reason = prompt('Rad etish sababini kiriting:', 'Qo‘shimcha tekshiruv uchun rad etildi');
     if (!reason) return;
     try {
-      await apiFetch(`/api/admin/questions/editorial/${queueId}/reject`, {
+      await apiFetch(`/api/admin/questions/editorial/${encodeURIComponent(queueId)}/reject`, {
         method: 'POST',
         body: JSON.stringify({ reason })
       });
       showToast(`Tahririyat yozuvi #${queueId} rad etildi.`, 'info');
-      await loadEditorialQueue(editorialState.page);
+      await loadEditorialQueue(state.editorial.page);
     } catch (e) {
       showToast(e.message, 'error');
     }
-  };
+  }
 
-  window.approveAllStagedQuestions = async function () {
-    if (!confirm("Barcha kutilayotgan savollarni birdaniga tasdiqlab, asosiy kanonik bazaga kiritishni tasdiqlaysizmi?")) return;
+  // ================= 5. BROADCAST SYSTEM =================
+  let selectedBroadcastTarget = 'all';
 
-    const btn = document.getElementById('btn-approve-all-sync');
-    if (btn) btn.disabled = true;
+  function selectBroadcastTarget(target) {
+    selectedBroadcastTarget = target;
+    document.querySelectorAll('.broadcast-target-opt').forEach(el => el.classList.remove('active'));
+    document.getElementById(`target-opt-${target}`)?.classList.add('active');
+  }
 
+  function insertBroadcastTag(tag) {
+    const textarea = document.getElementById('broadcast-message-text');
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    const selected = text.substring(start, end);
+    const replacement = `<${tag}>${selected || 'matn'}</${tag}>`;
+    textarea.value = text.substring(0, start) + replacement + text.substring(end);
+    textarea.focus();
+    updateBroadcastPreview();
+  }
+
+  function insertBroadcastLink() {
+    const textarea = document.getElementById('broadcast-message-text');
+    if (!textarea) return;
+    const url = prompt('Havola manzilini kiriting (URL):', 'https://t.me/');
+    if (!url || !safeUrl(url)) return;
+    const linkText = prompt('Havola matni:', 'Bu yerni bosing') || url;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    textarea.value = text.substring(0, start) + `<a href="${url}">${linkText}</a>` + text.substring(end);
+    textarea.focus();
+    updateBroadcastPreview();
+  }
+
+  function updateBroadcastPreview() {
+    const textarea = document.getElementById('broadcast-message-text');
+    const preview = document.getElementById('broadcast-live-preview');
+    const counter = document.getElementById('broadcast-char-count');
+    if (!textarea) return;
+    const val = textarea.value;
+    if (counter) counter.textContent = `${val.length} / 4000`;
+    if (preview) preview.innerHTML = sanitizeTelegramPreviewHtml(val);
+  }
+
+  async function loadBroadcastAudience() {
     try {
-      const res = await apiFetch('/api/admin/questions/staging/approve-all', { method: 'POST' });
-      showToast(res.message || "Barcha savollar tasdiqlandi!", "success");
-      await loadQuestionSyncStatus();
-    } catch (err) {
-      showToast(err.message, "error");
-    } finally {
-      if (btn) btn.disabled = false;
-    }
-  };
-
-  async function checkQuestionSyncUpdates() {
-    const btn = document.getElementById('btn-check-sync-updates');
-    const consoleEl = document.getElementById('sync-console-output');
-    if (btn) btn.disabled = true;
-    if (consoleEl) consoleEl.textContent = "🔍 Manbalar tekshirilmoqda (YesPrava, ProPDD)...\nYangi savollar aniqlansa, moderatsiya navbatiga kiritiladi...";
-
-    try {
-      const res = await apiFetch('/api/admin/questions/sync/check?auto_stage=true', { method: 'POST' });
-      if (consoleEl) {
-        let out = `Tekshiruv vaqti: ${new Date().toLocaleTimeString()}\n`;
-        out += `Yangilanishlar holati: ${res.has_updates ? '⚠️ YANGI O‘ZGARISHLAR TOPILDI!' : '✅ Baza to‘liq yangilangan'}\n\n`;
-        (res.source_reports || []).forEach(r => {
-          out += `[${r.source_name}]: ${r.has_changes ? 'O‘zgarishlar bor' : 'Yangilik yo‘q'}\n`;
-          out += `  • Onlayn biletlar: ${r.total_tickets_online} ta\n`;
-          out += `  • Yangi biletlar: ${r.new_tickets?.length ? r.new_tickets.join(', ') : 'Yo‘q'}\n`;
-          out += `  • Yangi savollar: ${r.new_questions_count} ta\n`;
-          out += `  • Kiritilgan tuzatishlar: ${r.amended_questions_count} ta\n\n`;
-        });
-        if (res.has_updates) {
-          out += `📋 Jami ${res.newly_staged_count || 0} ta yangi savol Moderatsiya navbatiga kiritildi!\n`;
-          out += `Quyidagi ro‘yxatda har birini ko‘rib chiqib, "Tasdiqlash" tugmasini bosing.`;
-        } else {
-          out += `Barcha savollar va rasmlar 100% eng so‘nggi holatda turibdi.`;
-        }
-        consoleEl.textContent = out;
+      const res = await apiFetch('/api/admin/broadcast/audience');
+      if (res?.counts) {
+        setText('bc-count-all', `${res.counts.all} ta`);
+        setText('bc-count-free', `${res.counts.free} ta`);
+        setText('bc-count-pro', `${res.counts.pro} ta`);
       }
-      showToast(res.has_updates ? "Yangi savollar moderatsiya navbatiga olindi!" : "Baza to‘liq dolzarb holatda", res.has_updates ? "warning" : "success");
-      await loadQuestionSyncStatus();
-    } catch (err) {
-      if (consoleEl) consoleEl.textContent = `Xatolik yuz berdi: ${err.message}`;
-      showToast(err.message, "error");
+    } catch {}
+  }
+
+  async function loadBroadcastHistory() {
+    const container = document.getElementById('broadcast-history-list');
+    if (!container) return;
+    try {
+      const res = await apiFetch('/api/admin/broadcast/history');
+      const list = res.history || [];
+      if (!list.length) {
+        container.innerHTML = '<div class="text-xs text-muted py-2">Yuborilgan xabarnomalar mavjud emas.</div>';
+        return;
+      }
+      container.innerHTML = list.map(item => {
+        const meta = item.meta || {};
+        const targetMap = { all: '👥 Barchaga', pro: '⭐ PRO larga', free: '🆓 Bepullarga' };
+        return `
+          <div class="p-3 bg-slate-900 border border-slate-800 rounded-lg text-xs space-y-1">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-slate-200">${escapeHtml(targetMap[meta.target_group] || meta.target_group || 'Barchaga')}</span>
+              <span class="text-muted font-mono">${escapeHtml((item.performed_at || '').replace('T', ' ').substring(0, 16))}</span>
+            </div>
+            <div class="text-slate-300 font-sans italic bg-slate-950 p-2 rounded border border-slate-800 mt-1">"${escapeHtml(meta.message_snippet || '')}"</div>
+            <div class="flex items-center gap-3 text-xs pt-1 text-slate-400">
+              <span class="text-emerald">✓ Yetkazildi: <b>${escapeHtml(meta.sent || 0)}</b></span>
+              <span class="text-rose">✕ Xatolik: <b>${escapeHtml(meta.failed || 0)}</b></span>
+              <span class="text-muted">Jami: <b>${escapeHtml(meta.total_targets || 0)}</b></span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    } catch {
+      container.innerHTML = '<div class="text-xs text-rose py-2">Tarixni yuklashda xatolik.</div>';
+    }
+  }
+
+  function loadBroadcastView() {
+    loadBroadcastAudience();
+    loadBroadcastHistory();
+    updateBroadcastPreview();
+  }
+
+  async function sendBroadcast() {
+    const textarea = document.getElementById('broadcast-message-text');
+    const msg = textarea ? textarea.value.trim() : '';
+    if (!msg) {
+      showToast('Iltimos, xabar matnini kiriting!', 'error');
+      return;
+    }
+    if (!confirm(`Ushbu xabarni (${selectedBroadcastTarget}) auditoriyasiga yuborishni tasdiqlaysizmi?`)) return;
+
+    const btn = document.getElementById('btn-send-broadcast');
+    if (btn) btn.disabled = true;
+    try {
+      const res = await apiFetch('/api/admin/broadcast/send', {
+        method: 'POST',
+        body: JSON.stringify({ target_group: selectedBroadcastTarget, message: msg })
+      });
+      showToast(res.message || 'Xabarnoma yuborildi!');
+      if (textarea) textarea.value = '';
+      updateBroadcastPreview();
+      loadBroadcastHistory();
+    } catch (e) {
+      showToast(e.message, 'error');
     } finally {
       if (btn) btn.disabled = false;
     }
   }
 
-  window.resetMtprotoForm = function () {
-    const fConnect = document.getElementById('form-mtproto-connect');
-    const fCode = document.getElementById('form-mtproto-code-step');
-    const f2fa = document.getElementById('form-mtproto-2fa-step');
-    if (fConnect) fConnect.style.display = 'block';
-    if (fCode) fCode.style.display = 'none';
-    if (f2fa) f2fa.style.display = 'none';
-  };
-
-  window.disconnectMTProto = async function () {
-    if (!confirm("MTProto sessiyasini uzmoqchimisiz? Humocardbot tinglash to‘xtaydi.")) return;
+  // ================= 6. SYSTEM OBSERVABILITY =================
+  async function loadSystemObservability() {
     try {
-      const res = await apiFetch('/api/admin/mtproto/disconnect', { method: 'POST' });
-      showToast(res.message);
-      resetMtprotoForm();
-      loadSettings();
-      loadTopbarIndicators();
-      loadOverview();
+      const [healthRes, logsRes] = await Promise.all([
+        apiFetch('/api/admin/system/health'),
+        apiFetch('/api/admin/system/audit-logs?limit=10')
+      ]);
+
+      const badge = document.getElementById('obs-overall-badge');
+      const routesEl = document.getElementById('obs-routes-summary');
+      const logsEl = document.getElementById('obs-audit-logs-list');
+
+      const obs = healthRes.observability || {};
+      const db = healthRes.database || {};
+      const rl = healthRes.rate_limiter || {};
+      const rt = healthRes.runtime || {};
+
+      if (badge) {
+        const statusText = healthRes.status || 'HEALTHY';
+        badge.className = `badge ${statusText === 'HEALTHY' ? 'badge-emerald' : 'badge-amber'}`;
+        badge.textContent = statusText;
+      }
+      setText('obs-db-val', `${db.integrity_check || 'ok'} • ${db.latency_ms ?? 0}ms`);
+      setText('obs-latency-val', `p50 ${obs.latency_p50_ms ?? 0}ms / p95 ${obs.latency_p95_ms ?? 0}ms`);
+      setText('obs-req-val', `${obs.total_requests ?? 0} req • 5xx:${obs.errors_5xx ?? 0} • RL:${rl.rejected_requests ?? 0}`);
+      const upMin = Math.floor((obs.uptime_seconds || 0) / 60);
+      setText('obs-runtime-val', `${upMin}m • ${rt.rss_mb ?? 'n/a'}MB • ${rt.router_mode || 'full'}`);
+
+      if (routesEl) {
+        const top = (obs.top_routes || []).slice(0, 4).map(r => `${r.route} (${r.count}x, p95 ${r.p95_ms}ms)`);
+        routesEl.textContent = top.length ? `Top yo‘llar: ${top.join(' | ')}` : 'Hozircha marshrutlar statistikasi yig‘ilmoqda.';
+      }
+
+      if (logsEl) {
+        const items = logsRes.logs || [];
+        logsEl.innerHTML = items.length
+          ? items.map(l => `
+              <div class="bg-slate-900/60 border border-slate-800 rounded p-2 flex items-center justify-between gap-2">
+                <div class="min-w-0">
+                  <span class="font-bold text-slate-200">${escapeHtml(l.action)}</span>
+                  <span class="text-muted"> — ${escapeHtml(l.username || 'system')}</span>
+                  <div class="text-[11px] text-slate-400 truncate">${escapeHtml(l.details || '')}</div>
+                </div>
+                <span class="text-[11px] text-muted font-mono shrink-0">${escapeHtml((l.performed_at || '').slice(0, 19))}</span>
+              </div>
+            `).join('')
+          : '<div class="text-muted py-2">Audit yozuvlari topilmadi.</div>';
+      }
     } catch (e) {
-      showToast(e.message, 'error');
+      console.error('Observability load error:', e);
     }
-  };
+  }
 
-  window.openPriceModal = function (id, name, price) {
-    document.getElementById('edit-plan-id').value = id;
-    document.getElementById('edit-plan-name').textContent = name;
-    document.getElementById('edit-plan-price').value = price;
-    document.getElementById('edit-plan-reason').value = '';
-    document.getElementById('modal-edit-price').style.display = 'flex';
-  };
+  // ================= AUTH & POLLERS =================
+  function startOtpCountdown(seconds) {
+    clearInterval(state.otpTimerInterval);
+    const display = document.getElementById('otp-countdown');
+    let left = seconds;
+    const render = s => {
+      const m = Math.floor(s / 60);
+      const rem = s % 60;
+      if (display) display.textContent = `${String(m).padStart(2, '0')}:${String(rem).padStart(2, '0')}`;
+    };
+    render(left);
+    state.otpTimerInterval = setInterval(() => {
+      left--;
+      if (left <= 0) {
+        clearInterval(state.otpTimerInterval);
+        if (display) display.textContent = '00:00 (Muddati tugadi)';
+      } else {
+        render(left);
+      }
+    }, 1000);
+  }
 
-  window.openModal = function (modalId) {
-    const el = document.getElementById(modalId);
-    if (el) el.style.display = 'flex';
-  };
-
-  window.closeModal = function (modalId) {
-    const el = document.getElementById(modalId);
-    if (el) el.style.display = 'none';
-  };
-
-  window.handleLogout = async function () {
-    if (!confirm("Admin paneldan chiqmoqchimisiz?")) return;
-    try {
-      await apiFetch('/api/admin/auth/logout', { method: 'POST' });
-    } catch {}
+  async function handleLogout() {
+    if (!confirm('Admin paneldan chiqmoqchimisiz?')) return;
+    try { await apiFetch('/api/admin/auth/logout', { method: 'POST' }); } catch {}
     location.reload();
-  };
+  }
 
-  // ================= TOPBAR STATUS POLLER =================
   async function loadTopbarIndicators() {
     try {
       const res = await apiFetch('/api/admin/mtproto/status');
       const st = res.status || {};
       const isConn = st.connection_status === 'CONNECTED';
-
-      // Desktop & Mobile Status Dots
       const dot = document.getElementById('topbar-mtproto-dot');
-      const text = document.getElementById('topbar-mtproto-text');
       const deskDot = document.getElementById('mtproto-status-dot-desktop');
       const mobDot = document.getElementById('m-dot-mtproto');
-
       if (dot) dot.className = `indicator-dot ${isConn ? 'connected' : ''}`;
-      if (text) text.textContent = isConn ? 'MTProto: Faol' : 'MTProto: Ulanmagan';
+      setText('topbar-mtproto-text', isConn ? 'MTProto: Faol' : 'MTProto: Nofaol');
       if (deskDot) deskDot.className = `status-dot-mini ${isConn ? 'connected' : ''}`;
       if (mobDot) mobDot.className = `m-status-dot ${isConn ? 'connected' : ''}`;
 
-      // Active Orders Badge
       const activeOrd = st.active_orders_count || 0;
       const bNav = document.getElementById('badge-nav-orders');
       const bMob = document.getElementById('m-badge-orders');
-
-      if (bNav) {
-        bNav.textContent = activeOrd;
-        bNav.style.display = activeOrd > 0 ? 'inline-block' : 'none';
-      }
-      if (bMob) {
-        bMob.textContent = activeOrd;
-        bMob.style.display = activeOrd > 0 ? 'block' : 'none';
-      }
-    } catch (e) {}
+      if (bNav) { bNav.textContent = activeOrd; bNav.style.display = activeOrd > 0 ? 'inline-block' : 'none'; }
+      if (bMob) { bMob.textContent = activeOrd; bMob.style.display = activeOrd > 0 ? 'block' : 'none'; }
+    } catch {}
   }
 
-  // ================= EVENT LISTENERS SETUP =================
+  function applyAdminProfileUi(admin) {
+    state.currentAdmin = admin;
+    const uname = admin?.username || 'Admin';
+    const role = String(admin?.role || 'SUPERADMIN').toUpperCase();
+    setText('topbar-admin-name', uname);
+    setText('topbar-admin-avatar', uname.charAt(0).toUpperCase());
+    setText('topbar-admin-role', role);
+    setText('topbar-role-badge', role);
+  }
+
+  function showAppCockpit() {
+    document.getElementById('auth-container').style.display = 'none';
+    document.getElementById('app-container').style.display = 'flex';
+    switchView('overview');
+    loadTopbarIndicators();
+    setInterval(() => {
+      if (!document.hidden) loadTopbarIndicators();
+    }, 20000);
+  }
+
+  // ================= CENTRALIZED EVENT DELEGATION (ZERO INLINE JS) =================
   function setupEventListeners() {
-    // 1. Navigation items (Desktop)
-    document.querySelectorAll('.sidebar-nav .nav-item').forEach(el => {
-      el.addEventListener('click', (e) => {
+    document.querySelectorAll('.sidebar-nav .nav-item, .mobile-bottom-nav .m-nav-item').forEach(el => {
+      el.addEventListener('click', e => {
         e.preventDefault();
-        const view = el.getAttribute('data-view');
-        switchView(view);
+        switchView(el.getAttribute('data-view'));
       });
     });
 
-    // 2. Login Form
-    document.getElementById('form-login')?.addEventListener('submit', async (e) => {
+    document.addEventListener('click', e => {
+      const closeBtn = e.target.closest('[data-close-modal]');
+      if (closeBtn) {
+        closeModal(closeBtn.getAttribute('data-close-modal'));
+        return;
+      }
+
+      const accHeader = e.target.closest('.accordion-header[data-acc-target]');
+      if (accHeader) {
+        toggleAccordion(accHeader.getAttribute('data-acc-target'));
+        return;
+      }
+
+      const actionEl = e.target.closest('[data-action]');
+      if (actionEl) {
+        const action = actionEl.getAttribute('data-action');
+        if (action === 'switch-view') switchView(actionEl.getAttribute('data-view'));
+        else if (action === 'logout') handleLogout();
+        else if (action === 'reload-bi') loadBiAnalytics();
+        else if (action === 'open-image') {
+          const u = safeUrl(actionEl.getAttribute('data-url'));
+          if (u) window.open(u, '_blank', 'noopener,noreferrer');
+        }
+        else if (action === 'approve-order-review') approveOrderReview(actionEl.getAttribute('data-order-id'));
+        else if (action === 'approve-review') approveReviewCase(actionEl.getAttribute('data-case-id'), actionEl.getAttribute('data-order-id'));
+        else if (action === 'reject-review') rejectReviewCase(actionEl.getAttribute('data-case-id'));
+        else if (action === 'link-unmatched') linkUnmatchedToOrder(actionEl.getAttribute('data-unmatched-id'), actionEl.getAttribute('data-candidate-order'));
+        else if (action === 'resolve-unmatched') resolveUnmatched(actionEl.getAttribute('data-unmatched-id'));
+        else if (action === 'user-dossier') openUserDossier(actionEl.getAttribute('data-user-id'));
+        else if (action === 'open-grant-sub') openGrantSubModal(actionEl.getAttribute('data-user-id'), actionEl.getAttribute('data-user-label'), actionEl.getAttribute('data-extend') === '1');
+        else if (action === 'revoke-sub') revokeUserSubscription(actionEl.getAttribute('data-user-id'), actionEl.getAttribute('data-user-label'));
+        else if (action === 'toggle-block') toggleUserBlock(actionEl.getAttribute('data-user-id'), actionEl.getAttribute('data-block') === '1');
+        else if (action === 'edit-plan-price') {
+          document.getElementById('edit-plan-id').value = actionEl.getAttribute('data-plan-id');
+          setText('edit-plan-name', actionEl.getAttribute('data-plan-name'));
+          document.getElementById('edit-plan-price').value = actionEl.getAttribute('data-plan-price');
+          document.getElementById('edit-plan-reason').value = '';
+          openModal('modal-edit-price');
+        }
+        else if (action === 'approve-staged') approveStagedQuestion(actionEl.getAttribute('data-staged-id'));
+        else if (action === 'edit-staged') openEditStagedModal(actionEl.getAttribute('data-staged-id'));
+        else if (action === 'reject-staged') rejectStagedQuestion(actionEl.getAttribute('data-staged-id'));
+        else if (action === 'ed-open-modal') openEditEditorialModal(actionEl.getAttribute('data-queue-id'));
+        else if (action === 'ed-ai-draft') requestAiDraft(actionEl.getAttribute('data-queue-id'), false);
+        else if (action === 'ed-reject') rejectEditorialQueueItem(actionEl.getAttribute('data-queue-id'));
+        return;
+      }
+    });
+
+    // Payment Subtabs & Search
+    document.getElementById('payments-subtabs')?.addEventListener('click', e => {
+      const btn = e.target.closest('.subtab-btn[data-ptab]');
+      if (btn) setPaymentTab(btn.getAttribute('data-ptab'));
+    });
+    document.getElementById('payments-search-input')?.addEventListener('input', () => renderPaymentsHub());
+    document.getElementById('btn-refresh-payments')?.addEventListener('click', () => loadPaymentsHub());
+
+    // Overview BI range
+    document.getElementById('ov-sales-range')?.addEventListener('change', () => loadBiAnalytics());
+
+    // Users Search / Filter / Sort
+    document.getElementById('users-search-input')?.addEventListener('input', () => {
+      clearTimeout(state.searchDebounce);
+      state.searchDebounce = setTimeout(loadUsers, 300);
+    });
+    document.getElementById('users-filter-sub')?.addEventListener('change', () => loadUsers());
+    document.getElementById('users-sort-by')?.addEventListener('change', () => loadUsers());
+
+    // Broadcast Controls
+    document.getElementById('btn-refresh-bc-audience')?.addEventListener('click', loadBroadcastAudience);
+    document.getElementById('broadcast-targets-grid')?.addEventListener('click', e => {
+      const opt = e.target.closest('[data-bc-target]');
+      if (opt) selectBroadcastTarget(opt.getAttribute('data-bc-target'));
+    });
+    document.getElementById('broadcast-format-bar')?.addEventListener('click', e => {
+      const tagBtn = e.target.closest('[data-bc-tag]');
+      if (tagBtn) insertBroadcastTag(tagBtn.getAttribute('data-bc-tag'));
+    });
+    document.getElementById('btn-bc-insert-link')?.addEventListener('click', insertBroadcastLink);
+    document.getElementById('broadcast-message-text')?.addEventListener('input', updateBroadcastPreview);
+    document.getElementById('btn-send-broadcast')?.addEventListener('click', sendBroadcast);
+
+    // Editorial Queue Filters, Bulk Checkboxes & Pagination
+    document.getElementById('ed-status-pills')?.addEventListener('click', e => {
+      const btn = e.target.closest('.subtab-btn[data-ed-status]');
+      if (!btn) return;
+      state.editorial.status = btn.getAttribute('data-ed-status');
+      document.querySelectorAll('#ed-status-pills .subtab-btn').forEach(b => b.classList.toggle('active', b === btn));
+      loadEditorialQueue(1);
+    });
+    document.getElementById('ed-filter-flag')?.addEventListener('change', () => loadEditorialQueue(1));
+    document.getElementById('btn-ed-search')?.addEventListener('click', () => loadEditorialQueue(1));
+    document.getElementById('btn-editorial-audit-seed')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-editorial-audit-seed');
+      if (btn) btn.disabled = true;
+      try {
+        const res = await apiFetch('/api/admin/questions/editorial/audit-seed', { method: 'POST' });
+        showToast(`Audit yakunlandi: ${res.queued_new_items || 0} ta yangi element.`, 'success');
+        await loadEditorialQueue(1);
+      } catch (e) { showToast(e.message, 'error'); }
+      finally { if (btn) btn.disabled = false; }
+    });
+
+    document.getElementById('ed-select-all')?.addEventListener('change', e => {
+      const checked = e.target.checked;
+      document.querySelectorAll('.ed-row-checkbox').forEach(cb => {
+        cb.checked = checked;
+        const qid = Number(cb.getAttribute('data-queue-id'));
+        if (checked) state.selectedEditorialIds.add(qid);
+        else state.selectedEditorialIds.delete(qid);
+      });
+      updateEditorialSelectionUi();
+    });
+
+    document.getElementById('editorial-queue-list')?.addEventListener('change', e => {
+      if (!e.target.classList.contains('ed-row-checkbox')) return;
+      const qid = Number(e.target.getAttribute('data-queue-id'));
+      if (e.target.checked) state.selectedEditorialIds.add(qid);
+      else state.selectedEditorialIds.delete(qid);
+      updateEditorialSelectionUi();
+    });
+
+    document.getElementById('btn-ed-bulk-approve')?.addEventListener('click', bulkApproveSelectedEditorial);
+    document.getElementById('btn-ed-modal-ai-draft')?.addEventListener('click', () => {
+      const qid = document.getElementById('ed-modal-queue-id')?.value;
+      if (qid) requestAiDraft(qid, true);
+    });
+
+    document.getElementById('ed-btn-prev')?.addEventListener('click', () => {
+      if (state.editorial.page > 1) loadEditorialQueue(state.editorial.page - 1);
+    });
+    document.getElementById('ed-btn-next')?.addEventListener('click', () => {
+      const maxPage = Math.max(1, Math.ceil(state.editorial.total / state.editorial.limit));
+      if (state.editorial.page < maxPage) loadEditorialQueue(state.editorial.page + 1);
+    });
+
+    // Observability refresh
+    document.getElementById('btn-refresh-obs')?.addEventListener('click', loadSystemObservability);
+
+    // Sync controls
+    document.getElementById('btn-reload-staged')?.addEventListener('click', loadStagedQuestions);
+    document.getElementById('btn-check-sync-updates')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-check-sync-updates');
+      const consoleEl = document.getElementById('sync-console-output');
+      if (btn) btn.disabled = true;
+      if (consoleEl) consoleEl.textContent = '🔍 Manbalar tekshirilmoqda...';
+      try {
+        const res = await apiFetch('/api/admin/questions/sync/check?auto_stage=true', { method: 'POST' });
+        if (consoleEl) consoleEl.textContent = JSON.stringify(res.source_reports || res, null, 2);
+        await loadQuestionSyncStatus();
+      } catch (e) { showToast(e.message, 'error'); }
+      finally { if (btn) btn.disabled = false; }
+    });
+    document.getElementById('btn-approve-all-sync')?.addEventListener('click', async () => {
+      if (!confirm('Barcha kutilayotgan savollarni tasdiqlaysizmi?')) return;
+      try {
+        const res = await apiFetch('/api/admin/questions/staging/approve-all', { method: 'POST' });
+        showToast(res.message || 'Tasdiqlandi!', 'success');
+        await loadQuestionSyncStatus();
+      } catch (e) { showToast(e.message, 'error'); }
+    });
+
+    // Auth & Modal Forms
+    document.getElementById('form-login')?.addEventListener('submit', async e => {
       e.preventDefault();
       const u = document.getElementById('login-username').value;
       const p = document.getElementById('login-password').value;
       const btn = document.getElementById('btn-login-submit');
       btn.disabled = true;
-      btn.textContent = "Tekshirilmoqda...";
-
+      btn.textContent = 'Tekshirilmoqda...';
       try {
         const res = await apiFetch('/api/admin/auth/login', {
           method: 'POST',
           body: JSON.stringify({ username: u, password: p })
         });
-
         state.otpChallengeId = res.data.challenge_id;
-        const tgMasked = document.getElementById('otp-tg-masked');
-        if (tgMasked) tgMasked.textContent = res.data.telegram_id_masked || '***9701';
-
+        setText('otp-tg-masked', res.data.telegram_id_masked || '***');
         document.getElementById('form-login').style.display = 'none';
         document.getElementById('form-otp').style.display = 'block';
         startOtpCountdown(res.data.expires_in_seconds || 300);
@@ -1140,35 +1744,30 @@
         showToast(err.message, 'error');
       } finally {
         btn.disabled = false;
-        btn.innerHTML = `<span>Kirish</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="sm-icon"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>`;
+        btn.textContent = 'Kirish';
       }
     });
 
-    // 3. OTP Form
-    document.getElementById('form-otp')?.addEventListener('submit', async (e) => {
+    document.getElementById('form-otp')?.addEventListener('submit', async e => {
       e.preventDefault();
       const code = document.getElementById('otp-input').value.trim();
       const btn = document.getElementById('btn-otp-submit');
       btn.disabled = true;
-      btn.textContent = "Tasdiqlanmoqda...";
-
+      btn.textContent = 'Tasdiqlanmoqda...';
       try {
-        await apiFetch('/api/admin/auth/otp/verify', {
+        const verifyRes = await apiFetch('/api/admin/auth/otp/verify', {
           method: 'POST',
-          body: JSON.stringify({
-            challenge_id: state.otpChallengeId,
-            otp_code: code
-          })
+          body: JSON.stringify({ challenge_id: state.otpChallengeId, otp_code: code })
         });
-
-        showToast("Xush kelibsiz!");
+        applyAdminProfileUi(verifyRes.data?.admin || {});
+        showToast('Xush kelibsiz!');
         clearInterval(state.otpTimerInterval);
         showAppCockpit();
       } catch (err) {
         showToast(err.message, 'error');
       } finally {
         btn.disabled = false;
-        btn.textContent = "Tasdiqlash & Kirish";
+        btn.textContent = 'Tasdiqlash & Kirish';
       }
     });
 
@@ -1178,210 +1777,134 @@
       document.getElementById('form-login').style.display = 'block';
     });
 
-    // 4. Logout (Desktop)
     document.getElementById('btn-logout')?.addEventListener('click', handleLogout);
 
-    // 5. Grant Sub Modal Form
-    document.getElementById('form-grant-sub')?.addEventListener('submit', async (e) => {
+    document.getElementById('form-grant-sub')?.addEventListener('submit', async e => {
       e.preventDefault();
       const userId = document.getElementById('grant-user-id').value;
       const duration = parseInt(document.querySelector('input[name="grant-duration"]:checked')?.value || '14', 10);
       const reason = document.getElementById('grant-reason').value;
-
       try {
-        await apiFetch(`/api/admin/users/${userId}/grant-subscription`, {
+        await apiFetch(`/api/admin/users/${encodeURIComponent(userId)}/grant-subscription`, {
           method: 'POST',
-          body: JSON.stringify({ duration_days: duration, reason: reason })
+          body: JSON.stringify({ duration_days: duration, reason })
         });
-        showToast("PRO obuna muvaffaqiyatli saqlandi!");
+        showToast('PRO obuna faollashtirildi!');
         closeModal('modal-grant-sub');
         loadUsers();
         loadOverview();
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
+      } catch (err) { showToast(err.message, 'error'); }
     });
 
-    // 6. Edit Price Form
-    document.getElementById('form-edit-price')?.addEventListener('submit', async (e) => {
+    document.getElementById('form-edit-price')?.addEventListener('submit', async e => {
       e.preventDefault();
       const planId = document.getElementById('edit-plan-id').value;
       const newPrice = parseInt(document.getElementById('edit-plan-price').value, 10);
       const reason = document.getElementById('edit-plan-reason').value;
-
       try {
-        await apiFetch(`/api/admin/plans/${planId}/price`, {
+        await apiFetch(`/api/admin/plans/${encodeURIComponent(planId)}/price`, {
           method: 'POST',
-          body: JSON.stringify({ new_price_uzs: newPrice, reason: reason })
+          body: JSON.stringify({ new_price_uzs: newPrice, reason })
         });
-        showToast("Tarif narxi muvaffaqiyatli yangilandi!");
+        showToast('Tarif narxi yangilandi!');
         closeModal('modal-edit-price');
         loadSettings();
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
+      } catch (err) { showToast(err.message, 'error'); }
     });
 
-    // 7. Edit Recipient Card Form
-    const cardInput = document.getElementById('inp-card-number');
-    if (cardInput) {
-      cardInput.addEventListener('input', (e) => {
-        let val = e.target.value.replace(/\D/g, '').substring(0, 16);
-        val = val.replace(/(.{4})/g, '$1 ').trim();
-        e.target.value = val;
-      });
-    }
+    document.getElementById('inp-card-number')?.addEventListener('input', e => {
+      let val = e.target.value.replace(/\D/g, '').substring(0, 16);
+      e.target.value = val.replace(/(.{4})/g, '$1 ').trim();
+    });
 
-    document.getElementById('form-edit-card')?.addEventListener('submit', async (e) => {
+    document.getElementById('form-edit-card')?.addEventListener('submit', async e => {
       e.preventDefault();
       let cardId = parseInt(document.getElementById('edit-card-id')?.value, 10);
       if (isNaN(cardId) || cardId <= 0) cardId = 1;
-
       const rawNum = (document.getElementById('inp-card-number')?.value || '').replace(/\s+/g, '');
       const cardHolder = (document.getElementById('inp-card-holder')?.value || '').trim();
       const cardType = document.getElementById('inp-card-type')?.value || 'HUMO';
-      const btn = document.getElementById('btn-save-card');
-
-      if (rawNum && (rawNum.length !== 16 || !/^\d{16}$/.test(rawNum))) {
-        showToast("Karta raqami aniq 16 xonali bo‘lishi shart!", 'error');
+      if (rawNum && !/^\d{16}$/.test(rawNum)) {
+        showToast('Karta raqami aniq 16 xonali bo‘lishi shart!', 'error');
         return;
       }
-
-      btn.disabled = true;
-      btn.textContent = "Saqlanmoqda...";
-
-      const body = {
-        cardholder_name: cardHolder,
-        card_type: cardType
-      };
-      if (rawNum) {
-        body.card_number = rawNum;
-      }
-
+      const body = { cardholder_name: cardHolder, card_type: cardType };
+      if (rawNum) body.card_number = rawNum;
       try {
-        const res = await apiFetch(`/api/admin/cards/${cardId}`, {
-          method: 'PUT',
-          body: JSON.stringify(body)
-        });
-        showToast(res.message || "Karta ma’lumotlari muvaffaqiyatli yangilandi!");
-        if (document.getElementById('inp-card-number')) {
-          document.getElementById('inp-card-number').value = '';
-        }
+        const res = await apiFetch(`/api/admin/cards/${cardId}`, { method: 'PUT', body: JSON.stringify(body) });
+        showToast(res.message || 'Karta yangilandi!');
+        document.getElementById('inp-card-number').value = '';
         await loadSettings();
-      } catch (err) {
-        showToast(err.message, 'error');
-      } finally {
-        btn.disabled = false;
-        btn.textContent = "Karta Ma’lumotlarini Saqlash";
-      }
+      } catch (err) { showToast(err.message, 'error'); }
     });
 
-    // 8. MTProto Connect Form
-    document.getElementById('form-mtproto-connect')?.addEventListener('submit', async (e) => {
+    // MTProto Forms
+    document.getElementById('form-mtproto-connect')?.addEventListener('submit', async e => {
       e.preventDefault();
-      const phone = document.getElementById('inp-mtproto-phone').value;
-      const apiIdVal = document.getElementById('inp-mtproto-api-id')?.value;
-      const apiHashVal = document.getElementById('inp-mtproto-api-hash')?.value;
-      const btn = document.getElementById('btn-mtproto-send-code');
-
-      btn.disabled = true;
-      btn.textContent = "Kod so‘ralmoqda...";
-
+      const body = { phone_number: document.getElementById('inp-mtproto-phone').value };
+      const apiId = document.getElementById('inp-mtproto-api-id')?.value;
+      const apiHash = document.getElementById('inp-mtproto-api-hash')?.value;
+      if (apiId) body.api_id = parseInt(apiId, 10);
+      if (apiHash) body.api_hash = apiHash.trim();
       try {
-        const body = { phone_number: phone };
-        if (apiIdVal) body.api_id = parseInt(apiIdVal, 10);
-        if (apiHashVal) body.api_hash = apiHashVal.trim();
-
-        const res = await apiFetch('/api/admin/mtproto/send-code', {
-          method: 'POST',
-          body: JSON.stringify(body)
-        });
-
+        const res = await apiFetch('/api/admin/mtproto/send-code', { method: 'POST', body: JSON.stringify(body) });
         showToast(res.message);
         document.getElementById('form-mtproto-connect').style.display = 'none';
         document.getElementById('form-mtproto-code-step').style.display = 'block';
-        document.getElementById('inp-mtproto-code-val').focus();
-      } catch (err) {
-        showToast(err.message, 'error');
-      } finally {
-        btn.disabled = false;
-        btn.textContent = "Tasdiqlash Kodini Olish";
-      }
+      } catch (err) { showToast(err.message, 'error'); }
     });
 
-    // 9. MTProto Code Submit Form
-    document.getElementById('form-mtproto-code-step')?.addEventListener('submit', async (e) => {
+    document.getElementById('form-mtproto-code-step')?.addEventListener('submit', async e => {
       e.preventDefault();
-      const code = document.getElementById('inp-mtproto-code-val').value;
-
       try {
         const res = await apiFetch('/api/admin/mtproto/sign-in', {
           method: 'POST',
-          body: JSON.stringify({ code: code })
+          body: JSON.stringify({ code: document.getElementById('inp-mtproto-code-val').value })
         });
-
         if (res.requires_2fa) {
-          showToast(res.message, 'error');
           document.getElementById('form-mtproto-code-step').style.display = 'none';
           document.getElementById('form-mtproto-2fa-step').style.display = 'block';
-          document.getElementById('inp-mtproto-2fa-val').focus();
         } else {
           showToast(res.message);
           loadSettings();
           loadTopbarIndicators();
-          loadOverview();
         }
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
+      } catch (err) { showToast(err.message, 'error'); }
     });
 
-    // 10. MTProto 2FA Submit Form
-    document.getElementById('form-mtproto-2fa-step')?.addEventListener('submit', async (e) => {
+    document.getElementById('form-mtproto-2fa-step')?.addEventListener('submit', async e => {
       e.preventDefault();
-      const pw = document.getElementById('inp-mtproto-2fa-val').value;
-
       try {
         const res = await apiFetch('/api/admin/mtproto/sign-in-2fa', {
           method: 'POST',
-          body: JSON.stringify({ password: pw })
+          body: JSON.stringify({ password: document.getElementById('inp-mtproto-2fa-val').value })
         });
         showToast(res.message);
         loadSettings();
-        loadTopbarIndicators();
-        loadOverview();
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
+      } catch (err) { showToast(err.message, 'error'); }
     });
 
-    // 10. Question Synchronization Buttons & Staging Actions
-    const btnCheckSync = document.getElementById('btn-check-sync-updates');
-    if (btnCheckSync) btnCheckSync.onclick = checkQuestionSyncUpdates;
+    document.getElementById('btn-mtproto-reset')?.addEventListener('click', () => {
+      document.getElementById('form-mtproto-connect').style.display = 'block';
+      document.getElementById('form-mtproto-code-step').style.display = 'none';
+      document.getElementById('form-mtproto-2fa-step').style.display = 'none';
+    });
 
-    const btnRunSync = document.getElementById('btn-run-sync-now');
-    if (btnRunSync) btnRunSync.onclick = runQuestionSyncNow;
+    document.getElementById('btn-mtproto-disconnect')?.addEventListener('click', async () => {
+      if (!confirm('MTProto sessiyasini uzmoqchimisiz?')) return;
+      try {
+        const res = await apiFetch('/api/admin/mtproto/disconnect', { method: 'POST' });
+        showToast(res.message);
+        loadSettings();
+        loadTopbarIndicators();
+      } catch (e) { showToast(e.message, 'error'); }
+    });
 
-    const btnApproveAll = document.getElementById('btn-approve-all-sync');
-    if (btnApproveAll) btnApproveAll.onclick = approveAllStagedQuestions;
-
-    // 11. Edit Staged Question Form Submission (with 3-language explanations & legal provenance)
-    document.getElementById('form-edit-staged')?.addEventListener('submit', async (e) => {
+    document.getElementById('form-edit-staged')?.addEventListener('submit', async e => {
       e.preventDefault();
       const stagedId = document.getElementById('inp-edit-staged-id')?.value;
       if (!stagedId) return;
-
       const legalStatus = document.getElementById('inp-edit-staged-legal-status')?.value || 'UNRESOLVED_LEGAL_REVIEW';
-      const legalDocTitle = document.getElementById('inp-edit-staged-legal-doc-title')?.value.trim() || null;
-      const legalChapter = document.getElementById('inp-edit-staged-legal-chapter')?.value.trim() || null;
-      const legalClause = document.getElementById('inp-edit-staged-legal-clause')?.value.trim() || null;
-      const legalDocUrl = document.getElementById('inp-edit-staged-legal-doc-url')?.value.trim() || null;
-
-      if (legalStatus === 'VERIFIED_PRIMARY_LAW' && (!legalDocTitle || (!legalChapter && !legalClause))) {
-        showToast("VERIFIED_PRIMARY_LAW uchun hujjat nomi va bob/band majburiy!", "error");
-        return;
-      }
-
       const payload = {
         text_uz_latn: document.getElementById('inp-edit-staged-latn')?.value.trim(),
         text_uz_cyrl: document.getElementById('inp-edit-staged-cyrl')?.value.trim(),
@@ -1391,38 +1914,33 @@
         explanation_uz_cyrl: document.getElementById('inp-edit-staged-expl-cyrl')?.value.trim() || null,
         explanation_ru: document.getElementById('inp-edit-staged-expl-ru')?.value.trim() || null,
         legal_verification_status: legalStatus,
-        legal_doc_title: legalDocTitle,
-        legal_chapter: legalChapter,
-        legal_clause: legalClause,
-        legal_doc_url: legalDocUrl
+        legal_doc_title: document.getElementById('inp-edit-staged-legal-doc-title')?.value.trim() || null,
+        legal_chapter: document.getElementById('inp-edit-staged-legal-chapter')?.value.trim() || null,
+        legal_clause: document.getElementById('inp-edit-staged-legal-clause')?.value.trim() || null,
+        legal_doc_url: document.getElementById('inp-edit-staged-legal-doc-url')?.value.trim() || null
       };
-
       try {
-        const res = await apiFetch(`/api/admin/questions/staging/${stagedId}/edit`, {
+        const res = await apiFetch(`/api/admin/questions/staging/${encodeURIComponent(stagedId)}/edit`, {
           method: 'POST',
           body: JSON.stringify(payload)
         });
-        showToast(res.message || "Savol tahrirlandi va tasdiqlandi!", "success");
+        showToast(res.message || 'Savol tasdiqlandi!', 'success');
         closeModal('modal-edit-staged');
         await loadQuestionSyncStatus();
-      } catch (err) {
-        showToast(err.message, "error");
-      }
+      } catch (err) { showToast(err.message, 'error'); }
     });
 
-    // 12. Editorial Legal Provenance & Translation Moderation Form
-    document.getElementById('form-edit-editorial')?.addEventListener('submit', async (e) => {
+    document.getElementById('form-edit-editorial')?.addEventListener('submit', async e => {
       e.preventDefault();
       const queueId = document.getElementById('ed-modal-queue-id')?.value;
       if (!queueId) return;
-
       const legalStatus = document.getElementById('ed-modal-legal-status')?.value || 'VERIFIED_PRIMARY_LAW';
       const docTitle = document.getElementById('ed-modal-legal-doc-title')?.value.trim() || null;
       const chapter = document.getElementById('ed-modal-legal-chapter')?.value.trim() || null;
       const clause = document.getElementById('ed-modal-legal-clause')?.value.trim() || null;
 
       if (legalStatus === 'VERIFIED_PRIMARY_LAW' && (!docTitle || (!chapter && !clause))) {
-        showToast("VERIFIED_PRIMARY_LAW uchun normativ hujjat nomi va bob yoki band kiritilishi shart!", "error");
+        showToast('VERIFIED_PRIMARY_LAW uchun hujjat nomi va bob yoki band shart!', 'error');
         return;
       }
 
@@ -1442,319 +1960,41 @@
       if (qCyrl) questionTextsByLang.uz_cyrl = qCyrl;
       if (qRu) questionTextsByLang.ru = qRu;
 
-      const payload = {
-        legal_verification_status: legalStatus,
-        legal_doc_title: docTitle,
-        legal_doc_url: document.getElementById('ed-modal-legal-doc-url')?.value.trim() || null,
-        legal_chapter: chapter,
-        legal_clause: clause,
-        legal_effective_date: document.getElementById('ed-modal-legal-effective-date')?.value.trim() || null,
-        explanations_by_lang: Object.keys(explanationsByLang).length ? explanationsByLang : null,
-        question_texts_by_lang: Object.keys(questionTextsByLang).length ? questionTextsByLang : null,
-        reviewer_notes: document.getElementById('ed-modal-reviewer-notes')?.value.trim() || 'Human verified'
-      };
-
       try {
-        const res = await apiFetch(`/api/admin/questions/editorial/${queueId}/approve`, {
+        const res = await apiFetch(`/api/admin/questions/editorial/${encodeURIComponent(queueId)}/approve`, {
           method: 'POST',
-          body: JSON.stringify(payload)
+          body: JSON.stringify({
+            legal_verification_status: legalStatus,
+            legal_doc_title: docTitle,
+            legal_doc_url: document.getElementById('ed-modal-legal-doc-url')?.value.trim() || null,
+            legal_chapter: chapter,
+            legal_clause: clause,
+            legal_effective_date: document.getElementById('ed-modal-legal-effective-date')?.value.trim() || null,
+            explanations_by_lang: Object.keys(explanationsByLang).length ? explanationsByLang : null,
+            question_texts_by_lang: Object.keys(questionTextsByLang).length ? questionTextsByLang : null,
+            reviewer_notes: document.getElementById('ed-modal-reviewer-notes')?.value.trim() || 'Human verified'
+          })
         });
-        showToast(`${res.canonical_id} huquqiy asosi va izohlari tasdiqlandi!`, 'success');
+        showToast(`${res.canonical_id} tasdiqlandi!`, 'success');
         closeModal('modal-edit-editorial');
-        await loadEditorialQueue(editorialState.page);
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
+        await loadEditorialQueue(state.editorial.page);
+      } catch (err) { showToast(err.message, 'error'); }
     });
   }
 
-  function startOtpCountdown(seconds) {
-    clearInterval(state.otpTimerInterval);
-    const display = document.getElementById('otp-countdown');
-    let left = seconds;
-
-    function render(s) {
-      const m = Math.floor(s / 60);
-      const rem = s % 60;
-      if (display) display.textContent = `${String(m).padStart(2, '0')}:${String(rem).padStart(2, '0')}`;
-    }
-
-    render(left);
-    state.otpTimerInterval = setInterval(() => {
-      left--;
-      if (left <= 0) {
-        clearInterval(state.otpTimerInterval);
-        if (display) display.textContent = "00:00 (Muddati tugadi)";
-      } else {
-        render(left);
-      }
-    }, 1000);
-  }
-
-  // ================= 5. BROADCAST SYSTEM =================
-  let selectedBroadcastTarget = 'all';
-
-  window.selectBroadcastTarget = function (target) {
-    selectedBroadcastTarget = target;
-    document.querySelectorAll('.broadcast-target-opt').forEach(el => {
-      el.classList.remove('active');
-    });
-    const activeEl = document.getElementById(`target-opt-${target}`);
-    if (activeEl) activeEl.classList.add('active');
-  };
-
-  window.insertTag = function (tag) {
-    const textarea = document.getElementById('broadcast-message-text');
-    if (!textarea) return;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const text = textarea.value;
-    const selected = text.substring(start, end);
-
-    const replacement = `<${tag}>${selected || 'matn'}</${tag}>`;
-    textarea.value = text.substring(0, start) + replacement + text.substring(end);
-    textarea.focus();
-    textarea.setSelectionRange(start + tag.length + 2, start + replacement.length - tag.length - 3);
-    window.updateBroadcastPreview();
-  };
-
-  window.insertLinkPrompt = function () {
-    const textarea = document.getElementById('broadcast-message-text');
-    if (!textarea) return;
-    const url = prompt("Havola manzilini kiriting (URL):", "https://t.me/...");
-    if (!url) return;
-    const linkText = prompt("Havola matnini kiriting:", "Bu yerni bosing") || url;
-    
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const text = textarea.value;
-    const replacement = `<a href="${url}">${linkText}</a>`;
-    textarea.value = text.substring(0, start) + replacement + text.substring(end);
-    textarea.focus();
-    window.updateBroadcastPreview();
-  };
-
-  window.updateBroadcastPreview = function () {
-    const textarea = document.getElementById('broadcast-message-text');
-    const preview = document.getElementById('broadcast-live-preview');
-    const counter = document.getElementById('broadcast-char-count');
-    if (!textarea) return;
-
-    const val = textarea.value;
-    if (counter) counter.textContent = `${val.length} / 4000`;
-
-    if (!val.trim()) {
-      if (preview) preview.innerHTML = '<i>Xabar matni kiritilmagan...</i>';
-      return;
-    }
-
-    if (preview) {
-      preview.innerHTML = val;
-    }
-  };
-
-  window.loadBroadcastAudience = async function () {
-    try {
-      const res = await apiFetch('/api/admin/broadcast/audience');
-      if (res && res.counts) {
-        const elAll = document.getElementById('bc-count-all');
-        const elFree = document.getElementById('bc-count-free');
-        const elPro = document.getElementById('bc-count-pro');
-        if (elAll) elAll.textContent = `${res.counts.all} ta`;
-        if (elFree) elFree.textContent = `${res.counts.free} ta`;
-        if (elPro) elPro.textContent = `${res.counts.pro} ta`;
-      }
-    } catch (err) {
-      console.warn("Broadcast audience fetch error:", err);
-    }
-  };
-
-  window.loadBroadcastHistory = async function () {
-    const container = document.getElementById('broadcast-history-list');
-    if (!container) return;
-
-    try {
-      const res = await apiFetch('/api/admin/broadcast/history');
-      const list = res.history || [];
-      if (!list.length) {
-        container.innerHTML = '<div class="text-xs text-muted py-2">Hozircha yuborilgan xabarnomalar mavjud emas.</div>';
-        return;
-      }
-
-      container.innerHTML = list.map(item => {
-        const meta = item.meta || {};
-        const targetMap = { all: '👥 Barchaga', pro: '⭐ PRO larga', free: '🆓 Bepullarga' };
-        const targetBadge = targetMap[meta.target_group] || meta.target_group || 'Barchaga';
-        const dateStr = item.performed_at ? item.performed_at.replace('T', ' ').substring(0, 16) : '';
-        return `
-          <div class="p-3 bg-slate-900 border border-slate-800 rounded-lg text-xs space-y-1">
-            <div class="flex items-center justify-between">
-              <span class="font-bold text-slate-200">${targetBadge}</span>
-              <span class="text-muted font-mono">${dateStr}</span>
-            </div>
-            <div class="text-slate-300 font-sans italic bg-slate-950 p-2 rounded border border-slate-800/60 mt-1">
-              "${escapeHtml(meta.message_snippet || '')}"
-            </div>
-            <div class="flex items-center gap-3 text-xs pt-1 text-slate-400">
-              <span class="text-emerald">✓ Yetkazildi: <b>${meta.sent || 0}</b></span>
-              <span class="text-rose">✕ Xatolik: <b>${meta.failed || 0}</b></span>
-              <span class="text-muted">Jami: <b>${meta.total_targets || 0}</b></span>
-            </div>
-          </div>
-        `;
-      }).join('');
-    } catch (err) {
-      container.innerHTML = '<div class="text-xs text-rose py-2">Tarixni yuklashda xatolik yuz berdi.</div>';
-    }
-  };
-
-  window.loadBroadcastView = function () {
-    loadBroadcastAudience();
-    loadBroadcastHistory();
-    updateBroadcastPreview();
-  };
-
-  window.confirmAndSendBroadcast = async function () {
-    const textarea = document.getElementById('broadcast-message-text');
-    const msg = textarea ? textarea.value.trim() : '';
-    if (!msg) {
-      showToast("Iltimos, xabar matnini kiriting!", "error");
-      if (textarea) textarea.focus();
-      return;
-    }
-
-    const targetNames = {
-      all: 'Barcha foydalanuvchilar',
-      free: 'Faqat bepul tarifdagilar',
-      pro: 'Faqat PRO obunachilar'
-    };
-    const targetLabel = targetNames[selectedBroadcastTarget] || 'Tanlangan foydalanuvchilar';
-
-    const confirmed = confirm(`Haqiqatan ham "${targetLabel}" guruhiga ushbu xabarni yubormoqchimisiz?\n\nBu xabar Telegram bot orqali barchaga yetkaziladi.`);
-    if (!confirmed) return;
-
-    const btn = document.getElementById('btn-send-broadcast');
-    const label = document.getElementById('btn-broadcast-label');
-    if (btn) btn.disabled = true;
-    if (label) label.textContent = 'Yuborilmoqda...';
-
-    try {
-      const res = await apiFetch('/api/admin/broadcast', {
-        method: 'POST',
-        body: JSON.stringify({
-          message_text: msg,
-          target_group: selectedBroadcastTarget
-        })
-      });
-
-      showToast(res.message || "Xabarnoma muvaffaqiyatli yuborildi!");
-      if (textarea) textarea.value = '';
-      updateBroadcastPreview();
-      loadBroadcastAudience();
-      loadBroadcastHistory();
-    } catch (err) {
-      showToast(err.message || "Xabarnoma yuborishda xatolik yuz berdi", "error");
-    } finally {
-      if (btn) btn.disabled = false;
-      if (label) label.textContent = 'Xabarni Yuborish';
-    }
-  };
-
-  function showAppCockpit() {
-    document.getElementById('auth-container').style.display = 'none';
-    document.getElementById('app-container').style.display = 'flex';
-    switchView('overview');
-    loadTopbarIndicators();
-    setInterval(() => {
-      if (!document.hidden) {
-        loadTopbarIndicators();
-      }
-    }, 20000);
-  }
-
-  // ================= APP INITIALIZATION =================
   async function init() {
     setupEventListeners();
-
-    // Check existing session
     try {
       const me = await apiFetch('/api/admin/auth/me');
       if (me && me.admin) {
-        state.currentAdmin = me.admin;
-        const nameEl = document.getElementById('topbar-admin-name');
-        if (nameEl) nameEl.textContent = me.admin.username || 'Anvarjon';
+        applyAdminProfileUi(me.admin);
         showAppCockpit();
         return;
       }
     } catch {}
-
-    // Not authenticated -> show login form
     document.getElementById('auth-container').style.display = 'flex';
     document.getElementById('app-container').style.display = 'none';
   }
 
-  // ================= 6. SYSTEM OBSERVABILITY & AUDIT LOGS =================
-  window.loadSystemObservability = async function () {
-    try {
-      const [healthRes, logsRes] = await Promise.all([
-        apiFetch('/api/admin/system/health'),
-        apiFetch('/api/admin/system/audit-logs?limit=10')
-      ]);
-
-      const badge = document.getElementById('obs-overall-badge');
-      const dbEl = document.getElementById('obs-db-val');
-      const latEl = document.getElementById('obs-latency-val');
-      const reqEl = document.getElementById('obs-req-val');
-      const rtEl = document.getElementById('obs-runtime-val');
-      const routesEl = document.getElementById('obs-routes-summary');
-      const logsEl = document.getElementById('obs-audit-logs-list');
-
-      const obs = healthRes.observability || {};
-      const db = healthRes.database || {};
-      const rl = healthRes.rate_limiter || {};
-
-      if (badge) {
-        const isOk = healthRes.overall_status === 'HEALTHY';
-        badge.className = `badge ${isOk ? 'badge-emerald' : 'badge-amber'}`;
-        badge.textContent = escapeHtml(healthRes.overall_status || 'HEALTHY');
-      }
-      if (dbEl) {
-        dbEl.textContent = `${escapeHtml(db.integrity_check || 'ok')} (${db.latency_ms ?? 0}ms)`;
-      }
-      if (latEl) {
-        latEl.textContent = `${obs.global_p50_ms ?? 0}ms / ${obs.global_p95_ms ?? 0}ms`;
-      }
-      if (reqEl) {
-        reqEl.textContent = `${obs.total_requests ?? 0} req • 5xx:${obs.errors_5xx ?? 0} • RL:${rl.rejections_total ?? 0}`;
-      }
-      if (rtEl) {
-        const ramStr = obs.memory_rss_mb !== null && obs.memory_rss_mb !== undefined ? `${obs.memory_rss_mb}MB` : 'N/A';
-        rtEl.textContent = `${obs.uptime_seconds ?? 0}s / ${ramStr} / ${obs.router_mode || 'full'}`;
-      }
-      if (routesEl) {
-        const groups = obs.routes || {};
-        const summary = Object.keys(groups).map(g => `${g}:${groups[g].count}(p95=${groups[g].p95_ms}ms)`).join(' | ');
-        routesEl.textContent = summary ? `Yo‘nalishlar: ${summary}` : 'Hali API metrikalari yig‘ilmagan.';
-      }
-      if (logsEl) {
-        const items = logsRes.logs || [];
-        logsEl.innerHTML = items.length
-          ? items.map(l => `
-              <div class="bg-slate-900/60 border border-slate-800 rounded px-2.5 py-1.5 flex items-center justify-between gap-2">
-                <div class="min-w-0">
-                  <span class="font-mono text-emerald font-semibold">${escapeHtml(l.action || '')}</span>
-                  <span class="text-slate-300 ml-1.5">${escapeHtml((l.details || '').slice(0, 120))}</span>
-                </div>
-                <span class="text-[11px] text-muted font-mono shrink-0">${escapeHtml((l.performed_at || '').slice(0, 19))}</span>
-              </div>
-            `).join('')
-          : '<div class="text-muted py-2">Audit yozuvlari topilmadi.</div>';
-      }
-    } catch (e) {
-      console.error('Observability yuklashda xatolik:', e);
-    }
-  };
-
   window.addEventListener('DOMContentLoaded', init);
-
 })();

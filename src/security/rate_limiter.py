@@ -66,18 +66,83 @@ class SlidingWindowRateLimiter:
                 self._records.clear()
 
 
+import ipaddress
+import os as _os
+
+
+def _parse_valid_ip(raw_val: Optional[str]) -> Optional[str]:
+    if not raw_val:
+        return None
+    candidate = str(raw_val).strip()
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        return None
+
+
+_TRUSTED_PROXY_NETS = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("100.64.0.0/10"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+)
+
+
+def _is_trusted_proxy_peer(peer_ip: Optional[str]) -> bool:
+    if not peer_ip or peer_ip in ("testclient", "localhost", "unknown"):
+        return True
+    extra_proxies = {p.strip() for p in _os.getenv("TRUSTED_PROXY_IPS", "").split(",") if p.strip()}
+    if peer_ip in extra_proxies:
+        return True
+    try:
+        addr = ipaddress.ip_address(peer_ip)
+        return any(addr in net for net in _TRUSTED_PROXY_NETS)
+    except ValueError:
+        return False
+
+
 def get_client_ip(request: Any) -> str:
-    """Extracts true caller IP safely behind Vercel/Render edge proxies."""
+    """Extracts true caller IP safely behind trusted Vercel/Render/Cloudflare proxies."""
     headers = getattr(request, "headers", None) or {}
-    for hdr in ("cf-connecting-ip", "x-real-ip", "x-forwarded-for"):
-        val = headers.get(hdr)
-        if val:
-            first = str(val).split(",")[0].strip()
-            if first:
-                return first[:64]
     client = getattr(request, "client", None)
-    host = getattr(client, "host", None) if client else None
-    return str(host or "unknown")[:64]
+    peer_host = getattr(client, "host", None) if client else None
+    peer_ip = _parse_valid_ip(peer_host) or (str(peer_host or "unknown")[:64])
+
+    # Platform edge header overwritten strictly by Vercel edge
+    if _os.getenv("VERCEL"):
+        vercel_ip = _parse_valid_ip(headers.get("x-vercel-forwarded-for"))
+        if vercel_ip:
+            return vercel_ip
+
+    # Only honor forwarding headers when direct TCP peer is a trusted proxy hop
+    if _is_trusted_proxy_peer(peer_host):
+        cf_ip = _parse_valid_ip(headers.get("cf-connecting-ip"))
+        if cf_ip:
+            return cf_ip
+
+        xff = headers.get("x-forwarded-for")
+        if xff:
+            parts = [p.strip() for p in str(xff).split(",") if p.strip()]
+            # Walk right-to-left picking the rightmost non-proxy hop to defeat client spoofing
+            for part in reversed(parts):
+                parsed = _parse_valid_ip(part)
+                if parsed and not _is_trusted_proxy_peer(parsed):
+                    return parsed
+            for part in parts:
+                parsed = _parse_valid_ip(part)
+                if parsed:
+                    return parsed
+
+        real_ip = _parse_valid_ip(headers.get("x-real-ip"))
+        if real_ip:
+            return real_ip
+
+    return str(peer_ip or "unknown")[:64]
 
 rate_limiter = SlidingWindowRateLimiter()
 

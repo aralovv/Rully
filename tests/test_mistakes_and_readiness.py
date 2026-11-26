@@ -6,13 +6,14 @@ Guarantees that:
 3. Finish session accurately reports correct, incorrect, and unanswered counts.
 4. Exam Readiness Index does not award 25% to random guessers who never passed an exam.
 """
+import os
 import pytest
 from src.bot.database import BotDatabase, compute_driver_readiness, compute_driver_accuracy
 
 
 @pytest.fixture
 def test_db():
-    return BotDatabase("master_database.sqlite")
+    return BotDatabase(os.getenv("DB_PATH", "master_database.sqlite"))
 
 
 def test_driver_readiness_calculation_random_guessing():

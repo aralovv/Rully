@@ -16,10 +16,14 @@ from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
 
-from src.admin.deps import get_current_admin
+from src.admin.deps import get_current_admin, require_admin_role
 from src.security.telegram_notifier import send_telegram_message, MAIN_BOT_TOKEN
 
-router = APIRouter(prefix="/api/admin/broadcast", tags=["Admin Broadcast"])
+router = APIRouter(
+    prefix="/api/admin/broadcast",
+    tags=["Admin Broadcast"],
+    dependencies=[Depends(require_admin_role("SUPERADMIN"))],
+)
 DB_PATH = os.getenv("DB_PATH", "master_database.sqlite")
 
 
@@ -159,8 +163,8 @@ def send_broadcast_message(
         users=users,
         clean_text=clean_text,
         target=target,
-        admin_id=current_admin.get("admin_id", 1),
-        admin_username=current_admin.get("username", "Anvarjon")
+        admin_id=current_admin.get("id", current_admin.get("admin_id", 1)),
+        admin_username=current_admin.get("username", "Admin")
     )
 
     return {

@@ -11,10 +11,14 @@ import sqlite3
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from src.admin.deps import get_current_admin
+from src.admin.deps import get_current_admin, require_admin_role
 from src.payments.order_manager import expire_stale_orders
 
-router = APIRouter(prefix="/api/admin/orders", tags=["Admin Orders"])
+router = APIRouter(
+    prefix="/api/admin/orders",
+    tags=["Admin Orders"],
+    dependencies=[Depends(require_admin_role("FINANCE", "SUPPORT"))],
+)
 DB_PATH = os.getenv("DB_PATH", "master_database.sqlite")
 
 

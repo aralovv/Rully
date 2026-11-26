@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>RULLY | Boshqaruv Paneli & MTProto To‘lov Tizimi</title>
+  <title>RULLY | Boshqaruv Paneli &amp; Operatsion Tizim</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
@@ -23,11 +23,11 @@
       <!-- Step 1: Login Form -->
       <form id="form-login" class="space-y-4">
         <div class="form-group">
-          <label class="form-label">Administrator login</label>
-          <input type="text" id="login-username" class="form-input" placeholder="Anvarjon" value="Anvarjon" required autocomplete="username">
+          <label class="form-label" for="login-username">Administrator login</label>
+          <input type="text" id="login-username" class="form-input" placeholder="admin" required autocomplete="username">
         </div>
         <div class="form-group">
-          <label class="form-label">Parol</label>
+          <label class="form-label" for="login-password">Parol</label>
           <input type="password" id="login-password" class="form-input" placeholder="••••••••••••" required autocomplete="current-password">
         </div>
         <button type="submit" id="btn-login-submit" class="btn btn-primary btn-block">
@@ -40,14 +40,14 @@
       <form id="form-otp" class="space-y-4" style="display: none;">
         <div class="otp-banner">
           <div class="otp-icon">🔒</div>
-          <p class="text-sm">Telegram hisobingizga (<b id="otp-tg-masked">***9701</b>) bir martalik 6 xonali tasdiqlash kodi yuborildi.</p>
+          <p class="text-sm">Telegram hisobingizga (<b id="otp-tg-masked">***</b>) bir martalik 6 xonali tasdiqlash kodi yuborildi.</p>
         </div>
         <div class="form-group">
-          <label class="form-label">Bir martalik kod (OTP)</label>
+          <label class="form-label" for="otp-input">Bir martalik kod (OTP)</label>
           <input type="text" id="otp-input" class="form-input font-mono text-center tracking-widest text-lg" placeholder="123456" maxlength="6" pattern="\d{6}" required autocomplete="one-time-code">
           <div class="otp-timer text-xs text-muted mt-2 text-center">Kod amal qilish muddati: <span id="otp-countdown" class="font-mono text-emerald">05:00</span></div>
         </div>
-        <button type="submit" id="btn-otp-submit" class="btn btn-primary btn-block">Tasdiqlash & Kirish</button>
+        <button type="submit" id="btn-otp-submit" class="btn btn-primary btn-block">Tasdiqlash &amp; Kirish</button>
         <button type="button" id="btn-otp-back" class="btn btn-ghost btn-block text-xs mt-2">← Ortga qaytish</button>
       </form>
     </div>
@@ -55,14 +55,14 @@
 
   <!-- ================= MAIN ADMIN COCKPIT LAYOUT ================= -->
   <div id="app-container" class="cockpit-layout" style="display: none;">
-    
-    <!-- DESKTOP LEFT SIDEBAR (Hidden on mobile) -->
+
+    <!-- DESKTOP LEFT SIDEBAR -->
     <aside class="sidebar desktop-only">
       <div class="sidebar-brand">
         <div class="brand-logo">R</div>
         <div class="brand-info">
           <span class="brand-title">RULLY</span>
-          <span class="brand-sub">Admin Asosiy Paneli</span>
+          <span class="brand-sub">Admin Boshqaruv Tizimi</span>
         </div>
       </div>
 
@@ -74,7 +74,7 @@
 
         <a href="#payments" class="nav-item" data-view="payments">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
-          <span>To‘lovlar & Buyurtmalar</span>
+          <span>To‘lovlar &amp; Yarashuv</span>
           <span class="nav-badge" id="badge-nav-orders" style="display:none;">0</span>
         </a>
 
@@ -90,19 +90,19 @@
 
         <a href="#settings" class="nav-item" data-view="settings">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          <span>Sozlamalar & Karta</span>
+          <span>Tizim &amp; Tahririyat</span>
           <span class="status-dot-mini" id="mtproto-status-dot-desktop"></span>
         </a>
       </nav>
 
       <div class="sidebar-footer">
         <div class="admin-profile-pill">
-          <div class="admin-avatar">A</div>
+          <div class="admin-avatar" id="topbar-admin-avatar">A</div>
           <div class="admin-meta">
-            <span class="admin-name" id="topbar-admin-name">Anvarjon</span>
-            <span class="admin-role">Super Admin</span>
+            <span class="admin-name" id="topbar-admin-name">Administrator</span>
+            <span class="admin-role" id="topbar-admin-role">SESSION</span>
           </div>
-          <button id="btn-logout" class="btn-logout" title="Chiqish">
+          <button id="btn-logout" class="btn-logout" title="Chiqish" type="button">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           </button>
         </div>
@@ -111,30 +111,31 @@
 
     <!-- MAIN CONTENT VIEWPORT -->
     <main class="main-content">
-      
-      <!-- MOBILE / DESKTOP TOP STATUS BAR -->
+
+      <!-- TOP STATUS BAR -->
       <header class="topbar">
         <div class="topbar-left">
           <div class="mobile-logo-mark mobile-only">R</div>
           <h2 class="view-title" id="topbar-view-title">Asosiy Panel</h2>
         </div>
         <div class="topbar-right">
-          <div class="live-status-pill" id="topbar-mtproto-pill" onclick="switchView('settings')">
+          <span class="badge badge-indigo text-[10px]" id="topbar-role-badge">—</span>
+          <div class="live-status-pill" id="topbar-mtproto-pill" data-action="switch-view" data-view="settings" role="button" tabindex="0">
             <span class="indicator-dot" id="topbar-mtproto-dot"></span>
             <span id="topbar-mtproto-text">MTProto...</span>
           </div>
-          <button id="btn-mobile-logout" class="btn-logout mobile-only" title="Chiqish" onclick="handleLogout()">
+          <button id="btn-mobile-logout" class="btn-logout mobile-only" title="Chiqish" type="button" data-action="logout">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           </button>
         </div>
       </header>
 
-      <!-- SCROLLABLE CONTENT BODY (With padding for mobile bottom bar) -->
+      <!-- SCROLLABLE CONTENT BODY -->
       <div class="content-body">
 
-        <!-- ================= VIEW 1: ASOSIY PANEL (DASHBOARD) ================= -->
+        <!-- ================= VIEW 1: ASOSIY PANEL & BI ANALYTICS ================= -->
         <section id="view-overview" class="view-panel active">
-          
+
           <!-- 4 REAL FINANCIAL KPI CARDS -->
           <div class="kpi-grid">
             <div class="kpi-card">
@@ -152,7 +153,7 @@
             <div class="kpi-card">
               <div class="kpi-label">Bugungi Tushum</div>
               <div class="kpi-value font-mono text-emerald" id="kpi-today-rev">0 UZS</div>
-              <div class="kpi-sub">Real tushum</div>
+              <div class="kpi-sub">Kutilayotgan / Noma’lum: <span id="kpi-unmatched-badge" class="font-bold">0</span></div>
             </div>
 
             <div class="kpi-card">
@@ -162,8 +163,45 @@
             </div>
           </div>
 
+          <!-- BI ANALYTICS & RETENTION STRIP -->
+          <div class="card p-4 mt-4" id="ov-analytics-card">
+            <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
+              <div>
+                <h3 class="font-bold text-sm text-slate-200">Faollik, Retention &amp; Savdo Analitikasi</h3>
+                <p class="text-xs text-muted">DAU / WAU / MAU, D1–D30 qaytish va 7–30 kunlik konversiya</p>
+              </div>
+              <div class="flex items-center gap-2">
+                <select id="ov-sales-range" class="form-input form-select text-xs">
+                  <option value="7d">So‘nggi 7 kun</option>
+                  <option value="30d" selected>So‘nggi 30 kun</option>
+                  <option value="90d">So‘nggi 90 kun</option>
+                </select>
+                <button type="button" class="btn btn-ghost btn-sm text-xs" data-action="reload-bi">🔄</button>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3" id="ov-bi-tiles">
+              <div class="bg-slate-900/80 border border-slate-800 rounded p-2.5">
+                <div class="text-[11px] text-muted">DAU / WAU / MAU</div>
+                <div class="font-bold text-sm font-mono text-slate-100" id="bi-dau-wau-mau">—</div>
+              </div>
+              <div class="bg-slate-900/80 border border-slate-800 rounded p-2.5">
+                <div class="text-[11px] text-muted">Retention (D1 / D7 / D30)</div>
+                <div class="font-bold text-sm font-mono text-emerald" id="bi-retention">—</div>
+              </div>
+              <div class="bg-slate-900/80 border border-slate-800 rounded p-2.5">
+                <div class="text-[11px] text-muted">Konversiya &amp; O‘rtacha Chek</div>
+                <div class="font-bold text-sm font-mono text-slate-100" id="bi-conversion">—</div>
+              </div>
+              <div class="bg-slate-900/80 border border-slate-800 rounded p-2.5">
+                <div class="text-[11px] text-muted">Top Rejim / Faoliyat</div>
+                <div class="font-bold text-xs font-mono text-slate-200 truncate" id="bi-top-feature">—</div>
+              </div>
+            </div>
+            <div id="ov-sales-chart" class="bi-mini-chart"></div>
+          </div>
+
           <!-- MTProto CONNECTION QUICK ACTION BANNER -->
-          <div class="mtproto-banner-card" id="ov-mtproto-banner">
+          <div class="mtproto-banner-card mt-4" id="ov-mtproto-banner">
             <div class="mtproto-banner-left">
               <div class="mtproto-banner-icon" id="ov-mtproto-icon">⚡</div>
               <div>
@@ -177,45 +215,48 @@
               </div>
             </div>
             <div class="mtproto-banner-right" id="ov-mtproto-action">
-              <button class="btn btn-primary btn-sm" onclick="switchView('settings')">
+              <button type="button" class="btn btn-primary btn-sm" data-action="switch-view" data-view="settings">
                 <span id="ov-mtproto-btn-txt">Akkauntni Ulash</span> →
               </button>
             </div>
           </div>
 
-          <!-- RECENT ORDERS (MOBILE-FRIENDLY CARDS) -->
+          <!-- RECENT ORDERS -->
           <div class="mt-6">
             <div class="flex items-center justify-between mb-3">
-              <h3 class="font-bold text-sm text-slate-200">So‘nggi To‘lovlar & Buyurtmalar</h3>
-              <button class="btn btn-ghost btn-sm text-xs" onclick="switchView('payments')">Barchasi →</button>
+              <h3 class="font-bold text-sm text-slate-200">So‘nggi To‘lovlar &amp; Buyurtmalar</h3>
+              <button type="button" class="btn btn-ghost btn-sm text-xs" data-action="switch-view" data-view="payments">Barchasi →</button>
             </div>
-            
             <div id="overview-orders-container" class="space-y-2.5">
               <div class="text-center text-muted text-xs py-8">Hozircha buyurtmalar yo‘q</div>
             </div>
           </div>
         </section>
 
-        <!-- ================= VIEW 2: TO‘LOVLAR & BUYURTMALAR ================= -->
+        <!-- ================= VIEW 2: TO‘LOVLAR & YARASHUV (PAYMENTS HUB) ================= -->
         <section id="view-payments" class="view-panel">
-          <div class="subtabs-bar">
-            <button class="subtab-btn active" data-ptab="ALL" onclick="setPaymentTab('ALL')">Barchasi</button>
-            <button class="subtab-btn" data-ptab="PAID" onclick="setPaymentTab('PAID')">Muvaffaqiyatli</button>
-            <button class="subtab-btn" data-ptab="PENDING" onclick="setPaymentTab('PENDING')">Kutilayotgan</button>
-            <button class="subtab-btn" data-ptab="REVIEW" onclick="setPaymentTab('REVIEW')">Ko‘rib chiqish</button>
+          <div class="subtabs-bar" id="payments-subtabs">
+            <button type="button" class="subtab-btn active" data-ptab="ALL">Buyurtmalar</button>
+            <button type="button" class="subtab-btn" data-ptab="PAID">Muvaffaqiyatli</button>
+            <button type="button" class="subtab-btn" data-ptab="PENDING">Kutilayotgan</button>
+            <button type="button" class="subtab-btn" data-ptab="REVIEW">Kechiktirilgan <span class="badge badge-red ml-1" id="ptab-badge-review">0</span></button>
+            <button type="button" class="subtab-btn" data-ptab="UNMATCHED">Bog‘lanmagan <span class="badge badge-amber ml-1" id="ptab-badge-unmatched">0</span></button>
+            <button type="button" class="subtab-btn" data-ptab="TRANSACTIONS">Tranzaksiyalar</button>
+            <button type="button" class="subtab-btn" data-ptab="RECONCILE">Yarashuv (Balans)</button>
           </div>
 
           <div class="filter-row mt-3">
             <div class="search-box flex-1">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input type="text" id="payments-search-input" class="form-input search-input" placeholder="Buyurtma ID yoki Foydalanuvchi qidirish..." oninput="filterPaymentsList()">
+              <input type="text" id="payments-search-input" class="form-input search-input" placeholder="Buyurtma ID, Summa, Karta yoki User ID qidirish...">
             </div>
-            <button class="btn btn-secondary btn-sm" onclick="loadPaymentsHub()">
+            <button type="button" id="btn-refresh-payments" class="btn btn-secondary btn-sm" title="Yangilash">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="sm-icon"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
             </button>
           </div>
 
-          <!-- LIST CONTAINER -->
+          <div id="payments-reconcile-summary" class="mt-3" style="display:none;"></div>
+
           <div id="payments-list-container" class="space-y-2.5 mt-3">
             <div class="text-center text-muted text-xs py-8">Yuklanmoqda...</div>
           </div>
@@ -226,20 +267,24 @@
           <div class="filter-row">
             <div class="search-box flex-1">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input type="text" id="users-search-input" class="form-input search-input" placeholder="ID, username yoki ism..." oninput="debounceUserSearch()">
+              <input type="text" id="users-search-input" class="form-input search-input" placeholder="ID, @username yoki ism bo‘yicha qidirish...">
             </div>
-            <select id="users-filter-sub" class="form-input form-select text-xs" onchange="loadUsers()">
+            <select id="users-filter-sub" class="form-input form-select text-xs">
               <option value="all">Barchasi</option>
               <option value="pro">Faqat PRO</option>
               <option value="free">Bepul</option>
               <option value="blocked">Bloklanganlar</option>
             </select>
-            <button type="button" class="btn btn-sm btn-outline text-xs whitespace-nowrap" onclick="switchView('broadcast')" title="Foydalanuvchilarga xabarnoma yuborish">
+            <select id="users-sort-by" class="form-input form-select text-xs">
+              <option value="created_at">Ro‘yxatdan o‘tgan vaqti</option>
+              <option value="recent_activity">Oxirgi faollik</option>
+              <option value="paid_total">Jami to‘lovi bo‘yicha</option>
+            </select>
+            <button type="button" class="btn btn-sm btn-outline text-xs whitespace-nowrap" data-action="switch-view" data-view="broadcast" title="Foydalanuvchilarga xabarnoma yuborish">
               📢 Xabarnoma
             </button>
           </div>
 
-          <!-- USERS CARDS CONTAINER -->
           <div id="users-list-container" class="space-y-2.5 mt-3">
             <div class="text-center text-muted text-xs py-8">Yuklanmoqda...</div>
           </div>
@@ -248,7 +293,6 @@
         <!-- ================= VIEW 4: XABARNOMA YUBORISH (BROADCAST) ================= -->
         <section id="view-broadcast" class="view-panel">
           <div class="card p-4 space-y-4">
-            
             <div class="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
                 <h3 class="font-bold text-sm text-slate-100 flex items-center gap-2">
@@ -256,16 +300,13 @@
                 </h3>
                 <p class="text-xs text-muted mt-0.5">Barcha yoki saralangan foydalanuvchilar botiga xabar yuborish</p>
               </div>
-              <button type="button" class="btn btn-sm btn-ghost text-xs" onclick="loadBroadcastAudience()">
-                <span>Yangilash</span>
-              </button>
+              <button type="button" id="btn-refresh-bc-audience" class="btn btn-sm btn-ghost text-xs">Yangilash</button>
             </div>
 
-            <!-- AUDIENCE TARGET SELECTOR -->
             <div class="form-group">
               <label class="form-label text-xs font-semibold text-slate-300">Maqsadli auditoriya:</label>
-              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-1.5">
-                <label class="plan-radio-label broadcast-target-opt active" id="target-opt-all" onclick="selectBroadcastTarget('all')">
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-1.5" id="broadcast-targets-grid">
+                <label class="plan-radio-label broadcast-target-opt active" id="target-opt-all" data-bc-target="all">
                   <input type="radio" name="broadcast-target" value="all" checked style="display:none;">
                   <div class="flex items-center justify-between w-full">
                     <span class="font-bold text-xs">👥 Barchaga</span>
@@ -273,7 +314,7 @@
                   </div>
                 </label>
 
-                <label class="plan-radio-label broadcast-target-opt" id="target-opt-free" onclick="selectBroadcastTarget('free')">
+                <label class="plan-radio-label broadcast-target-opt" id="target-opt-free" data-bc-target="free">
                   <input type="radio" name="broadcast-target" value="free" style="display:none;">
                   <div class="flex items-center justify-between w-full">
                     <span class="font-bold text-xs">🆓 Bepul tarifdagilar</span>
@@ -281,7 +322,7 @@
                   </div>
                 </label>
 
-                <label class="plan-radio-label broadcast-target-opt" id="target-opt-pro" onclick="selectBroadcastTarget('pro')">
+                <label class="plan-radio-label broadcast-target-opt" id="target-opt-pro" data-bc-target="pro">
                   <input type="radio" name="broadcast-target" value="pro" style="display:none;">
                   <div class="flex items-center justify-between w-full">
                     <span class="font-bold text-xs">⭐ PRO obunachilar</span>
@@ -291,28 +332,25 @@
               </div>
             </div>
 
-            <!-- MESSAGE COMPOSER -->
             <div class="form-group">
               <div class="flex items-center justify-between mb-1.5">
-                <label class="form-label text-xs font-semibold text-slate-300 mb-0">Xabar matni:</label>
-                <!-- Formatting Helper Buttons -->
-                <div class="flex gap-1">
-                  <button type="button" class="btn btn-xs btn-ghost text-xs font-bold" onclick="insertTag('b')" title="Qalin matn"><b>B</b></button>
-                  <button type="button" class="btn btn-xs btn-ghost text-xs italic" onclick="insertTag('i')" title="Kursiv matn"><i>I</i></button>
-                  <button type="button" class="btn btn-xs btn-ghost text-xs font-mono" onclick="insertTag('code')" title="Kod formati">&lt;&gt;</button>
-                  <button type="button" class="btn btn-xs btn-ghost text-xs line-through" onclick="insertTag('s')" title="O‘chirilgan matn"><s>S</s></button>
-                  <button type="button" class="btn btn-xs btn-ghost text-xs" onclick="insertLinkPrompt()" title="Havola qo‘shish">🔗</button>
+                <label class="form-label text-xs font-semibold text-slate-300 mb-0" for="broadcast-message-text">Xabar matni:</label>
+                <div class="flex gap-1" id="broadcast-format-bar">
+                  <button type="button" class="btn btn-xs btn-ghost text-xs font-bold" data-bc-tag="b" title="Qalin matn"><b>B</b></button>
+                  <button type="button" class="btn btn-xs btn-ghost text-xs italic" data-bc-tag="i" title="Kursiv matn"><i>I</i></button>
+                  <button type="button" class="btn btn-xs btn-ghost text-xs font-mono" data-bc-tag="code" title="Kod formati">&lt;&gt;</button>
+                  <button type="button" class="btn btn-xs btn-ghost text-xs line-through" data-bc-tag="s" title="O‘chirilgan matn"><s>S</s></button>
+                  <button type="button" class="btn btn-xs btn-ghost text-xs" id="btn-bc-insert-link" title="Havola qo‘shish">🔗</button>
                 </div>
               </div>
 
-              <textarea id="broadcast-message-text" class="form-input text-xs font-sans" rows="5" placeholder="Foydalanuvchilarga yuboriladigan xabar matnini kiriting... HTML teglari (<b>, <i>, <code>, <a>) qo‘llab-quvvatlanadi." oninput="updateBroadcastPreview()"></textarea>
+              <textarea id="broadcast-message-text" class="form-input text-xs font-sans" rows="5" placeholder="Foydalanuvchilarga yuboriladigan xabar matnini kiriting... HTML teglari (&lt;b&gt;, &lt;i&gt;, &lt;code&gt;, &lt;a&gt;) qo‘llab-quvvatlanadi."></textarea>
               <div class="flex justify-between items-center text-xs text-muted mt-1">
-                <span>Telegram HTML formati qo‘llanadi</span>
+                <span>Xavfsiz Telegram HTML ko‘rish rejimi</span>
                 <span id="broadcast-char-count">0 / 4000</span>
               </div>
             </div>
 
-            <!-- LIVE TELEGRAM PREVIEW -->
             <div>
               <label class="form-label text-xs font-semibold text-slate-300 mb-1.5">Telegramda ko‘rinishi (Jonli oldindan ko‘rish):</label>
               <div class="tg-preview-bubble-wrap">
@@ -328,33 +366,29 @@
               </div>
             </div>
 
-            <!-- ACTION BUTTON & PROGRESS -->
             <div class="pt-2">
-              <button type="button" id="btn-send-broadcast" class="btn btn-primary btn-block flex items-center justify-center gap-2" onclick="confirmAndSendBroadcast()">
+              <button type="button" id="btn-send-broadcast" class="btn btn-primary btn-block flex items-center justify-center gap-2">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-4 h-4"><path d="M22 2L11 13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                 <span id="btn-broadcast-label">Xabarni Yuborish</span>
               </button>
             </div>
 
-            <!-- RECENT BROADCAST HISTORY -->
             <div class="mt-4 border-t border-slate-800 pt-4">
               <h4 class="font-bold text-xs text-slate-300 mb-2">So‘nggi yuborilgan xabarnomalar:</h4>
               <div id="broadcast-history-list" class="space-y-2">
                 <div class="text-muted text-xs">Tarix yuklanmoqda...</div>
               </div>
             </div>
-
           </div>
         </section>
 
-        <!-- ================= VIEW 4: MTProto & SOZLAMALAR (OCHILUVCHI BARLAR) ================= -->
+        <!-- ================= VIEW 5: MTProto, TIZIM & TAHRIRIYAT ================= -->
         <section id="view-settings" class="view-panel">
-          
           <div class="space-y-3">
-            
-            <!-- ACCORDION BAR 1: MTProto Akkaunt Ulanishi -->
+
+            <!-- ACCORDION 1: MTProto Akkaunt Ulanishi -->
             <div class="accordion-bar" id="acc-mtproto">
-              <div class="accordion-header" onclick="toggleAccordion('acc-mtproto')">
+              <div class="accordion-header" data-acc-target="acc-mtproto">
                 <div class="flex items-center gap-2.5">
                   <span class="acc-icon">⚡</span>
                   <div>
@@ -369,22 +403,20 @@
               </div>
 
               <div class="accordion-content">
-                <!-- Disconnected Box -->
                 <div id="mtproto-disconnected-box">
                   <p class="text-xs text-muted mb-3">
                     Bank karta SMS xabarlari keladigan Telegram akkauntingiz telefon raqamini kiriting:
                   </p>
                   <form id="form-mtproto-connect" class="space-y-3">
                     <div class="form-group">
-                      <label class="form-label text-xs">Telegram Telefon Raqami</label>
+                      <label class="form-label text-xs" for="inp-mtproto-phone">Telegram Telefon Raqami</label>
                       <input type="tel" id="inp-mtproto-phone" class="form-input font-mono" placeholder="+998901234567" required>
                     </div>
 
-                    <!-- Optional custom API ID -->
                     <details class="text-xs text-muted">
-                      <summary class="cursor-pointer hover:text-slate-300">Ixtiyoriy: Telegram API ID & Hash</summary>
+                      <summary class="cursor-pointer">Ixtiyoriy: Telegram API ID &amp; Hash</summary>
                       <div class="space-y-2 mt-2 p-2.5 bg-slate-900 rounded border border-slate-800">
-                        <input type="number" id="inp-mtproto-api-id" class="form-input font-mono text-xs" placeholder="API ID (standart: 2040)">
+                        <input type="number" id="inp-mtproto-api-id" class="form-input font-mono text-xs" placeholder="API ID">
                         <input type="text" id="inp-mtproto-api-hash" class="form-input font-mono text-xs" placeholder="API Hash">
                       </div>
                     </details>
@@ -394,51 +426,48 @@
                     </button>
                   </form>
 
-                  <!-- Step 2: Code Form -->
                   <form id="form-mtproto-code-step" class="space-y-3 mt-3" style="display:none;">
                     <div class="form-group">
-                      <label class="form-label text-xs">Telegram yuborgan 5 xonali kod</label>
+                      <label class="form-label text-xs" for="inp-mtproto-code-val">Telegram yuborgan 5 xonali kod</label>
                       <input type="text" id="inp-mtproto-code-val" class="form-input font-mono text-center text-lg tracking-widest" placeholder="12345" required maxlength="10">
                     </div>
                     <button type="submit" class="btn btn-primary btn-block">Akkauntni Faollashtirish</button>
-                    <button type="button" class="btn btn-ghost btn-block text-xs" onclick="resetMtprotoForm()">Ortga</button>
+                    <button type="button" id="btn-mtproto-reset" class="btn btn-ghost btn-block text-xs">Ortga</button>
                   </form>
 
-                  <!-- Step 3: 2FA Password Form -->
                   <form id="form-mtproto-2fa-step" class="space-y-3 mt-3" style="display:none;">
                     <div class="form-group">
-                      <label class="form-label text-xs">2FA Bulutli Parol</label>
+                      <label class="form-label text-xs" for="inp-mtproto-2fa-val">2FA Bulutli Parol</label>
                       <input type="password" id="inp-mtproto-2fa-val" class="form-input font-mono" placeholder="••••••••" required>
                     </div>
                     <button type="submit" class="btn btn-primary btn-block">2FA bilan Tasdiqlash</button>
                   </form>
                 </div>
 
-                <!-- Connected Box -->
                 <div id="mtproto-connected-box" style="display:none;">
                   <div class="connected-account-card">
                     <div class="success-icon-badge">✓</div>
                     <div class="flex-1 min-w-0">
                       <strong class="text-emerald font-bold text-sm block truncate" id="mtproto-account-title">Telegram Akkaunt Ulangan</strong>
-                      <div class="text-xs text-muted font-mono" id="mtproto-account-phone">+998901234567</div>
+                      <div class="text-xs text-muted font-mono" id="mtproto-account-phone">—</div>
                       <div class="text-xs text-slate-400 mt-1">Kuzatuvda: <b class="text-emerald font-mono">Humocardbot</b></div>
                     </div>
                   </div>
-                  <button type="button" class="btn btn-danger btn-block btn-sm mt-3" onclick="disconnectMTProto()">
+                  <button type="button" id="btn-mtproto-disconnect" class="btn btn-danger btn-block btn-sm mt-3">
                     Ulanishni Uzish (Chiqish)
                   </button>
                 </div>
               </div>
             </div>
 
-            <!-- ACCORDION BAR 2: Qabul Qiluvchi Bank Kartasi (O‘ZGARTIRISH BILAN) -->
+            <!-- ACCORDION 2: Qabul Qiluvchi Bank Kartasi -->
             <div class="accordion-bar" id="acc-card">
-              <div class="accordion-header" onclick="toggleAccordion('acc-card')">
+              <div class="accordion-header" data-acc-target="acc-card">
                 <div class="flex items-center gap-2.5">
                   <span class="acc-icon">💳</span>
                   <div>
                     <h3 class="font-bold text-sm text-slate-200">Qabul Qiluvchi Bank Kartasi</h3>
-                    <p class="text-xs text-muted" id="acc-card-summary">HUMO •••• 5370</p>
+                    <p class="text-xs text-muted" id="acc-card-summary">Karta yuklanmoqda...</p>
                   </div>
                 </div>
                 <div class="flex items-center gap-2">
@@ -448,40 +477,38 @@
               </div>
 
               <div class="accordion-content">
-                <!-- Current Card Preview -->
                 <div class="bank-card-visual mb-3">
                   <div class="flex justify-between items-center text-xs text-slate-400 mb-2">
                     <span id="disp-card-type">HUMO CARD</span>
                     <span class="badge badge-emerald">QABUL QILUVCHI</span>
                   </div>
                   <div class="font-mono text-base font-bold text-emerald tracking-wider" id="disp-card-number">
-                    9860 **** **** 5370
+                    •••• •••• •••• ••••
                   </div>
                   <div class="flex justify-between items-center mt-3 text-xs">
                     <div>
                       <span class="text-muted block text-[10px]">KARTA EGASI</span>
-                      <strong id="disp-card-holder">ANVARJON ARALOV</strong>
+                      <strong id="disp-card-holder">KARTA EGASI</strong>
                     </div>
                   </div>
                 </div>
 
-                <!-- Form to Change Card Details Directly -->
                 <form id="form-edit-card" class="space-y-3 p-3 bg-slate-900 rounded-lg border border-slate-800">
                   <input type="hidden" id="edit-card-id" value="1">
                   <h4 class="font-bold text-xs text-slate-300 mb-1">To‘lov kartasini yangilash:</h4>
-                  
+
                   <div class="form-group">
-                    <label class="form-label text-xs">Yangi Karta Raqami (16 xonali)</label>
+                    <label class="form-label text-xs" for="inp-card-number">Yangi Karta Raqami (16 xonali)</label>
                     <input type="text" id="inp-card-number" class="form-input font-mono text-xs" placeholder="9860 0000 0000 0000" maxlength="19">
                   </div>
 
                   <div class="grid grid-cols-2 gap-2">
                     <div class="form-group">
-                      <label class="form-label text-xs">Karta Egasi Ismi</label>
-                      <input type="text" id="inp-card-holder" class="form-input text-xs" placeholder="ANVARJON ARALOV" required>
+                      <label class="form-label text-xs" for="inp-card-holder">Karta Egasi Ismi</label>
+                      <input type="text" id="inp-card-holder" class="form-input text-xs" placeholder="ISM FAMILIYA" required>
                     </div>
                     <div class="form-group">
-                      <label class="form-label text-xs">Turi</label>
+                      <label class="form-label text-xs" for="inp-card-type">Turi</label>
                       <select id="inp-card-type" class="form-input text-xs">
                         <option value="HUMO">HUMO</option>
                         <option value="UZCARD">UZCARD</option>
@@ -496,9 +523,9 @@
               </div>
             </div>
 
-            <!-- ACCORDION BAR 3: Tarif Narxlari -->
+            <!-- ACCORDION 3: Tarif Narxlari -->
             <div class="accordion-bar" id="acc-pricing">
-              <div class="accordion-header" onclick="toggleAccordion('acc-pricing')">
+              <div class="accordion-header" data-acc-target="acc-pricing">
                 <div class="flex items-center gap-2.5">
                   <span class="acc-icon">🏷️</span>
                   <div>
@@ -516,35 +543,34 @@
               </div>
             </div>
 
-            <!-- ACCORDION BAR 4: Savollar Bazasi & Avtomatik Sinxronizatsiya -->
+            <!-- ACCORDION 4: Savollar Bazasi & Avtomatik Sinxronizatsiya -->
             <div class="accordion-bar" id="acc-sync">
-              <div class="accordion-header" onclick="toggleAccordion('acc-sync')">
+              <div class="accordion-header" data-acc-target="acc-sync">
                 <div class="flex items-center gap-2.5">
                   <span class="acc-icon">🔄</span>
                   <div>
-                    <h3 class="font-bold text-sm text-slate-200">Nazariy Savollar & Manbalar Monitoringi</h3>
-                    <p class="text-xs text-muted">YesPrava va ProPDD dan avtomatik yangilash</p>
+                    <h3 class="font-bold text-sm text-slate-200">Nazariy Savollar &amp; Manbalar Monitoringi</h3>
+                    <p class="text-xs text-muted">YesPrava va ProPDD dan nazorat ostida yangilash</p>
                   </div>
                 </div>
                 <div class="flex items-center gap-2">
-                  <span class="badge badge-emerald" id="sync-overall-badge">1 327 ta savol</span>
+                  <span class="badge badge-emerald" id="sync-overall-badge">Yuklanmoqda</span>
                   <span class="acc-chevron">▼</span>
                 </div>
               </div>
 
               <div class="accordion-content">
-                <!-- Metrics Grid -->
                 <div class="sync-metrics-grid">
                   <div class="sync-metric-tile">
-                    <span class="sync-metric-val" id="sync-kpi-cq">1 327</span>
+                    <span class="sync-metric-val" id="sync-kpi-cq">0</span>
                     <span class="sync-metric-label">Kanonik savollar</span>
                   </div>
                   <div class="sync-metric-tile">
-                    <span class="sync-metric-val" id="sync-kpi-ct">3 885</span>
+                    <span class="sync-metric-val" id="sync-kpi-ct">0</span>
                     <span class="sync-metric-label">3 tildagi matnlar</span>
                   </div>
                   <div class="sync-metric-tile">
-                    <span class="sync-metric-val" id="sync-kpi-img">1 423</span>
+                    <span class="sync-metric-val" id="sync-kpi-img">0</span>
                     <span class="sync-metric-label">WebP rasmlar</span>
                   </div>
                   <div class="sync-metric-tile">
@@ -553,7 +579,6 @@
                   </div>
                 </div>
 
-                <!-- Live Sources Status -->
                 <div class="space-y-2 mb-3" id="sync-sources-list">
                   <div class="sync-source-card">
                     <div>
@@ -571,7 +596,6 @@
                   </div>
                 </div>
 
-                <!-- Action Buttons -->
                 <div class="grid grid-cols-2 gap-2 mb-3">
                   <button type="button" id="btn-check-sync-updates" class="btn btn-secondary btn-sm">
                     🔍 Yangiliklarni Tekshirish
@@ -581,37 +605,35 @@
                   </button>
                 </div>
 
-                <!-- Live Status Console -->
                 <div id="sync-console-output" class="sync-console mb-3">Tizim tayyor. Manbalar monitoringi faol. Yangi savollar avval moderatsiyaga olinadi.</div>
 
-                <!-- Staged Moderation Review Queue -->
                 <div id="staged-review-container" class="mt-4">
                   <div class="flex items-center justify-between mb-2">
                     <h4 class="font-bold text-xs text-slate-200 flex items-center gap-1.5">
                       <span>🛡️ Moderatsiya Navbati</span>
                       <span class="badge badge-amber text-[10px]" id="staged-count-badge">0 kutilmoqda</span>
                     </h4>
-                    <button type="button" class="btn btn-ghost btn-sm text-[11px] py-0.5" onclick="loadStagedQuestions()">
+                    <button type="button" id="btn-reload-staged" class="btn btn-ghost btn-sm text-[11px] py-0.5">
                       🔄 Yangilash
                     </button>
                   </div>
                   <div id="staged-questions-list" class="space-y-3">
                     <div class="text-xs text-muted text-center py-4 bg-slate-900/40 rounded border border-slate-800">
-                      Kutilayotgan savollar yo‘q. Yangiliklarni aniqlash uchun yuqoridagi "Yangiliklarni Tekshirish" tugmasini bosing.
+                      Kutilayotgan savollar yo‘q.
                     </div>
                   </div>
                 </div>
               </div>
             </div>
 
-            <!-- ACCORDION BAR 5: Huquqiy Asos & Tahririyat Navbati (U-02 / U-04) -->
+            <!-- ACCORDION 5: Huquqiy Asos & Tahririyat Navbati -->
             <div class="accordion-bar" id="acc-editorial">
-              <div class="accordion-header" onclick="toggleAccordion('acc-editorial')">
+              <div class="accordion-header" data-acc-target="acc-editorial">
                 <div class="flex items-center gap-2.5">
                   <span class="acc-icon">⚖️</span>
                   <div>
-                    <h3 class="font-bold text-sm text-slate-200">Huquqiy Asos & Tahririyat Navbati</h3>
-                    <p class="text-xs text-muted">YHQ bandlari, 3 tilli tushuntirishlar va AI qoralama nazorati</p>
+                    <h3 class="font-bold text-sm text-slate-200">Huquqiy Asos &amp; Tahririyat Navbati</h3>
+                    <p class="text-xs text-muted">YHQ bandlari, 3 tilli tushuntirishlar, rasm &amp; AI qoralama nazorati</p>
                   </div>
                 </div>
                 <div class="flex items-center gap-2">
@@ -622,23 +644,23 @@
 
               <div class="accordion-content">
                 <div class="editorial-status-pills mb-3" id="ed-status-pills">
-                  <button type="button" class="subtab-btn active" data-ed-status="PENDING_EDITORIAL_REVIEW" onclick="setEditorialStatusFilter('PENDING_EDITORIAL_REVIEW')">
+                  <button type="button" class="subtab-btn active" data-ed-status="PENDING_EDITORIAL_REVIEW">
                     Kutilmoqda <span class="badge badge-amber ml-1" id="ed-count-pending">0</span>
                   </button>
-                  <button type="button" class="subtab-btn" data-ed-status="AI_DRAFT_PENDING_REVIEW" onclick="setEditorialStatusFilter('AI_DRAFT_PENDING_REVIEW')">
+                  <button type="button" class="subtab-btn" data-ed-status="AI_DRAFT_PENDING_REVIEW">
                     AI Qoralamalar <span class="badge badge-indigo ml-1" id="ed-count-ai">0</span>
                   </button>
-                  <button type="button" class="subtab-btn" data-ed-status="APPROVED" onclick="setEditorialStatusFilter('APPROVED')">
+                  <button type="button" class="subtab-btn" data-ed-status="APPROVED">
                     Tasdiqlangan <span class="badge badge-emerald ml-1" id="ed-count-approved">0</span>
                   </button>
-                  <button type="button" class="subtab-btn" data-ed-status="REJECTED" onclick="setEditorialStatusFilter('REJECTED')">
+                  <button type="button" class="subtab-btn" data-ed-status="REJECTED">
                     Rad etilgan <span class="badge badge-red ml-1" id="ed-count-rejected">0</span>
                   </button>
                 </div>
 
                 <div class="editorial-filters-bar mb-3">
                   <input type="text" id="ed-filter-q" class="form-input text-xs" placeholder="CANON-YHQ-... yoki savol matni bo‘yicha qidirish">
-                  <select id="ed-filter-flag" class="form-input text-xs" onchange="loadEditorialQueue(1)">
+                  <select id="ed-filter-flag" class="form-input text-xs">
                     <option value="">Barcha sifat belgilari</option>
                     <option value="LANGUAGE_BLEED_UZ_IN_RU">Rus tilida o‘zbekcha matn (LANGUAGE_BLEED_UZ_IN_RU)</option>
                     <option value="SUSPECT_CATEGORY_LEGAL_MISMATCH">Kategoriya/band ziddiyati (SUSPECT_CATEGORY_LEGAL_MISMATCH)</option>
@@ -650,8 +672,26 @@
                     <option value="UNVERIFIED_SOURCE_HINT">Tasdiqlanmagan manba (UNVERIFIED_SOURCE_HINT)</option>
                     <option value="AI_GENERATED_REQUIRES_HUMAN_REVIEW">AI qoralama (AI_GENERATED_REQUIRES_HUMAN_REVIEW)</option>
                   </select>
-                  <button type="button" class="btn btn-secondary btn-sm" onclick="loadEditorialQueue(1)">🔍 Izlash</button>
-                  <button type="button" id="btn-editorial-audit-seed" class="btn btn-ghost btn-sm" onclick="runEditorialAuditSeed()">🛡️ Auditni Yangilash</button>
+                  <button type="button" id="btn-ed-search" class="btn btn-secondary btn-sm">🔍 Izlash</button>
+                  <button type="button" id="btn-editorial-audit-seed" class="btn btn-ghost btn-sm">🛡️ Auditni Yangilash</button>
+                </div>
+
+                <!-- BULK APPROVE EDITORIAL TOOLBAR -->
+                <div class="editorial-bulk-toolbar mb-3" id="editorial-bulk-bar">
+                  <label class="flex items-center gap-2 text-xs text-slate-200 cursor-pointer">
+                    <input type="checkbox" id="ed-select-all">
+                    <span>Hammasini tanlash (<b id="ed-selected-count">0</b>)</span>
+                  </label>
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <select id="ed-bulk-legal-status" class="form-input text-xs" style="width:auto;">
+                      <option value="VERIFIED_PRIMARY_LAW">VERIFIED_PRIMARY_LAW</option>
+                      <option value="VERIFIED_FIRST_AID_OR_TECH">VERIFIED_FIRST_AID_OR_TECH</option>
+                    </select>
+                    <input type="text" id="ed-bulk-clause" class="form-input text-xs" style="width:140px;" placeholder="Band (masalan 19-band)">
+                    <button type="button" id="btn-ed-bulk-approve" class="btn btn-emerald btn-sm" disabled>
+                      ⚖️ Tanlanganlarni Tasdiqlash
+                    </button>
+                  </div>
                 </div>
 
                 <div id="editorial-queue-list" class="space-y-3">
@@ -663,17 +703,17 @@
                 <div class="flex items-center justify-between mt-3 pt-2 border-t border-slate-800 text-xs text-muted" id="ed-pagination-bar">
                   <span id="ed-pagination-summary">Jami: 0 ta</span>
                   <div class="flex items-center gap-2">
-                    <button type="button" id="ed-btn-prev" class="btn btn-ghost btn-sm" onclick="changeEditorialPage(-1)">← Oldingi</button>
+                    <button type="button" id="ed-btn-prev" class="btn btn-ghost btn-sm">← Oldingi</button>
                     <span id="ed-page-label" class="font-mono">1</span>
-                    <button type="button" id="ed-btn-next" class="btn btn-ghost btn-sm" onclick="changeEditorialPage(1)">Keyingi →</button>
+                    <button type="button" id="ed-btn-next" class="btn btn-ghost btn-sm">Keyingi →</button>
                   </div>
                 </div>
               </div>
             </div>
 
-            <!-- Section 6: System Observability & Audit Logs -->
+            <!-- ACCORDION 6: System Observability & Audit Logs (Preserves IDs for phase7 test & SUPERADMIN RBAC) -->
             <div class="accordion-bar" id="acc-observability">
-              <div class="accordion-header" onclick="toggleAccordion('acc-observability')">
+              <div class="accordion-header" data-acc-target="acc-observability">
                 <div class="flex items-center gap-2.5">
                   <span class="acc-icon">📊</span>
                   <div>
@@ -686,7 +726,7 @@
                   <span class="acc-chevron">▼</span>
                 </div>
               </div>
-              <div class="accordion-body">
+              <div class="accordion-content">
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
                   <div class="bg-slate-900/80 border border-slate-800 rounded p-2.5">
                     <div class="text-[11px] text-muted">DB Integrity &amp; Latency</div>
@@ -708,7 +748,7 @@
                 <div id="obs-routes-summary" class="text-xs text-muted mb-3 font-mono">Yuklanmoqda...</div>
                 <div class="flex items-center justify-between mb-2">
                   <span class="text-xs font-semibold text-slate-300">So‘nggi Admin Audit Loglari (10 ta)</span>
-                  <button type="button" class="btn btn-ghost btn-sm text-xs" onclick="loadSystemObservability()">🔄 Yangilash</button>
+                  <button type="button" id="btn-refresh-obs" class="btn btn-ghost btn-sm text-xs">🔄 Yangilash</button>
                 </div>
                 <div id="obs-audit-logs-list" class="space-y-1.5 text-xs"></div>
               </div>
@@ -720,32 +760,32 @@
       </div>
     </main>
 
-    <!-- MOBILE BOTTOM NAVIGATION BAR (FIXED UNDER THUMB) -->
+    <!-- MOBILE BOTTOM NAVIGATION BAR -->
     <nav class="mobile-bottom-nav mobile-only">
-      <button class="m-nav-item active" data-view="overview" onclick="switchView('overview')">
+      <button type="button" class="m-nav-item active" data-view="overview">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
         <span>Asosiy</span>
       </button>
 
-      <button class="m-nav-item" data-view="payments" onclick="switchView('payments')">
+      <button type="button" class="m-nav-item" data-view="payments">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
         <span>To‘lovlar</span>
         <span class="m-nav-badge" id="m-badge-orders" style="display:none;">0</span>
       </button>
 
-      <button class="m-nav-item" data-view="users" onclick="switchView('users')">
+      <button type="button" class="m-nav-item" data-view="users">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
         <span>Userlar</span>
       </button>
 
-      <button class="m-nav-item" data-view="broadcast" onclick="switchView('broadcast')">
+      <button type="button" class="m-nav-item" data-view="broadcast">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
         <span>Xabar</span>
       </button>
 
-      <button class="m-nav-item" data-view="settings" onclick="switchView('settings')">
+      <button type="button" class="m-nav-item" data-view="settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        <span>Sozlamalar</span>
+        <span>Tizim</span>
         <span class="m-status-dot" id="m-dot-mtproto"></span>
       </button>
     </nav>
@@ -756,7 +796,7 @@
     <div class="modal-card">
       <div class="modal-header">
         <h3 class="modal-title" id="grant-modal-title">Foydalanuvchiga PRO Obuna Berish</h3>
-        <button class="modal-close" onclick="closeModal('modal-grant-sub')">&times;</button>
+        <button type="button" class="modal-close" data-close-modal="modal-grant-sub">&times;</button>
       </div>
       <form id="form-grant-sub" class="space-y-4 p-4">
         <input type="hidden" id="grant-user-id">
@@ -778,11 +818,24 @@
           </div>
         </div>
         <div class="form-group">
-          <label class="form-label text-xs">Sababi (Audit uchun):</label>
-          <input type="text" id="grant-reason" class="form-input text-xs" placeholder="Masalan: Test uchun, Sovg'a..." required>
+          <label class="form-label text-xs" for="grant-reason">Sababi (Audit uchun):</label>
+          <input type="text" id="grant-reason" class="form-input text-xs" placeholder="Masalan: Test uchun, Kompensatsiya..." required>
         </div>
         <button type="submit" class="btn btn-primary btn-block">Faollashtirish</button>
       </form>
+    </div>
+  </div>
+
+  <!-- ================= USER DOSSIER MODAL ================= -->
+  <div id="modal-user-dossier" class="modal-overlay" style="display:none;">
+    <div class="modal-card" style="max-width: 680px; max-height: 90vh; overflow-y: auto;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="dossier-modal-title">Foydalanuvchi Dossier</h3>
+        <button type="button" class="modal-close" data-close-modal="modal-user-dossier">&times;</button>
+      </div>
+      <div id="dossier-modal-body" class="p-4 space-y-3 text-xs">
+        Yuklanmoqda...
+      </div>
     </div>
   </div>
 
@@ -791,20 +844,20 @@
     <div class="modal-card">
       <div class="modal-header">
         <h3 class="modal-title">Tarif Narxini O‘zgartirish</h3>
-        <button class="modal-close" onclick="closeModal('modal-edit-price')">&times;</button>
+        <button type="button" class="modal-close" data-close-modal="modal-edit-price">&times;</button>
       </div>
       <form id="form-edit-price" class="space-y-4 p-4">
         <input type="hidden" id="edit-plan-id">
         <div class="form-group">
           <label class="form-label text-xs">Tarif nomi:</label>
-          <div id="edit-plan-name" class="font-bold text-slate-200">14 kunlik PRO</div>
+          <div id="edit-plan-name" class="font-bold text-slate-200">—</div>
         </div>
         <div class="form-group">
-          <label class="form-label text-xs">Yangi narx (UZS):</label>
+          <label class="form-label text-xs" for="edit-plan-price">Yangi narx (UZS):</label>
           <input type="number" id="edit-plan-price" class="form-input font-mono" step="1000" min="1000" required>
         </div>
         <div class="form-group">
-          <label class="form-label text-xs">O‘zgartirish sababi:</label>
+          <label class="form-label text-xs" for="edit-plan-reason">O‘zgartirish sababi:</label>
           <input type="text" id="edit-plan-reason" class="form-input text-xs" placeholder="Masalan: Aksiya, Narx yangilanishi" required>
         </div>
         <button type="submit" class="btn btn-primary btn-block">Saqlash</button>
@@ -816,30 +869,30 @@
   <div id="modal-edit-staged" class="modal-overlay" style="display:none;">
     <div class="modal-card" style="max-width: 580px; max-height: 90vh; overflow-y: auto;">
       <div class="modal-header">
-        <h3 class="modal-title" id="edit-staged-title">Savolni Tahrirlash & Tasdiqlash</h3>
-        <button class="modal-close" onclick="closeModal('modal-edit-staged')">&times;</button>
+        <h3 class="modal-title" id="edit-staged-title">Savolni Tahrirlash &amp; Tasdiqlash</h3>
+        <button type="button" class="modal-close" data-close-modal="modal-edit-staged">&times;</button>
       </div>
       <form id="form-edit-staged" class="space-y-3 p-4">
         <input type="hidden" id="inp-edit-staged-id">
 
         <div class="form-group">
-          <label class="form-label text-xs">🇺🇿 Lotincha Savol Matni:</label>
+          <label class="form-label text-xs" for="inp-edit-staged-latn">🇺🇿 Lotincha Savol Matni:</label>
           <textarea id="inp-edit-staged-latn" class="form-input text-xs" rows="2" required></textarea>
         </div>
 
         <div class="grid grid-cols-2 gap-2">
           <div class="form-group">
-            <label class="form-label text-xs">🇺🇿 Kirillcha Matn:</label>
+            <label class="form-label text-xs" for="inp-edit-staged-cyrl">🇺🇿 Kirillcha Matn:</label>
             <textarea id="inp-edit-staged-cyrl" class="form-input text-xs" rows="2"></textarea>
           </div>
           <div class="form-group">
-            <label class="form-label text-xs">🇷🇺 Ruscha Matn:</label>
+            <label class="form-label text-xs" for="inp-edit-staged-ru">🇷🇺 Ruscha Matn:</label>
             <textarea id="inp-edit-staged-ru" class="form-input text-xs" rows="2"></textarea>
           </div>
         </div>
 
         <div class="form-group">
-          <label class="form-label text-xs">To‘g‘ri Javob Kaliti:</label>
+          <label class="form-label text-xs" for="inp-edit-staged-correct-key">To‘g‘ri Javob Kaliti:</label>
           <select id="inp-edit-staged-correct-key" class="form-input text-xs">
             <option value="A">A varianti</option>
             <option value="B">B varianti</option>
@@ -850,17 +903,17 @@
         </div>
 
         <div class="form-group">
-          <label class="form-label text-xs">Izoh / Tushuntirish (Lotin / Umumiy):</label>
+          <label class="form-label text-xs" for="inp-edit-staged-explanation">Izoh / Tushuntirish (Lotin / Umumiy):</label>
           <textarea id="inp-edit-staged-explanation" class="form-input text-xs" rows="2" placeholder="UZ Lotin tushuntirish yoki umumiy izoh"></textarea>
         </div>
 
         <div class="grid grid-cols-2 gap-2">
           <div class="form-group">
-            <label class="form-label text-xs">🇺🇿 Kirillcha Izoh (Ixtiyoriy):</label>
+            <label class="form-label text-xs" for="inp-edit-staged-expl-cyrl">🇺🇿 Kirillcha Izoh:</label>
             <textarea id="inp-edit-staged-expl-cyrl" class="form-input text-xs" rows="2" placeholder="Кириллча изоҳ"></textarea>
           </div>
           <div class="form-group">
-            <label class="form-label text-xs">🇷🇺 Ruscha Izoh (Ixtiyoriy):</label>
+            <label class="form-label text-xs" for="inp-edit-staged-expl-ru">🇷🇺 Ruscha Izoh:</label>
             <textarea id="inp-edit-staged-expl-ru" class="form-input text-xs" rows="2" placeholder="Пояснение на русском"></textarea>
           </div>
         </div>
@@ -868,7 +921,7 @@
         <div class="editorial-legal-box">
           <div class="text-[11px] font-bold text-slate-300 mb-2">⚖️ Huquqiy Asos Tasnifi (U-02)</div>
           <div class="form-group mb-2">
-            <label class="form-label text-xs">Huquqiy tekshiruv maqomi:</label>
+            <label class="form-label text-xs" for="inp-edit-staged-legal-status">Huquqiy tekshiruv maqomi:</label>
             <select id="inp-edit-staged-legal-status" class="form-input text-xs">
               <option value="UNRESOLVED_LEGAL_REVIEW">UNRESOLVED_LEGAL_REVIEW (Tekshiruv talab etiladi)</option>
               <option value="VERIFIED_PRIMARY_LAW">VERIFIED_PRIMARY_LAW (Tasdiqlangan YHQ / Qonun hujjati)</option>
@@ -876,32 +929,28 @@
             </select>
           </div>
           <div class="form-group mb-2">
-            <label class="form-label text-xs">Hujjat nomi (VERIFIED_PRIMARY_LAW uchun majburiy):</label>
-            <input type="text" id="inp-edit-staged-legal-doc-title" class="form-input text-xs" placeholder="Masalan: Vazirlar Mahkamasining 2022-yil 12-apreldagi 172-son qarori (YHQ)">
+            <label class="form-label text-xs" for="inp-edit-staged-legal-doc-title">Hujjat nomi:</label>
+            <input type="text" id="inp-edit-staged-legal-doc-title" class="form-input text-xs" placeholder="Vazirlar Mahkamasining 2022-yil 12-apreldagi 172-son qarori (YHQ)">
           </div>
           <div class="grid grid-cols-2 gap-2">
             <div class="form-group">
-              <label class="form-label text-xs">Bob (Chapter):</label>
-              <input type="text" id="inp-edit-staged-legal-chapter" class="form-input text-xs" placeholder="Masalan: 3-bob">
+              <label class="form-label text-xs" for="inp-edit-staged-legal-chapter">Bob (Chapter):</label>
+              <input type="text" id="inp-edit-staged-legal-chapter" class="form-input text-xs" placeholder="3-bob">
             </div>
             <div class="form-group">
-              <label class="form-label text-xs">Band (Clause):</label>
-              <input type="text" id="inp-edit-staged-legal-clause" class="form-input text-xs" placeholder="Masalan: 19-band">
+              <label class="form-label text-xs" for="inp-edit-staged-legal-clause">Band (Clause):</label>
+              <input type="text" id="inp-edit-staged-legal-clause" class="form-input text-xs" placeholder="19-band">
             </div>
           </div>
           <div class="form-group mt-2">
-            <label class="form-label text-xs">Rasmiy hujjat havolasi (lex.uz URL):</label>
+            <label class="form-label text-xs" for="inp-edit-staged-legal-doc-url">Rasmiy hujjat havolasi (lex.uz URL):</label>
             <input type="url" id="inp-edit-staged-legal-doc-url" class="form-input text-xs" placeholder="https://lex.uz/docs/5963102">
           </div>
         </div>
 
         <div class="flex items-center gap-2 pt-2">
-          <button type="submit" class="btn btn-primary btn-block">
-            Saqlash & Bazaga Tasdiqlash
-          </button>
-          <button type="button" class="btn btn-ghost" onclick="closeModal('modal-edit-staged')">
-            Bekor qilish
-          </button>
+          <button type="submit" class="btn btn-primary btn-block">Saqlash &amp; Bazaga Tasdiqlash</button>
+          <button type="button" class="btn btn-ghost" data-close-modal="modal-edit-staged">Bekor qilish</button>
         </div>
       </form>
     </div>
@@ -909,94 +958,98 @@
 
   <!-- ================= EDITORIAL LEGAL PROVENANCE & TRANSLATION MODAL ================= -->
   <div id="modal-edit-editorial" class="modal-overlay" style="display:none;">
-    <div class="modal-card" style="max-width: 680px; max-height: 92vh; overflow-y: auto;">
+    <div class="modal-card" style="max-width: 720px; max-height: 92vh; overflow-y: auto;">
       <div class="modal-header">
-        <h3 class="modal-title" id="ed-modal-title">Huquqiy Asos & 3 Tilli Izoh Moderatsiyasi</h3>
-        <button class="modal-close" onclick="closeModal('modal-edit-editorial')">&times;</button>
+        <h3 class="modal-title" id="ed-modal-title">Huquqiy Asos &amp; 3 Tilli Izoh Moderatsiyasi</h3>
+        <button type="button" class="modal-close" data-close-modal="modal-edit-editorial">&times;</button>
       </div>
       <form id="form-edit-editorial" class="space-y-3 p-4">
         <input type="hidden" id="ed-modal-queue-id">
 
-        <div class="editorial-hint-box" id="ed-modal-meta-box">
-          Yuklanmoqda...
+        <div class="editorial-hint-box" id="ed-modal-meta-box">Yuklanmoqda...</div>
+
+        <!-- IMAGE & OPTIONS PREVIEW -->
+        <div id="ed-modal-visual-box" class="bg-slate-900/60 border border-slate-800 rounded p-2.5 space-y-2" style="display:none;"></div>
+
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-300">Savol matnlari va tushuntirishlar (3 tilda)</span>
+          <button type="button" id="btn-ed-modal-ai-draft" class="btn btn-secondary btn-sm text-xs">
+            ✨ AI Qoralama Yaratish
+          </button>
         </div>
 
         <div class="editorial-lang-grid">
           <div class="form-group">
-            <label class="form-label text-xs">🇺🇿 Savol (Lotin) — Tahrirlash (Ixtiyoriy):</label>
+            <label class="form-label text-xs" for="ed-modal-q-latn">🇺🇿 Savol (Lotin):</label>
             <textarea id="ed-modal-q-latn" class="form-input text-xs" rows="2"></textarea>
           </div>
           <div class="form-group">
-            <label class="form-label text-xs">🇺🇿 Savol (Kirill) — Tahrirlash (Ixtiyoriy):</label>
+            <label class="form-label text-xs" for="ed-modal-q-cyrl">🇺🇿 Savol (Kirill):</label>
             <textarea id="ed-modal-q-cyrl" class="form-input text-xs" rows="2"></textarea>
           </div>
           <div class="form-group">
-            <label class="form-label text-xs">🇷🇺 Savol (Ruscha) — Til aralashuvini tuzatish:</label>
+            <label class="form-label text-xs" for="ed-modal-q-ru">🇷🇺 Savol (Ruscha):</label>
             <textarea id="ed-modal-q-ru" class="form-input text-xs" rows="2"></textarea>
           </div>
         </div>
 
         <div class="editorial-lang-grid">
           <div class="form-group">
-            <label class="form-label text-xs">🇺🇿 Izoh (UZ Lotin):</label>
+            <label class="form-label text-xs" for="ed-modal-expl-latn">🇺🇿 Izoh (UZ Lotin):</label>
             <textarea id="ed-modal-expl-latn" class="form-input text-xs" rows="2" placeholder="O‘zbekcha (lotin) tushuntirish"></textarea>
           </div>
           <div class="form-group">
-            <label class="form-label text-xs">🇺🇿 Izoh (UZ Kirill):</label>
+            <label class="form-label text-xs" for="ed-modal-expl-cyrl">🇺🇿 Izoh (UZ Kirill):</label>
             <textarea id="ed-modal-expl-cyrl" class="form-input text-xs" rows="2" placeholder="Ўзбекча (кирилл) тушунтириш"></textarea>
           </div>
           <div class="form-group">
-            <label class="form-label text-xs">🇷🇺 Izoh (RU):</label>
+            <label class="form-label text-xs" for="ed-modal-expl-ru">🇷🇺 Izoh (RU):</label>
             <textarea id="ed-modal-expl-ru" class="form-input text-xs" rows="2" placeholder="Объяснение на русском"></textarea>
           </div>
         </div>
 
         <div class="editorial-legal-box">
           <div class="form-group mb-2">
-            <label class="form-label text-xs">Huquqiy Tasnif (U-02):</label>
+            <label class="form-label text-xs" for="ed-modal-legal-status">Huquqiy Tasnif (U-02):</label>
             <select id="ed-modal-legal-status" class="form-input text-xs" required>
               <option value="VERIFIED_PRIMARY_LAW">VERIFIED_PRIMARY_LAW (Tasdiqlangan YHQ / Qonun)</option>
               <option value="VERIFIED_FIRST_AID_OR_TECH">VERIFIED_FIRST_AID_OR_TECH (Birinchi yordam / Texnik me’yor)</option>
-              <option value="UNRESOLVED_LEGAL_REVIEW">UNRESOLVED_LEGAL_REVIEW (Hali tekshiruvda qoldirish)</option>
+              <option value="UNRESOLVED_LEGAL_REVIEW">UNRESOLVED_LEGAL_REVIEW (Tekshiruvda qoldirish)</option>
             </select>
           </div>
           <div class="form-group mb-2">
-            <label class="form-label text-xs">Normativ hujjat nomi (`legal_doc_title`):</label>
+            <label class="form-label text-xs" for="ed-modal-legal-doc-title">Normativ hujjat nomi:</label>
             <input type="text" id="ed-modal-legal-doc-title" class="form-input text-xs" placeholder="Vazirlar Mahkamasining 2022-yil 12-apreldagi 172-son qarori (YHQ)">
           </div>
           <div class="grid grid-cols-3 gap-2">
             <div class="form-group">
-              <label class="form-label text-xs">Bob (`legal_chapter`):</label>
+              <label class="form-label text-xs" for="ed-modal-legal-chapter">Bob:</label>
               <input type="text" id="ed-modal-legal-chapter" class="form-input text-xs" placeholder="3-bob">
             </div>
             <div class="form-group">
-              <label class="form-label text-xs">Band (`legal_clause`):</label>
+              <label class="form-label text-xs" for="ed-modal-legal-clause">Band:</label>
               <input type="text" id="ed-modal-legal-clause" class="form-input text-xs" placeholder="19-band">
             </div>
             <div class="form-group">
-              <label class="form-label text-xs">Kuchga kirish sanasi:</label>
+              <label class="form-label text-xs" for="ed-modal-legal-effective-date">Kuchga kirish sanasi:</label>
               <input type="text" id="ed-modal-legal-effective-date" class="form-input text-xs" placeholder="2022-05-01">
             </div>
           </div>
           <div class="grid grid-cols-2 gap-2 mt-2">
             <div class="form-group">
-              <label class="form-label text-xs">Rasmiy manba URL (`legal_doc_url`):</label>
+              <label class="form-label text-xs" for="ed-modal-legal-doc-url">Rasmiy manba URL:</label>
               <input type="url" id="ed-modal-legal-doc-url" class="form-input text-xs" placeholder="https://lex.uz/docs/5963102">
             </div>
             <div class="form-group">
-              <label class="form-label text-xs">Tekshiruvchi izohi:</label>
+              <label class="form-label text-xs" for="ed-modal-reviewer-notes">Tekshiruvchi izohi:</label>
               <input type="text" id="ed-modal-reviewer-notes" class="form-input text-xs" value="Human verified">
             </div>
           </div>
         </div>
 
         <div class="flex items-center gap-2 pt-2">
-          <button type="submit" class="btn btn-primary btn-block">
-            ✅ Tasdiqlash va Kanonik Bazani Yangilash
-          </button>
-          <button type="button" class="btn btn-ghost" onclick="closeModal('modal-edit-editorial')">
-            Bekor qilish
-          </button>
+          <button type="submit" class="btn btn-primary btn-block">✅ Tasdiqlash va Kanonik Bazani Yangilash</button>
+          <button type="button" class="btn btn-ghost" data-close-modal="modal-edit-editorial">Bekor qilish</button>
         </div>
       </form>
     </div>

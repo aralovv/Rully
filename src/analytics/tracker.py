@@ -127,88 +127,97 @@ def classify_user_activity(user_id: int, conn: Optional[sqlite3.Connection] = No
 
 
 def get_real_activity_analytics() -> Dict[str, Any]:
-    """Calculates DAU, WAU, MAU, and activity distributions from actual database records."""
+    """Calculates DAU, WAU, MAU, and user classifications in O(1) constant SQL GROUP BY queries."""
     now_dt = datetime.utcnow()
     d1_ago = (now_dt - timedelta(days=1)).isoformat()
     d7_ago = (now_dt - timedelta(days=7)).isoformat()
+    d14_ago = (now_dt - timedelta(days=14)).isoformat()
     d30_ago = (now_dt - timedelta(days=30)).isoformat()
     today_start = now_dt.strftime("%Y-%m-%d")
 
     with _get_connection() as conn:
         c = conn.cursor()
 
-        # Total registered users
-        c.execute("SELECT COUNT(*) FROM telegram_users")
-        total_users = c.fetchone()[0]
+        c.execute(
+            """
+            SELECT
+                COUNT(*) AS total_users,
+                COALESCE(SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END), 0) AS new_today,
+                COALESCE(SUM(CASE WHEN last_active_at >= ? THEN 1 ELSE 0 END), 0) AS u_d1,
+                COALESCE(SUM(CASE WHEN last_active_at >= ? THEN 1 ELSE 0 END), 0) AS u_d7,
+                COALESCE(SUM(CASE WHEN last_active_at >= ? THEN 1 ELSE 0 END), 0) AS u_d30
+            FROM telegram_users
+            """,
+            (today_start, d1_ago, d7_ago, d30_ago),
+        )
+        u_row = c.fetchone()
+        total_users = int(u_row[0] or 0)
+        new_users_today = int(u_row[1] or 0)
 
-        # DAU: Unique users in last 24h (from activity events or sessions)
-        c.execute("""
-            SELECT COUNT(DISTINCT user_id) FROM (
-                SELECT user_id FROM user_activity_events WHERE created_at >= ?
-                UNION
-                SELECT user_id FROM user_sessions WHERE created_at >= ?
-                UNION
-                SELECT user_id FROM telegram_users WHERE last_active_at >= ?
+        # Single combined active-users scan across events, sessions, and telegram_users
+        c.execute(
+            """
+            SELECT
+                COUNT(DISTINCT CASE WHEN ts >= ? THEN user_id END) AS dau,
+                COUNT(DISTINCT CASE WHEN ts >= ? THEN user_id END) AS wau,
+                COUNT(DISTINCT CASE WHEN ts >= ? THEN user_id END) AS mau
+            FROM (
+                SELECT user_id, created_at AS ts FROM user_activity_events WHERE created_at >= ?
+                UNION ALL
+                SELECT user_id, created_at AS ts FROM user_sessions WHERE created_at >= ?
+                UNION ALL
+                SELECT user_id, last_active_at AS ts FROM telegram_users WHERE last_active_at >= ?
             )
-        """, (d1_ago, d1_ago, d1_ago))
-        dau = c.fetchone()[0]
+            """,
+            (d1_ago, d7_ago, d30_ago, d30_ago, d30_ago, d30_ago),
+        )
+        d_row = c.fetchone()
+        dau = int((d_row[0] if d_row else 0) or u_row[2] or 0)
+        wau = int((d_row[1] if d_row else 0) or u_row[3] or 0)
+        mau = int((d_row[2] if d_row else 0) or u_row[4] or 0)
 
-        # WAU: Unique users in last 7 days
-        c.execute("""
-            SELECT COUNT(DISTINCT user_id) FROM (
-                SELECT user_id FROM user_activity_events WHERE created_at >= ?
-                UNION
-                SELECT user_id FROM user_sessions WHERE created_at >= ?
-                UNION
-                SELECT user_id FROM telegram_users WHERE last_active_at >= ?
-            )
-        """, (d7_ago, d7_ago, d7_ago))
-        wau = c.fetchone()[0]
-
-        # MAU: Unique users in last 30 days
-        c.execute("""
-            SELECT COUNT(DISTINCT user_id) FROM (
-                SELECT user_id FROM user_activity_events WHERE created_at >= ?
-                UNION
-                SELECT user_id FROM user_sessions WHERE created_at >= ?
-                UNION
-                SELECT user_id FROM telegram_users WHERE last_active_at >= ?
-            )
-        """, (d30_ago, d30_ago, d30_ago))
-        mau = c.fetchone()[0]
-
-        # New users today
-        c.execute("SELECT COUNT(*) FROM telegram_users WHERE created_at >= ?", (today_start,))
-        new_users_today = c.fetchone()[0]
-
-        # Engagement ratio: (DAU / MAU) * 100
         engagement_ratio = round((dau / mau * 100), 1) if mau > 0 else 0.0
 
-        # Feature usage breakdown
-        c.execute("""
-            SELECT event_name, COUNT(*) as cnt 
-            FROM user_activity_events 
-            GROUP BY event_name 
+        c.execute(
+            """
+            SELECT event_name, COUNT(*) as cnt
+            FROM user_activity_events
+            GROUP BY event_name
             ORDER BY cnt DESC LIMIT 8
-        """)
+            """
+        )
         feature_breakdown = [{"event": row["event_name"], "count": row["cnt"]} for row in c.fetchall()]
 
-        # Activity classification summary
-        c.execute("SELECT user_id FROM telegram_users")
-        all_uids = [r[0] for r in c.fetchall()]
-
+        # O(1) query activity classification bucket summary across all users via GROUP BY
+        c.execute(
+            """
+            SELECT
+                SUM(CASE WHEN days_14 >= 7 OR ev_14 >= 25 THEN 1 ELSE 0 END) AS highly_active,
+                SUM(CASE WHEN NOT (days_14 >= 7 OR ev_14 >= 25) AND (days_14 >= 3 OR ev_14 >= 8) THEN 1 ELSE 0 END) AS active,
+                SUM(CASE WHEN NOT (days_14 >= 3 OR ev_14 >= 8) AND (days_14 >= 1 OR ev_14 >= 1) THEN 1 ELSE 0 END) AS occasional,
+                SUM(CASE WHEN days_14 = 0 AND ev_14 = 0 AND ev_prior > 0 THEN 1 ELSE 0 END) AS at_risk,
+                SUM(CASE WHEN days_14 = 0 AND ev_14 = 0 AND ev_prior = 0 THEN 1 ELSE 0 END) AS inactive
+            FROM (
+                SELECT
+                    u.user_id,
+                    COALESCE(SUM(CASE WHEN e.created_at >= ? THEN 1 ELSE 0 END), 0) AS ev_14,
+                    COUNT(DISTINCT CASE WHEN e.created_at >= ? THEN substr(e.created_at, 1, 10) END) AS days_14,
+                    COALESCE(SUM(CASE WHEN e.created_at >= ? AND e.created_at < ? THEN 1 ELSE 0 END), 0) AS ev_prior
+                FROM telegram_users u
+                LEFT JOIN user_activity_events e ON u.user_id = e.user_id AND e.created_at >= ?
+                GROUP BY u.user_id
+            )
+            """,
+            (d14_ago, d14_ago, d30_ago, d14_ago, d30_ago),
+        )
+        cls_row = c.fetchone()
         class_counts = {
-            "Highly Active": 0,
-            "Active": 0,
-            "Occasionally Active": 0,
-            "At Risk": 0,
-            "Inactive": 0
+            "Highly Active": int((cls_row[0] if cls_row else 0) or 0),
+            "Active": int((cls_row[1] if cls_row else 0) or 0),
+            "Occasionally Active": int((cls_row[2] if cls_row else 0) or 0),
+            "At Risk": int((cls_row[3] if cls_row else 0) or 0),
+            "Inactive": int((cls_row[4] if cls_row else 0) or 0),
         }
-
-        for uid in all_uids:
-            cls = classify_user_activity(uid, conn)
-            cat = cls["category"]
-            class_counts[cat] = class_counts.get(cat, 0) + 1
 
     return {
         "dau": dau,
@@ -223,39 +232,50 @@ def get_real_activity_analytics() -> Dict[str, Any]:
 
 
 def get_retention_analytics() -> Dict[str, Any]:
-    """Calculates D1, D7, and D30 user retention metrics."""
+    """Calculates D1, D7, and D30 user retention metrics in O(1) constant SQL queries."""
     with _get_connection() as conn:
         c = conn.cursor()
-        c.execute("SELECT user_id, substr(created_at, 1, 10) as reg_date FROM telegram_users")
+        c.execute("SELECT user_id, substr(created_at, 1, 10) as reg_date FROM telegram_users WHERE created_at IS NOT NULL")
         users = c.fetchall()
 
-        cohorts = {}
-        for u in users:
-            uid = u["user_id"]
-            reg_date = u["reg_date"]
-            if reg_date not in cohorts:
-                cohorts[reg_date] = {"users": [], "d1": 0, "d7": 0, "d30": 0}
-            cohorts[reg_date]["users"].append(uid)
+        c.execute(
+            """
+            SELECT DISTINCT user_id, substr(created_at, 1, 10) as act_date
+            FROM user_activity_events
+            WHERE created_at IS NOT NULL
+            """
+        )
+        active_dates_by_uid: Dict[int, set] = {}
+        for r in c.fetchall():
+            active_dates_by_uid.setdefault(int(r[0]), set()).add(r[1])
 
-        # For each cohort, calculate how many had activity on D1, D7, D30
+        cohorts: Dict[str, Dict[str, Any]] = {}
+        for u in users:
+            uid = int(u[0] if not hasattr(u, "keys") else u["user_id"])
+            reg_date = str(u[1] if not hasattr(u, "keys") else u["reg_date"])
+            if len(reg_date) != 10:
+                continue
+            cohort = cohorts.setdefault(reg_date, {"users": [], "d1": 0, "d7": 0, "d30": 0})
+            cohort["users"].append(uid)
+
         for reg_date, cohort in cohorts.items():
-            reg_dt = datetime.strptime(reg_date, "%Y-%m-%d")
+            try:
+                reg_dt = datetime.strptime(reg_date, "%Y-%m-%d")
+            except ValueError:
+                continue
             d1_dt = (reg_dt + timedelta(days=1)).strftime("%Y-%m-%d")
             d7_dt = (reg_dt + timedelta(days=7)).strftime("%Y-%m-%d")
             d30_dt = (reg_dt + timedelta(days=30)).strftime("%Y-%m-%d")
 
             for uid in cohort["users"]:
-                c.execute("""
-                    SELECT DISTINCT substr(created_at, 1, 10) FROM user_activity_events
-                    WHERE user_id = ?
-                """, (uid,))
-                active_dates = set(r[0] for r in c.fetchall())
-
-                if d1_dt in active_dates:
+                dates = active_dates_by_uid.get(uid)
+                if not dates:
+                    continue
+                if d1_dt in dates:
                     cohort["d1"] += 1
-                if d7_dt in active_dates:
+                if d7_dt in dates:
                     cohort["d7"] += 1
-                if d30_dt in active_dates:
+                if d30_dt in dates:
                     cohort["d30"] += 1
 
         summary = []

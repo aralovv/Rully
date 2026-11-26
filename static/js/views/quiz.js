@@ -23,12 +23,94 @@
     }
   }
 
+  function saveQuizDraft() {
+    const qz = R.state.quiz;
+    if (!qz || !qz.active || !qz.sessionId) return;
+    try {
+      sessionStorage.setItem('rully_quiz_draft', JSON.stringify({
+        sessionId: qz.sessionId,
+        sessionType: qz.sessionType,
+        ticketNumber: qz.ticketNumber,
+        questions: qz.questions,
+        currentIndex: qz.currentIndex,
+        answers: qz.answers,
+        timeRemaining: qz.timeRemaining,
+        showAnswer: qz.showAnswer,
+        showExplanation: qz.showExplanation,
+        savedAt: Date.now()
+      }));
+    } catch (e) {}
+  }
+
+  function clearQuizDraft() {
+    try { sessionStorage.removeItem('rully_quiz_draft'); } catch (e) {}
+  }
+
+  R.getSavedQuizDraft = function () {
+    try {
+      const raw = sessionStorage.getItem('rully_quiz_draft');
+      if (!raw) return null;
+      const d = JSON.parse(raw);
+      if (!d || !d.sessionId || !Array.isArray(d.questions) || !d.questions.length) return null;
+      if (Date.now() - Number(d.savedAt || 0) > 6 * 3600 * 1000) return null;
+      return d;
+    } catch (e) { return null; }
+  };
+
+  R.discardSavedQuizDraft = function () {
+    clearQuizDraft();
+    R.renderHome();
+  };
+
+  R.resumeSavedQuizSession = function () {
+    const d = R.getSavedQuizDraft();
+    if (!d) return;
+    clearQuizTimer();
+    R.state.quiz = {
+      active: true,
+      sessionId: d.sessionId,
+      sessionType: d.sessionType,
+      ticketNumber: d.ticketNumber || null,
+      questions: d.questions,
+      currentIndex: Math.min(d.currentIndex || 0, d.questions.length - 1),
+      answers: d.answers || {},
+      timeRemaining: Number(d.timeRemaining || 0),
+      timerInterval: null,
+      startTime: Date.now(),
+      questionShownAt: Date.now(),
+      showAnswer: d.showAnswer !== false,
+      showExplanation: d.showExplanation !== false,
+      isSubmitting: false
+    };
+    document.body.classList.add('focus-mode');
+    R.showViewContainer('view-quiz');
+    R.renderQuizQuestion();
+    R.syncTelegramBackButton();
+    if (R.state.quiz.timeRemaining > 0) {
+      R.state.quiz.timerInterval = setInterval(function () {
+        if (!R.state.quiz.active) { clearQuizTimer(); return; }
+        R.state.quiz.timeRemaining -= 1;
+        const clockEl = document.getElementById('quiz-clock-val');
+        if (clockEl) clockEl.textContent = R.fmtClock(R.state.quiz.timeRemaining);
+        if (R.state.quiz.timeRemaining <= 0) {
+          clearQuizTimer();
+          R.finishSession(true);
+        }
+      }, 1000);
+    }
+  };
+
   R.startSession = async function (opts) {
+    if (R.state.isGuest) {
+      R.openGuestSyncModal();
+      return;
+    }
     const payload = {
       session_type: opts.session_type || 'EXAM',
       category_id: opts.category_id !== undefined ? opts.category_id : null,
       ticket_number: opts.ticket_number !== undefined ? opts.ticket_number : null,
       total_questions: opts.total_questions || 20,
+      offset: opts.offset || 0,
       time_limit_seconds: opts.time_limit_seconds !== undefined ? opts.time_limit_seconds : (opts.session_type === 'EXAM' ? 25 * 60 : 0),
       show_answer: opts.show_answer !== undefined ? opts.show_answer : true,
       show_explanation: opts.show_explanation !== undefined ? opts.show_explanation : true,
@@ -59,6 +141,7 @@
 
       document.body.classList.add('focus-mode');
       R.showViewContainer('view-quiz');
+      saveQuizDraft();
       R.renderQuizQuestion();
       R.syncTelegramBackButton();
 
@@ -147,12 +230,13 @@
         const iv = Number(ans.srs.interval_days || 0);
         const srsTxt = iv <= 0 ? R.t('srs_next_now') : R.t('srs_next_days', { d: iv });
         const srsPillCls = iv <= 0 ? 'badge-amber' : 'badge-emerald';
-        const showRateButtons = (qz.sessionType === 'SRS' || qz.sessionType === 'ADAPTIVE') && ans.is_correct;
+        const showRateButtons = Boolean(ans.srs && qz.showAnswer);
         srsFeedbackHtml =
           '<div class="srs-meta-row">' +
           '  <span class="badge-pill ' + srsPillCls + ' font-mono">' + R.escHtml(srsTxt) + ' • EF ' + Number(ans.srs.ease_factor || 2.5).toFixed(2) + '</span>' +
           (showRateButtons
             ? '<div class="srs-rating-row">' +
+              '  <button type="button" class="filter-chip ' + (ans.srs.last_quality === 1 ? 'active' : '') + '" data-srs-rate="1">' + R.escHtml(R.t('srs_rate_again')) + '</button>' +
               '  <button type="button" class="filter-chip ' + (ans.srs.last_quality === 3 ? 'active' : '') + '" data-srs-rate="3">' + R.escHtml(R.t('srs_rate_hard')) + '</button>' +
               '  <button type="button" class="filter-chip ' + (ans.srs.last_quality === 4 ? 'active' : '') + '" data-srs-rate="4">' + R.escHtml(R.t('srs_rate_good')) + '</button>' +
               '  <button type="button" class="filter-chip ' + (ans.srs.last_quality === 5 ? 'active' : '') + '" data-srs-rate="5">' + R.escHtml(R.t('srs_rate_easy')) + '</button>' +
@@ -241,9 +325,7 @@
       R.openLightbox(q.image_url, q.question_text);
     });
     document.getElementById('btn-quiz-ask-ai')?.addEventListener('click', function () {
-      clearQuizTimer();
-      R.state.quiz.active = false;
-      document.body.classList.remove('focus-mode');
+      clearAutoAdvance();
       R.askAiAboutQuestion(q, ans.selected_key, ans.is_correct);
     });
 
@@ -271,11 +353,12 @@
           clearAutoAdvance();
           const upd = await R.api('/api/srs/review', {
             method: 'POST',
-            body: { canonical_id: q.canonical_id, quality: qualityVal }
+            body: { canonical_id: q.canonical_id, quality: qualityVal, recalibrate: true }
           });
           if (upd && upd.srs && ans) {
             ans.srs = upd.srs;
             R.haptic('light');
+            saveQuizDraft();
             R.renderQuizQuestion();
           }
         } catch (e) {}
@@ -309,13 +392,19 @@
         }
       });
       qz.answers[q.canonical_id] = res;
+      saveQuizDraft();
       if (res.streak) R.state.streak = Object.assign(R.state.streak || {}, res.streak);
       R.haptic(res.is_correct ? 'success' : 'error');
 
       if (res.is_exam_terminated) {
-        R.showToast(R.t('res_exam_terminated_toast'), 3200);
         qz.isSubmitting = false;
-        await R.finishSession(true);
+        R.renderQuizQuestion();
+        R.showToast(R.t('quiz_3rd_mistake_pause'), 3000);
+        setTimeout(function () {
+          if (R.state.quiz.sessionId === qz.sessionId) {
+            R.finishSession(true);
+          }
+        }, 2800);
         return;
       }
       qz.isSubmitting = false;
@@ -354,6 +443,7 @@
     }
 
     clearQuizTimer();
+    clearQuizDraft();
     const elapsed = Math.round((Date.now() - (qz.startTime || Date.now())) / 1000);
     qz.active = false;
     document.body.classList.remove('focus-mode');

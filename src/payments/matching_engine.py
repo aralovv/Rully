@@ -303,16 +303,18 @@ def _reconcile_payment_sync(
                 },
             )
 
-        # --- SCENARIO 2: LATE PAYMENT (Matches recently EXPIRED order atomically) ---
+        # --- SCENARIO 2: LATE PAYMENT (Matches EXPIRED order within 24h window atomically) ---
+        late_window_cutoff = (now_dt - timedelta(hours=24)).isoformat()
         c.execute(
             """
             SELECT * FROM payment_orders
             WHERE status = 'EXPIRED'
               AND final_amount_uzs = ?
               AND card_suffix = ?
+              AND expires_at >= ?
             ORDER BY created_at DESC LIMIT 1
             """,
-            (amount_uzs, card_suffix),
+            (amount_uzs, card_suffix, late_window_cutoff),
         )
         expired_order = c.fetchone()
 
