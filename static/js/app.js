@@ -43,6 +43,87 @@
     }
   };
 
+  R.resolveDeepLinkRoute = function () {
+    try {
+      const qRoute = new URLSearchParams(window.location.search).get('route');
+      if (qRoute) return String(qRoute).trim().toLowerCase();
+    } catch (e) {}
+    try {
+      const sp = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.start_param;
+      if (sp) return String(sp).trim().toLowerCase();
+    } catch (e) {}
+    try {
+      const rawHash = String(window.location.hash || '').replace(/^#/, '');
+      if (rawHash && !rawHash.startsWith('tgWebAppData=')) {
+        return rawHash.split('&')[0].trim().toLowerCase();
+      }
+    } catch (e) {}
+    return '';
+  };
+
+  R.applyDeepLinkRoute = function (routeArg) {
+    const route = String(routeArg !== undefined ? routeArg : R.resolveDeepLinkRoute() || '').trim().toLowerCase();
+    if (!route) return false;
+
+    const biletMatch = route.match(/^(?:bilet|ticket)[_-]?(\d{1,3})$/);
+    if (biletMatch) {
+      const ticketNo = parseInt(biletMatch[1], 10);
+      R.state.prepareSubtab = 'tickets';
+      R.navigateTo('tests');
+      if (ticketNo >= 1 && typeof R.startSession === 'function') {
+        R.startSession({ session_type: 'TICKET', ticket_number: ticketNo });
+      }
+      return true;
+    }
+
+    if (route === 'amaliy') {
+      R.navigateTo('amaliy');
+      return true;
+    }
+    if (route === 'ai' || route === 'ustoz') {
+      R.navigateTo('ai');
+      return true;
+    }
+    if (route === 'profile' || route === 'stats') {
+      R.navigateTo('profile');
+      return true;
+    }
+    if (route === 'exam' && typeof R.startSession === 'function') {
+      R.startSession({ session_type: 'EXAM' });
+      return true;
+    }
+    if (route === 'mistakes' && typeof R.startSession === 'function') {
+      R.startSession({ session_type: 'MISTAKES' });
+      return true;
+    }
+    if (route === 'srs' || route === 'takrorlash' || route === 'adaptive') {
+      R.state.prepareSubtab = 'adaptive';
+      R.navigateTo('tests');
+      return true;
+    }
+    if (route === 'signs' || route === 'belgilar') {
+      R.state.prepareSubtab = 'signs';
+      R.navigateTo('tests');
+      return true;
+    }
+    if (route === 'rules' || route === 'qoidalar' || route === 'law') {
+      R.state.prepareSubtab = 'rules';
+      R.navigateTo('tests');
+      return true;
+    }
+    if (route === 'tickets' || route === 'bilets') {
+      R.state.prepareSubtab = 'tickets';
+      R.navigateTo('tests');
+      return true;
+    }
+    if (route === 'tests' || route === 'topics') {
+      R.state.prepareSubtab = 'topics';
+      R.navigateTo('tests');
+      return true;
+    }
+    return false;
+  };
+
   R.syncShellUI = function () {
     const u = R.state.user || {};
     const displayName = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username || 'RULLY';
@@ -85,6 +166,7 @@
     R.state.analytics = null;
     R.state.refSigns = null;
     R.state.refLaw = null;
+    R.state.srsQueue = null;
     R.syncShellUI();
     R.closeModal('lang-modal');
     R.navigateTo(R.state.activeTab);
@@ -272,8 +354,13 @@
       }
 
       R.syncShellUI();
-      R.renderHome();
+      if (!R.applyDeepLinkRoute()) {
+        R.renderHome();
+      }
       R.loadAnalyticsAsync();
+      window.addEventListener('hashchange', function () {
+        R.applyDeepLinkRoute();
+      });
     } catch (err) {
       R.state.authPending = false;
       if (err && err.status === 401) {

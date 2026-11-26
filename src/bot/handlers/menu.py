@@ -5,7 +5,11 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from aiogram.filters import Command
 from src.bot.database import BotDatabase
-from src.bot.keyboards import get_main_menu_keyboard, get_language_keyboard
+from src.bot.keyboards import (
+    get_main_menu_keyboard,
+    get_language_keyboard,
+    get_help_sections_keyboard,
+)
 from src.bot.strings import get_str
 from src.bot.config import WEB_APP_URL
 
@@ -85,10 +89,7 @@ async def cb_help(callback: CallbackQuery, db: BotDatabase):
     user_id = callback.from_user.id
     lang = db.get_user_language(user_id)
     await callback.answer()
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=get_str("btn_rully_app", lang), web_app=WebAppInfo(url=WEB_APP_URL))],
-        [InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="menu:main")]
-    ])
+    kb = get_help_sections_keyboard(lang)
     try:
         await callback.message.edit_text(
             text=get_str("help_text", lang),

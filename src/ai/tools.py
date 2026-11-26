@@ -1,7 +1,16 @@
 import json
-from typing import List, Dict, Any, Optional
+from datetime import datetime
+from typing import List, Dict, Any, Optional, Tuple
 from src.db_adapter import get_db_connection
 from src.bot.category_localization import localize_category
+
+_PROVENANCE_COLUMNS = (
+    "legal_verification_status",
+    "legal_doc_title",
+    "legal_chapter",
+    "legal_clause",
+    "legal_doc_url",
+)
 
 def normalize_lang(language: Optional[str]) -> str:
     lang = (language or "uz_latn").lower().strip()
@@ -11,19 +20,67 @@ def normalize_lang(language: Optional[str]) -> str:
         return "uz_cyrl"
     return "uz_latn"
 
+def get_provenance_select_sql(conn: Any, alias: str = "cq") -> str:
+    """Returns safe SELECT column expressions for legal provenance across v1/v2 schemas."""
+    try:
+        c = conn.cursor()
+        c.execute("PRAGMA table_info(canonical_questions)")
+        existing = {row[1] if isinstance(row, tuple) else row["name"] for row in c.fetchall()}
+    except Exception:
+        existing = set()
+    exprs = []
+    for col in _PROVENANCE_COLUMNS:
+        if col in existing:
+            exprs.append(f"{alias}.{col}")
+        else:
+            exprs.append(f"NULL AS {col}")
+    return ", ".join(exprs)
+
+def format_legal_provenance_payload(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Formats legal verification metadata and prevents unverified VMQ citations."""
+    status = row.get("legal_verification_status") or (
+        "VERIFIED_PRIMARY_LAW" if row.get("legal_reference") else "UNRESOLVED_LEGAL_REVIEW"
+    )
+    legal_ref = row.get("legal_reference")
+    doc_title = row.get("legal_doc_title")
+    chapter = row.get("legal_chapter")
+    clause = row.get("legal_clause")
+    doc_url = row.get("legal_doc_url")
+
+    if status == "UNRESOLVED_LEGAL_REVIEW":
+        note = "UNRESOLVED_LEGAL_REVIEW: Rasmiy VMQ 172 bandi tekshiruvda — taxminiy modda raqamini yozmang."
+        safe_ref = None
+    elif status == "VERIFIED_FIRST_AID_OR_TECH":
+        note = "VERIFIED_FIRST_AID_OR_TECH: Birinchi tibbiy yordam yoki texnik xavfsizlik qoidasi (VMQ 172 moddasi emas)."
+        safe_ref = legal_ref
+    else:
+        note = "VERIFIED_PRIMARY_LAW"
+        safe_ref = legal_ref
+
+    return {
+        "legal_reference": safe_ref,
+        "legal_verification_status": status,
+        "legal_doc_title": doc_title,
+        "legal_chapter": chapter,
+        "legal_clause": clause,
+        "legal_doc_url": doc_url,
+        "legal_guardrail_note": note,
+    }
+
 def tool_search_questions(
     query: str,
     category_id: Optional[int] = None,
     limit: int = 3,
     language: str = "uz_latn"
 ) -> Dict[str, Any]:
-    """1295 ta savol ichidan qidirish (savol matni, izohi yoki qonuniy havolasi bo‘yicha)."""
+    """1327 ta savol ichidan qidirish (savol matni, izohi yoki qonuniy havolasi bo‘yicha)."""
     with get_db_connection() as conn:
         c = conn.cursor()
         
         lang = normalize_lang(language)
         col_text = f"text_{lang}"
         q_pattern = f"%{query}%"
+        prov_sql = get_provenance_select_sql(conn, "cq")
         
         cat_sql = ""
         params = [lang, q_pattern, q_pattern, q_pattern]
@@ -35,6 +92,7 @@ def tool_search_questions(
         
         sql = f"""
         SELECT cq.canonical_id, cq.category_id, cq.category_name, cq.correct_option_key, cq.legal_reference,
+               {prov_sql},
                ct.question_text, ct.explanation
         FROM canonical_questions cq
         JOIN canonical_translations ct ON cq.canonical_id = ct.canonical_id AND ct.language = ?
@@ -69,16 +127,18 @@ def tool_search_questions(
 
         results = []
         for idx, r in enumerate(rows):
-            cid = r["canonical_id"]
+            rd = dict(r)
+            cid = rd["canonical_id"]
+            prov = format_legal_provenance_payload(rd)
             results.append({
                 "canonical_id": cid,
                 "question_number": idx + 1,
-                "category_name": localize_category(r["category_name"], lang),
-                "question": r["question_text"],
-                "legal_reference": r["legal_reference"],
-                "explanation": r["explanation"],
-                "correct_option_key": r["correct_option_key"],
-                "options": answers_by_cid.get(cid, [])
+                "category_name": localize_category(rd["category_name"], lang),
+                "question": rd["question_text"],
+                "explanation": rd["explanation"],
+                "correct_option_key": rd["correct_option_key"],
+                "options": answers_by_cid.get(cid, []),
+                **prov,
             })
             
         return {
@@ -145,9 +205,11 @@ def tool_get_user_mistakes(user_id: int, limit: int = 5, language: str = "uz_lat
         
         lang = normalize_lang(language)
         col_text = f"text_{lang}"
+        prov_sql = get_provenance_select_sql(conn, "cq")
         
-        c.execute("""
+        c.execute(f"""
         SELECT um.canonical_id, um.mistake_count, cq.category_name, cq.correct_option_key, cq.legal_reference,
+               {prov_sql},
                ct.question_text, ct.explanation
         FROM user_mistakes um
         JOIN canonical_questions cq ON um.canonical_id = cq.canonical_id
@@ -173,17 +235,19 @@ def tool_get_user_mistakes(user_id: int, limit: int = 5, language: str = "uz_lat
 
         results = []
         for idx, r in enumerate(rows):
-            cid = r["canonical_id"]
+            rd = dict(r)
+            cid = rd["canonical_id"]
+            prov = format_legal_provenance_payload(rd)
             results.append({
                 "canonical_id": cid,
                 "question_number": idx + 1,
-                "mistake_count": r["mistake_count"],
-                "category_name": localize_category(r["category_name"], lang),
-                "question": r["question_text"],
-                "legal_reference": r["legal_reference"],
-                "explanation": r["explanation"],
-                "correct_option_key": r["correct_option_key"],
-                "options": answers_by_cid.get(cid, [])
+                "mistake_count": rd["mistake_count"],
+                "category_name": localize_category(rd["category_name"], lang),
+                "question": rd["question_text"],
+                "explanation": rd["explanation"],
+                "correct_option_key": rd["correct_option_key"],
+                "options": answers_by_cid.get(cid, []),
+                **prov,
             })
             
         return {
@@ -192,7 +256,7 @@ def tool_get_user_mistakes(user_id: int, limit: int = 5, language: str = "uz_lat
         }
 
 def tool_get_user_statistics(user_id: int, language: str = "uz_latn") -> Dict[str, Any]:
-    """Foydalanuvchining umumiy tayyorgarlik darajasi, imtihonlari va statistikasini olish."""
+    """Foydalanuvchining umumiy tayyorgarlik darajasi, imtihonlari, SM-2 takrorlash holati va statistikasini olish."""
     with get_db_connection() as conn:
         c = conn.cursor()
         
@@ -215,6 +279,30 @@ def tool_get_user_statistics(user_id: int, language: str = "uz_latn") -> Dict[st
         SELECT COUNT(*) as total_mistakes FROM user_mistakes WHERE user_id = ?
         """, (user_id,))
         mistake_count = c.fetchone()["total_mistakes"]
+
+        srs_tracked = 0
+        srs_due_now = 0
+        srs_mastered = 0
+        try:
+            now_ts = datetime.utcnow().isoformat()
+            c.execute(
+                """
+                SELECT COUNT(*) AS tracked_count,
+                       COALESCE(SUM(CASE WHEN next_review_at <= ? THEN 1 ELSE 0 END), 0) AS due_now_count,
+                       COALESCE(SUM(CASE WHEN repetitions >= 3 AND interval_days >= 21 AND ease_factor >= 2.0 THEN 1 ELSE 0 END), 0) AS mastered_count
+                FROM user_question_srs
+                WHERE user_id = ?
+                """,
+                (now_ts, user_id),
+            )
+            srs_row = dict(c.fetchone() or {})
+            srs_tracked = int(srs_row.get("tracked_count") or 0)
+            srs_due_now = int(srs_row.get("due_now_count") or 0)
+            srs_mastered = int(srs_row.get("mastered_count") or 0)
+        except Exception:
+            pass
+
+        srs_retention = round(((srs_tracked - min(srs_tracked, srs_due_now)) / srs_tracked) * 100.0, 1) if srs_tracked > 0 else 100.0
         
         return {
             "total_exams_taken": exam_stats["total_exams"] or 0,
@@ -222,7 +310,71 @@ def tool_get_user_statistics(user_id: int, language: str = "uz_latn") -> Dict[st
             "average_correct_answers": round(exam_stats["avg_score"] or 0.0, 1),
             "average_percentage": round(exam_stats["avg_percentage"] or 0.0, 1),
             "saved_questions_count": bm_count,
-            "mistakes_in_pool": mistake_count
+            "mistakes_in_pool": mistake_count,
+            "srs_tracked_total": srs_tracked,
+            "srs_due_now": srs_due_now,
+            "srs_mastered_count": srs_mastered,
+            "srs_retention_pct": srs_retention,
+        }
+
+def tool_get_srs_review_queue(user_id: int, limit: int = 5, language: str = "uz_latn") -> Dict[str, Any]:
+    """Aqlli Takrorlash (SM-2) bo'yicha muddati kelgan yoki eng qiyin savollarni olish."""
+    lang = normalize_lang(language)
+    safe_limit = max(1, min(int(limit or 5), 10))
+    now_ts = datetime.utcnow().isoformat()
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        prov_sql = get_provenance_select_sql(conn, "cq")
+        try:
+            c.execute(
+                f"""
+                SELECT s.canonical_id, s.ease_factor, s.interval_days, s.repetitions, s.lapses, s.next_review_at,
+                       cq.category_name, cq.correct_option_key, cq.legal_reference,
+                       {prov_sql},
+                       ct.question_text, ct.explanation
+                FROM user_question_srs s
+                JOIN canonical_questions cq ON s.canonical_id = cq.canonical_id
+                LEFT JOIN canonical_translations ct ON s.canonical_id = ct.canonical_id AND ct.language = ?
+                WHERE s.user_id = ?
+                ORDER BY
+                    CASE WHEN s.next_review_at <= ? THEN 0 ELSE 1 END ASC,
+                    s.next_review_at ASC,
+                    s.ease_factor ASC,
+                    s.lapses DESC
+                LIMIT ?
+                """,
+                (lang, user_id, now_ts, safe_limit),
+            )
+            rows = c.fetchall()
+        except Exception:
+            rows = []
+
+        items = []
+        due_count = 0
+        for idx, r in enumerate(rows):
+            rd = dict(r)
+            is_due = str(rd.get("next_review_at") or "") <= now_ts
+            if is_due:
+                due_count += 1
+            prov = format_legal_provenance_payload(rd)
+            items.append({
+                "canonical_id": rd["canonical_id"],
+                "question_number": idx + 1,
+                "category_name": localize_category(rd["category_name"], lang),
+                "question": rd["question_text"],
+                "explanation": rd["explanation"],
+                "correct_option_key": rd["correct_option_key"],
+                "ease_factor": round(float(rd.get("ease_factor") or 2.5), 2),
+                "interval_days": int(rd.get("interval_days") or 0),
+                "lapses": int(rd.get("lapses") or 0),
+                "is_due": is_due,
+                **prov,
+            })
+
+        return {
+            "count": len(items),
+            "due_count": due_count,
+            "srs_items": items,
         }
 
 # Gemini Function Declarations Schema
@@ -277,10 +429,23 @@ GEMINI_TOOLS_DECLARATIONS = [
     },
     {
         "name": "get_user_statistics",
-        "description": "Foydalanuvchining umumiy imtihon topshirish tarixi, o'rtacha balli va xatolar sonini yuklash.",
+        "description": "Foydalanuvchining umumiy imtihon topshirish tarixi, o'rtacha balli, SM-2 takrorlash darajasi va xatolar sonini yuklash.",
         "parameters": {
             "type": "OBJECT",
             "properties": {}
+        }
+    },
+    {
+        "name": "get_srs_review_queue",
+        "description": "Talabaning Aqlli Takrorlash (SM-2) jadvalidagi muddati kelgan yoki esda saqlash qiyin bo'lgan savollarni yuklash.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "limit": {
+                    "type": "INTEGER",
+                    "description": "Olinadigan savollar soni (1 dan 8 gacha)"
+                }
+            }
         }
     }
 ]
@@ -289,5 +454,6 @@ TOOL_MAPPING = {
     "search_questions": lambda args, uid, lang="uz_latn": tool_search_questions(args.get("query", ""), args.get("category_id"), args.get("limit", 3), language=lang),
     "get_user_bookmarks": lambda args, uid, lang="uz_latn": tool_get_user_bookmarks(uid, args.get("limit", 5), language=lang),
     "get_user_mistakes": lambda args, uid, lang="uz_latn": tool_get_user_mistakes(uid, args.get("limit", 5), language=lang),
-    "get_user_statistics": lambda args, uid, lang="uz_latn": tool_get_user_statistics(uid, language=lang)
+    "get_user_statistics": lambda args, uid, lang="uz_latn": tool_get_user_statistics(uid, language=lang),
+    "get_srs_review_queue": lambda args, uid, lang="uz_latn": tool_get_srs_review_queue(uid, args.get("limit", 5), language=lang),
 }

@@ -410,7 +410,26 @@ const I18N = {
     review_filter_mistakes: "Faqat xatolar",
     cs_search_placeholder: "Shpargalkadan qidirish (5m, tramvay, 110)...",
     home_signs_desc: "7 guruh belgilari va qoidalar",
-    home_rules_desc: "29 bob VMQ №172 va meʼyorlar"
+    home_rules_desc: "29 bob VMQ №172 va meʼyorlar",
+    srs_mode_title: "Aqlli Takrorlash (SM-2)",
+    srs_subtitle: "Unutish egri chizig‘iga asoslangan kundalik takrorlash tizimi.",
+    srs_due_now_lbl: "Bugun takrorlash",
+    srs_learning_lbl: "O‘rganilmoqda",
+    srs_reviewing_lbl: "Mustahkamlanmoqda",
+    srs_mastered_lbl: "O‘zlashtirilgan",
+    srs_retention_lbl: "Xotira saqlanishi",
+    btn_start_srs: "Aqlli takrorlashni boshlash",
+    srs_queue_preview_title: "Navbatdagi takrorlash savollari",
+    srs_queue_empty: "Hozircha navbat bo‘sh — istalgan testni yeching va SM-2 avtomatik rejalashtiradi.",
+    srs_next_now: "SM-2: Hoziroq takrorlanadi",
+    srs_next_days: "Keyingi takrorlash: {d} kun",
+    srs_due_badge: "{n} takrorlash",
+    rec_srs_review_title: "Kunlik Aqlli Takrorlash vaqti",
+    rec_srs_review_desc: "SM-2 bo‘yicha {n} ta savol esdan chiqmasidan takrorlash uchun navbatda turibdi.",
+    srs_rate_hard: "Qiyin",
+    srs_rate_good: "Yaxshi",
+    srs_rate_easy: "Oson",
+    milestone_memory_master: "25 savol xotirada"
   },
 
   uz_cyrl: {
@@ -819,7 +838,26 @@ const I18N = {
     review_filter_mistakes: "Фақат хатолар",
     cs_search_placeholder: "Шпаргалкадан қидириш (5м, трамвай, 110)...",
     home_signs_desc: "7 гуруҳ белгилари ва қоидалар",
-    home_rules_desc: "29 боб ВМҚ №172 ва меъёрлар"
+    home_rules_desc: "29 боб ВМҚ №172 ва меъёрлар",
+    srs_mode_title: "Ақлли Такрорлаш (SM-2)",
+    srs_subtitle: "Унутиш эгри чизиғига асосланган кундалик такрорлаш тизими.",
+    srs_due_now_lbl: "Бугун такрорлаш",
+    srs_learning_lbl: "Ўрганилмоқда",
+    srs_reviewing_lbl: "Мустаҳкамланмоқда",
+    srs_mastered_lbl: "Ўзлаштирилган",
+    srs_retention_lbl: "Хотира сақланиши",
+    btn_start_srs: "Ақлли такрорлашни бошлаш",
+    srs_queue_preview_title: "Навбатдаги такрорлаш саволлари",
+    srs_queue_empty: "Ҳозирча навбат бўш — исталган тестни ечинг ва SM-2 автоматик режалаштиради.",
+    srs_next_now: "SM-2: Ҳозироқ такрорланади",
+    srs_next_days: "Кейинги такрорлаш: {d} кун",
+    srs_due_badge: "{n} такрорлаш",
+    rec_srs_review_title: "Кунлик Ақлли Такрорлаш вақти",
+    rec_srs_review_desc: "SM-2 бўйича {n} та савол эсдан чиқмасидан такрорлаш учун навбатда турибди.",
+    srs_rate_hard: "Қийин",
+    srs_rate_good: "Яхши",
+    srs_rate_easy: "Осон",
+    milestone_memory_master: "25 савол хотирада"
   },
 
   ru: {
@@ -1228,7 +1266,26 @@ const I18N = {
     review_filter_mistakes: "Только ошибки",
     cs_search_placeholder: "Поиск в шпаргалке (5м, трамвай, 110)...",
     home_signs_desc: "7 групп знаков и правила",
-    home_rules_desc: "29 глав ПКМ №172 и нормы"
+    home_rules_desc: "29 глав ПКМ №172 и нормы",
+    srs_mode_title: "Умное повторение (SM-2)",
+    srs_subtitle: "Ежедневное повторение по кривой забывания.",
+    srs_due_now_lbl: "Повторить сегодня",
+    srs_learning_lbl: "Изучаются",
+    srs_reviewing_lbl: "Закрепляются",
+    srs_mastered_lbl: "Освоено",
+    srs_retention_lbl: "Сохранность знаний",
+    btn_start_srs: "Начать умное повторение",
+    srs_queue_preview_title: "Очередь на повторение",
+    srs_queue_empty: "Пока очередь пуста — решите любой тест, и SM-2 составит план.",
+    srs_next_now: "SM-2: Повтор сейчас",
+    srs_next_days: "Следующий повтор: {d} дн.",
+    srs_due_badge: "{n} к повтору",
+    rec_srs_review_title: "Время умного повторения",
+    rec_srs_review_desc: "{n} вопросов ждут повторения по алгоритму SM-2.",
+    srs_rate_hard: "Сложно",
+    srs_rate_good: "Хорошо",
+    srs_rate_easy: "Легко",
+    milestone_memory_master: "25 в памяти"
   }
 };
 

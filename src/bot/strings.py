@@ -141,7 +141,30 @@ STRINGS: Dict[str, Dict[str, str]] = {
         "session_expired": "⏰ <b>Vaqt tugadi!</b> Belgilangan vaqt chegarasi yakunlandi.",
         "session_cancelled": "🛑 Faol test bekor qilindi.",
         "already_answered": "⚠️ Siz bu savolga allaqachon javob bergansiz.",
-        "error_generic": "⚠️ Xatolik yuz berdi. Iltimos, /menu orqali qayta urinib ko‘ring."
+        "error_generic": "⚠️ Xatolik yuz berdi. Iltimos, /menu orqali qayta urinib ko‘ring.",
+
+        # Phase 6: SM-2 & Bilet UX Parity
+        "card_header_srs": "🧠 <b>AVTOTEST • AQLLI TAKRORLASH (SM-2)</b>",
+        "card_header_adaptive": "🧠 <b>AVTOTEST • MOSLASHUVCHAN MASHQ</b>",
+        "card_header_ticket": "🎫 <b>AVTOTEST • RASMIY BILET</b>",
+        "btn_srs_review": "🧠 Aqlli Takrorlash (SM-2)",
+        "btn_bilets": "🎫 Rasmiy biletlar (1–67)",
+        "btn_signs": "🛑 Yo‘l belgilari",
+        "btn_rules": "📜 YHQ VMQ 172 qonuni",
+        "btn_ai_ustoz": "🤖 AI Ustoz (PRO)",
+        "srs_intro": (
+            "🧠 <b>AQLLI TAKRORLASH (SM-2)</b>\n\n"
+            "• Bugun takrorlash kerak: <b>{due_now} ta</b> savol\n"
+            "• Mustahkam o‘zlashtirilgan: <b>{mastered}/{tracked} ta</b>\n\n"
+            "Eng qiyin va esdan chiqayotgan savollar avtomatik tartiblandi."
+        ),
+        "srs_empty_info": (
+            "🧠 <b>Hozircha muddati kelgan SM-2 takrorlash savoli yo‘q!</b>\n\n"
+            "Avval bir nechta test yoki bilet yeching — algoritm sizning javoblaringizga qarab "
+            "takrorlash jadvalini avtomatik tuzadi."
+        ),
+        "bilets_title": "🎫 <b>RASMIY BILETLAR (1–67)</b>",
+        "bilets_desc": "Kerakli bilet raqamini tanlang yoki <code>/bilet 5</code> deb yozing:",
     },
 
     "uz_cyrl": {
@@ -275,7 +298,30 @@ STRINGS: Dict[str, Dict[str, str]] = {
         "session_expired": "⏰ <b>Вақт тугади!</b> Белгиланган вақт чегараси якунланди.",
         "session_cancelled": "🛑 Фаол тест бекор қилинди.",
         "already_answered": "⚠️ Сиз бу саволга аллақачон жавоб бергансиз.",
-        "error_generic": "⚠️ Хатолик юз берди. Илтимос, /menu орқали қайта уриниб кўринг."
+        "error_generic": "⚠️ Хатолик юз берди. Илтимос, /menu орқали қайта уриниб кўринг.",
+
+        # Phase 6: SM-2 & Bilet UX Parity
+        "card_header_srs": "🧠 <b>АВТОТЕСТ • АҚЛЛИ ТАКРОРЛАШ (SM-2)</b>",
+        "card_header_adaptive": "🧠 <b>АВТОТЕСТ • МОСЛАШУВЧАН МАШҚ</b>",
+        "card_header_ticket": "🎫 <b>АВТОТЕСТ • РАСМИЙ БИЛЕТ</b>",
+        "btn_srs_review": "🧠 Ақлли Такрорлаш (SM-2)",
+        "btn_bilets": "🎫 Расмий билетлар (1–67)",
+        "btn_signs": "🛑 Йўл белгилари",
+        "btn_rules": "📜 ЙҲҚ ВМҚ 172 қонуни",
+        "btn_ai_ustoz": "🤖 AI Устоз (PRO)",
+        "srs_intro": (
+            "🧠 <b>АҚЛЛИ ТАКРОРЛАШ (SM-2)</b>\n\n"
+            "• Бугун такрорлаш керак: <b>{due_now} та</b> савол\n"
+            "• Мустаҳкам ўзлаштирилган: <b>{mastered}/{tracked} та</b>\n\n"
+            "Энг қийин ва эсдан чиқаётган саволлар автоматик тартибланди."
+        ),
+        "srs_empty_info": (
+            "🧠 <b>Ҳозирча муддати келган SM-2 такрорлаш саволи йўқ!</b>\n\n"
+            "Аввал бир нечта тест ёки билет ечинг — алгоритм сизнинг жавобларингизга қараб "
+            "такрорлаш жадвалини автоматик тузади."
+        ),
+        "bilets_title": "🎫 <b>РАСМИЙ БИЛЕТЛАР (1–67)</b>",
+        "bilets_desc": "Керакли билет рақамини танланг ёки <code>/bilet 5</code> деб ёзинг:",
     },
 
     "ru": {
@@ -409,7 +455,29 @@ STRINGS: Dict[str, Dict[str, str]] = {
         "session_expired": "⏰ <b>Время вышло!</b> Лимит времени исчерпан.",
         "session_cancelled": "🛑 Текущий тест отменен.",
         "already_answered": "⚠️ Вы уже ответили на этот вопрос.",
-        "error_generic": "⚠️ Произошла ошибка. Пожалуйста, повторите через /menu."
+        "error_generic": "⚠️ Произошла ошибка. Пожалуйста, повторите через /menu.",
+
+        # Phase 6: SM-2 & Bilet UX Parity
+        "card_header_srs": "🧠 <b>АВТОТЕСТ • УМНОЕ ПОВТОРЕНИЕ (SM-2)</b>",
+        "card_header_adaptive": "🧠 <b>АВТОТЕСТ • АДАПТИВНАЯ ТРЕНИРОВКА</b>",
+        "card_header_ticket": "🎫 <b>АВТОТЕСТ • ОФИЦИАЛЬНЫЙ БИЛЕТ</b>",
+        "btn_srs_review": "🧠 Умное повторение (SM-2)",
+        "btn_bilets": "🎫 Официальные билеты (1–67)",
+        "btn_signs": "🛑 Дорожные знаки",
+        "btn_rules": "📜 Закон ПДД (ПКМ 172)",
+        "btn_ai_ustoz": "🤖 AI Наставник (PRO)",
+        "srs_intro": (
+            "🧠 <b>УМНОЕ ПОВТОРЕНИЕ (SM-2)</b>\n\n"
+            "• К повторению сегодня: <b>{due_now}</b> вопросов\n"
+            "• Надежно закреплено: <b>{mastered}/{tracked}</b>\n\n"
+            "Самые сложные и забываемые вопросы отсортированы автоматически."
+        ),
+        "srs_empty_info": (
+            "🧠 <b>Пока нет вопросов SM-2 с истекшим интервалом!</b>\n\n"
+            "Решите несколько тестов или билетов — алгоритм автоматически сформирует расписание повторений."
+        ),
+        "bilets_title": "🎫 <b>ОФИЦИАЛЬНЫЕ БИЛЕТЫ (1–67)</b>",
+        "bilets_desc": "Выберите номер билета или отправьте команду <code>/bilet 5</code>:",
     }
 }
 

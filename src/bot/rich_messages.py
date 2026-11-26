@@ -46,7 +46,10 @@ def format_rich_question(session_type: str, current_index: int, total_questions:
             "CUSTOM": get_str("card_header_custom", language),
             "CATEGORY": get_str("card_header_category", language),
             "QUICK": get_str("card_header_quick", language),
-            "MISTAKES": get_str("card_header_mistakes", language)
+            "MISTAKES": get_str("card_header_mistakes", language),
+            "SRS": get_str("card_header_srs", language),
+            "ADAPTIVE": get_str("card_header_adaptive", language),
+            "TICKET": get_str("card_header_ticket", language),
         }
         header_text = type_headers.get(session_type, get_str("card_header_exam", language))
 

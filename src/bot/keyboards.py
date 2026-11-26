@@ -252,6 +252,94 @@ def get_categories_keyboard(categories: List[Dict[str, Any]], page: int = 0,
     rows.append([InlineKeyboardButton(text=get_str("btn_back", language), callback_data="menu:main")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
+def build_webapp_route_url(route: str = "") -> str:
+    """Builds resilient Mini App deep-link URL preserving both query param and fragment."""
+    base = WEB_APP_URL.split("?")[0].split("#")[0].rstrip("/")
+    clean_route = (route or "").strip().lstrip("#").lstrip("/")
+    if not clean_route:
+        return base
+    return f"{base}?route={clean_route}#{clean_route}"
+
+
+# 11. Deep-Link Section Card Keyboard
+def get_deep_link_card_keyboard(
+    route_target: str,
+    app_btn_text: str,
+    language: str = "uz_latn",
+    inline_callback: Optional[str] = None,
+    inline_btn_text: Optional[str] = None,
+) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(text=app_btn_text, web_app=WebAppInfo(url=build_webapp_route_url(route_target)))]
+    ]
+    if inline_callback and inline_btn_text:
+        rows.append([InlineKeyboardButton(text=inline_btn_text, callback_data=inline_callback)])
+    rows.append([InlineKeyboardButton(text=get_str("btn_main_menu", language), callback_data="menu:main")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# 12. Help / Quick Mini App Section Shortcuts Hub
+def get_help_sections_keyboard(language: str = "uz_latn") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text=get_str("btn_exam", language), web_app=WebAppInfo(url=build_webapp_route_url("exam"))),
+        ],
+        [
+            InlineKeyboardButton(text=get_str("btn_srs_review", language), callback_data="menu:srs"),
+            InlineKeyboardButton(text=get_str("btn_bilets", language), callback_data="menu:bilets"),
+        ],
+        [
+            InlineKeyboardButton(text=get_str("btn_signs", language), web_app=WebAppInfo(url=build_webapp_route_url("signs"))),
+            InlineKeyboardButton(text=get_str("btn_rules", language), web_app=WebAppInfo(url=build_webapp_route_url("rules"))),
+        ],
+        [
+            InlineKeyboardButton(text=get_str("btn_amaliy", language), web_app=WebAppInfo(url=build_webapp_route_url("amaliy"))),
+            InlineKeyboardButton(text=get_str("btn_ai_ustoz", language), web_app=WebAppInfo(url=build_webapp_route_url("ai"))),
+        ],
+        [
+            InlineKeyboardButton(text=get_str("btn_back", language), callback_data="menu:main")
+        ],
+    ])
+
+
+# 13. Official Ticket (Bilet 1..67) Selector Keyboard
+def get_bilet_selection_keyboard(
+    total_tickets: int = 67,
+    page: int = 0,
+    page_size: int = 10,
+    language: str = "uz_latn",
+) -> InlineKeyboardMarkup:
+    safe_total = max(1, int(total_tickets))
+    total_pages = ((safe_total - 1) // page_size) + 1
+    page = max(0, min(page, total_pages - 1))
+    start_num = page * page_size + 1
+    end_num = min(start_num + page_size - 1, safe_total)
+
+    rows = []
+    current_row = []
+    for ticket_no in range(start_num, end_num + 1):
+        current_row.append(InlineKeyboardButton(text=f"#{ticket_no}", callback_data=f"bilet:start:{ticket_no}"))
+        if len(current_row) == 5:
+            rows.append(current_row)
+            current_row = []
+    if current_row:
+        rows.append(current_row)
+
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton(text="⬅️", callback_data=f"bilet:page:{page - 1}"))
+    nav_row.append(InlineKeyboardButton(text=f"{page + 1} / {total_pages}", callback_data="bilet:noop"))
+    if page + 1 < total_pages:
+        nav_row.append(InlineKeyboardButton(text="➡️", callback_data=f"bilet:page:{page + 1}"))
+    rows.append(nav_row)
+
+    rows.append([
+        InlineKeyboardButton(text=get_str("btn_rully_app", language), web_app=WebAppInfo(url=build_webapp_route_url("tickets")))
+    ])
+    rows.append([InlineKeyboardButton(text=get_str("btn_main_menu", language), callback_data="menu:main")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 # 10. Admin Keyboard
 def get_admin_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[

@@ -70,6 +70,7 @@
     const score = Number(stats.readiness_score || 0);
     const totalAns = Number(stats.total_questions_answered || 0);
     const meta = gradeMeta(stats.readiness_grade, score);
+    const srs = stats.srs_summary || (R.state.analytics && R.state.analytics.srs_summary) || null;
 
     const rows = [
       { title: R.t('pillar_exam_title'), desc: R.t('pillar_exam_desc'), val: pillars.exam_mastery || 0, weight: '30%' },
@@ -103,6 +104,19 @@
           (r.warmup ? '<p style="font-size:11.5px;color:var(--color-amber);margin-top:7px;font-weight:600;">' + R.icon('alertTriangle', 'xs') + ' ' + R.escHtml(r.warmup) + '</p>' : '') +
           '</div>';
       }).join('') +
+      (srs && srs.tracked_count > 0
+        ? '<div class="surface-card" style="padding:12px 14px;border-color:var(--color-primary-border);">' +
+          '  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;">' +
+          '    <strong style="font-size:13.5px;">' + R.escHtml(R.t('srs_mode_title')) + '</strong>' +
+          '    <span class="badge-pill badge-primary font-mono">' + Number(srs.retention_rate || 100).toFixed(0) + '% • EF ' + Number(srs.avg_ease_factor || 2.5).toFixed(2) + '</span>' +
+          '  </div>' +
+          '  <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--text-secondary);">' +
+          '    <span>' + R.escHtml(R.t('srs_due_now_lbl')) + ': <b>' + (srs.due_now_count || 0) + '</b></span>' +
+          '    <span>• ' + R.escHtml(R.t('srs_mastered_lbl')) + ': <b>' + (srs.mastered_count || 0) + '</b></span>' +
+          '    <span>• ' + R.escHtml(R.t('srs_reviewing_lbl')) + ': <b>' + (srs.reviewing_count || 0) + '</b></span>' +
+          '  </div>' +
+          '</div>'
+        : '') +
       '</div>' +
       '<button type="button" class="btn btn-primary btn-block" id="btn-readiness-dismiss">' + R.escHtml(R.t('btn_modal_dismiss')) + '</button>';
 
@@ -185,9 +199,14 @@
 
     // Smart Next Action from /api/learning/analytics
     const rec = analytics.recommendation || { kind: 'adaptive_starter', target_type: 'ADAPTIVE' };
+    const srsSummary = analytics.srs_summary || stats.srs_summary || {};
+    const srsDueNow = Number(srsSummary.due_now_count || 0);
     let recTitle = R.t('rec_adaptive_title');
     let recDesc = R.t('rec_adaptive_desc', { n: analytics.overall_coverage_pct || 0 });
-    if (rec.kind === 'mistake_drill') {
+    if (rec.kind === 'srs_review') {
+      recTitle = R.t('rec_srs_review_title');
+      recDesc = R.t('rec_srs_review_desc', { n: rec.metric || srsDueNow || 0 });
+    } else if (rec.kind === 'mistake_drill') {
       recTitle = R.t('rec_mistake_drill_title');
       recDesc = R.t('rec_mistake_drill_desc', { n: rec.metric || stats.unresolved_mistakes || 0 });
     } else if (rec.kind === 'weak_topic') {
@@ -197,6 +216,10 @@
       recTitle = R.t('rec_official_exam_title');
       recDesc = R.t('rec_official_exam_desc');
     }
+
+    const srsBadgeHtml = srsDueNow > 0
+      ? ' <span class="badge-pill badge-primary font-mono">' + R.escHtml(R.t('srs_due_badge', { n: srsDueNow })) + '</span>'
+      : '';
 
     const freeExamsChip = sub.is_pro
       ? '<span class="cockpit-quota-pill pro">PRO</span>'
@@ -326,7 +349,7 @@
       '  </button>' +
       '  <button type="button" class="surface-card card-interactive action-tile" id="tile-adaptive">' +
       '    <div class="tile-icon-box" style="background:var(--color-indigo-soft);color:var(--color-indigo);">' + R.icon('sliders', 'lg') + '</div>' +
-      '    <div class="tile-body"><div class="tile-title">' + R.escHtml(R.t('adaptive_title')) + '</div><div class="tile-desc">' + R.escHtml(R.t('custom_quiz_card_desc')) + '</div></div>' +
+      '    <div class="tile-body"><div class="tile-title"><span>' + R.escHtml(R.t('adaptive_title')) + '</span>' + srsBadgeHtml + '</div><div class="tile-desc">' + R.escHtml(R.t('custom_quiz_card_desc')) + '</div></div>' +
       '  </button>' +
       '  <button type="button" class="surface-card card-interactive action-tile" id="tile-amaliy">' +
       '    <div class="tile-icon-box badge-amber">' + R.icon('steeringWheel', 'lg') + '</div>' +
@@ -364,7 +387,9 @@
     const smartBtn = document.getElementById('home-smart-rec-btn');
     if (smartBtn) {
       smartBtn.addEventListener('click', function () {
-        if (rec.target_type === 'MISTAKES') {
+        if (rec.target_type === 'SRS') {
+          R.startSession({ session_type: 'SRS', total_questions: 20 });
+        } else if (rec.target_type === 'MISTAKES') {
           R.startSession({ session_type: 'MISTAKES', total_questions: 30 });
         } else if (rec.target_type === 'CATEGORY' && rec.target_id !== undefined) {
           R.startSession({ session_type: 'CATEGORY', category_id: rec.target_id, total_questions: 20 });

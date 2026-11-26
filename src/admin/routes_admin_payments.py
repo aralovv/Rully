@@ -17,6 +17,15 @@ from pydantic import BaseModel, Field
 
 from src.admin.deps import get_current_admin
 from src.db_adapter import execute_batch, get_db_connection
+try:
+    from src.mtproto.service import get_mtproto_manager
+except ImportError:
+    get_mtproto_manager = None
+from src.payments.matching_engine import (
+    _compute_extended_expiry_iso,
+    get_payment_reconciliation_health_sync,
+    link_unmatched_to_order_sync,
+)
 from src.security.telegram_notifier import send_user_payment_success_notification, send_late_payment_approved_alert
 
 router = APIRouter(prefix="/api/admin/payments", tags=["Admin Payments & Reconciliation"])
@@ -33,6 +42,11 @@ class ResolveReviewRequest(BaseModel):
 class ResolveUnmatchedRequest(BaseModel):
     status: str = Field("RESOLVED_REFUNDED", description="RESOLVED_LINKED, RESOLVED_REFUNDED, IGNORED")
     notes: str = Field(..., description="Resolution explanation")
+
+
+class LinkUnmatchedOrderRequest(BaseModel):
+    order_id: str = Field(..., description="Target PENDING or EXPIRED order_id to link")
+    notes: Optional[str] = Field("", description="Administrative audit explanation")
 
 
 @router.get("/transactions")
@@ -154,6 +168,53 @@ def resolve_unmatched_payment(
         ])
 
     return {"ok": True, "message": "Holat muvaffaqiyatli hal qilindi."}
+
+
+@router.post("/unmatched/{unmatched_id}/link-order")
+async def link_unmatched_payment_to_order(
+    unmatched_id: int,
+    req: LinkUnmatchedOrderRequest,
+    current_admin: dict = Depends(get_current_admin)
+):
+    """
+    Atomically links an unresolved Humo payment to a pending/expired order,
+    writes payment_transactions ledger entry, and activates user PRO subscription.
+    """
+    admin_name = current_admin["username"]
+    try:
+        res = await asyncio.to_thread(
+            link_unmatched_to_order_sync,
+            unmatched_id,
+            req.order_id.strip(),
+            current_admin["id"],
+            admin_name,
+            req.notes or "",
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+
+    try:
+        await send_user_payment_success_notification(
+            res["user_id"],
+            res["plan_name"],
+            res["expires_at"],
+            duration_days=res["duration_days"],
+        )
+        await send_late_payment_approved_alert(
+            res["order_id"],
+            res["amount_uzs"],
+            res["user_id"],
+            res["plan_name"],
+            admin_name,
+        )
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "message": f"Noma’lum to‘lov buyurtmaga ({res['order_id']}) bog‘landi va PRO faollashtirildi.",
+        **res,
+    }
 
 
 @router.get("/review-cases")
@@ -426,4 +487,31 @@ def get_reconciliation_report(current_admin: dict = Depends(get_current_admin)):
         "events_summary": events_summary,
         "ledger_summary": ledger_summary,
         "subscription_summary": sub_summary
+    }
+
+
+@router.get("/health")
+def get_payments_and_mtproto_health(current_admin: dict = Depends(get_current_admin)):
+    """Combined observability snapshot for Humo payment reconciliation & MTProto worker health."""
+    rec_health = get_payment_reconciliation_health_sync()
+    mtproto_status = (
+        get_mtproto_manager().get_status()
+        if get_mtproto_manager is not None
+        else {
+            "connection_status": "SERVERLESS_OFFLOADED",
+            "monitored_bot": "Humocardbot",
+            "active_orders_count": rec_health.get("pending_orders", 0),
+            "last_event_at": rec_health.get("last_event_at"),
+            "last_payment_at": None,
+            "last_error": None,
+            "has_telethon": False,
+            "is_live_connected": False,
+            "can_accept_simulated_events": True,
+            "is_ready_for_matching": False,
+        }
+    )
+    return {
+        "ok": True,
+        "reconciliation": rec_health,
+        "mtproto": mtproto_status,
     }

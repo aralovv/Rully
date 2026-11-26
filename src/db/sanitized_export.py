@@ -18,7 +18,7 @@ import re
 import sqlite3
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from src.db.migrations_v2 import apply_phase1_migrations
+from src.db.migrations_v2 import apply_all_migrations
 from src.db.sqlite_utils import backup_sqlite_wal_safe, list_user_tables
 from src.security.crypto import hash_password
 
@@ -44,6 +44,7 @@ WIPED_TABLES: Tuple[str, ...] = (
     "user_bookmarks",
     "user_completed_modules",
     "user_mistakes",
+    "user_question_srs",
     "user_sessions",
     "user_subscriptions",
     "user_ticket_progress",
@@ -174,9 +175,9 @@ def export_sanitized_dev_sqlite(
                 dst.executemany(f'INSERT INTO "{tbl_name}" ({col_list}) VALUES ({ph})', rows)
             counts_copied[tbl_name] = len(rows)
 
-        # Apply Phase 1D/1E migrations cleanly so local schema matches target contract
+        # Apply Phase 1D/1E & Phase 5 migrations cleanly so local schema matches target contract
         dst.commit()
-        apply_phase1_migrations(dst)
+        apply_all_migrations(dst)
 
         # Seed strictly synthetic non-PII fixtures for offline dev & pytest compatibility
         now_ts = datetime.utcnow().isoformat()

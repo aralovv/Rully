@@ -268,8 +268,10 @@
       exam_passer: R.t('milestone_exam_passer'),
       mistake_slayer: R.t('milestone_mistake_slayer'),
       ticket_finisher: R.t('milestone_ticket_finisher'),
-      avtodrom_pro: R.t('milestone_avtodrom_pro')
+      avtodrom_pro: R.t('milestone_avtodrom_pro'),
+      memory_master: R.t('milestone_memory_master')
     };
+    const srsSum = analytics.srs_summary || stats.srs_summary || null;
 
     const milestonesHtml = (analytics.milestones || []).map(function (ms) {
       return '<div class="milestone-card ' + (ms.unlocked ? 'unlocked' : '') + '">' +
@@ -313,6 +315,14 @@
         ? '<section class="surface-card" style="margin-bottom:14px;">' +
           '  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><strong>' + R.escHtml(R.t('analytics_coverage_label')) + '</strong><span class="font-mono" style="font-weight:700;">' + (analytics.unique_answered || 0) + ' / ' + analytics.total_bank_questions + ' (' + (analytics.overall_coverage_pct || 0) + '%)</span></div>' +
           '  <div class="progress-track" style="margin-bottom:10px;"><div class="progress-fill" style="width:' + Math.min(100, analytics.overall_coverage_pct || 0) + '%"></div></div>' +
+          (srsSum && srsSum.tracked_count > 0
+            ? '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--border-hairline);margin-bottom:6px;">' +
+              '  <div style="font-size:12px;"><b>' + R.escHtml(R.t('srs_mode_title')) + ':</b> ' + (srsSum.mastered_count || 0) + ' ' + R.escHtml(R.t('srs_mastered_lbl')) + ' • ' + Number(srsSum.retention_rate || 100).toFixed(0) + '%</div>' +
+              ((srsSum.due_now_count || 0) > 0
+                ? '<button type="button" class="btn btn-sm btn-primary" id="prof-start-srs-btn">' + R.escHtml(R.t('srs_due_badge', { n: srsSum.due_now_count })) + '</button>'
+                : '<span class="badge-pill badge-emerald font-mono">' + R.escHtml(R.t('srs_mastered_lbl')) + '</span>') +
+              '</div>'
+            : '') +
           (weakCatsHtml ? '<div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:4px;">' + R.escHtml(R.t('analytics_weak_title')) + '</div>' + weakCatsHtml : '') +
           '</section>'
         : '') +
@@ -377,6 +387,9 @@
       '</div>';
 
     document.getElementById('prof-upgrade-btn')?.addEventListener('click', R.openPaywallModal);
+    document.getElementById('prof-start-srs-btn')?.addEventListener('click', function () {
+      R.startSession({ session_type: 'SRS', total_questions: 20 });
+    });
     document.getElementById('prof-cheatsheet-btn')?.addEventListener('click', R.openCheatsheetModal);
     document.getElementById('prof-rules-btn')?.addEventListener('click', function () {
       if (typeof R.openLawModal === 'function') R.openLawModal();

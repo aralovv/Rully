@@ -81,6 +81,28 @@ EDITORIAL_INDEXES: Dict[str, str] = {
     "idx_editorial_canon": "CREATE INDEX IF NOT EXISTS idx_editorial_canon ON editorial_review_queue(canonical_id, language)",
 }
 
+USER_QUESTION_SRS_DDL = """
+CREATE TABLE IF NOT EXISTS user_question_srs (
+    user_id INTEGER NOT NULL,
+    canonical_id TEXT NOT NULL,
+    ease_factor REAL NOT NULL DEFAULT 2.5,
+    interval_days INTEGER NOT NULL DEFAULT 0,
+    repetitions INTEGER NOT NULL DEFAULT 0,
+    lapses INTEGER NOT NULL DEFAULT 0,
+    last_quality INTEGER NOT NULL DEFAULT 0,
+    last_reviewed_at TEXT NOT NULL,
+    next_review_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, canonical_id),
+    FOREIGN KEY (user_id) REFERENCES telegram_users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (canonical_id) REFERENCES canonical_questions(canonical_id) ON DELETE CASCADE
+)
+"""
+
+SRS_INDEXES: Dict[str, str] = {
+    "idx_srs_user_due": "CREATE INDEX IF NOT EXISTS idx_srs_user_due ON user_question_srs(user_id, next_review_at)",
+    "idx_srs_user_reps": "CREATE INDEX IF NOT EXISTS idx_srs_user_reps ON user_question_srs(user_id, repetitions, lapses)",
+}
+
 PROVENANCE_COLUMNS: List[Tuple[str, str]] = [
     ("legal_verification_status", "TEXT NOT NULL DEFAULT 'UNRESOLVED_LEGAL_REVIEW'"),
     ("legal_doc_title", "TEXT DEFAULT NULL"),
@@ -277,5 +299,111 @@ def rollback_phase1_migrations_local_test(conn: sqlite3.Connection) -> Dict[str,
         stmts.append("ALTER TABLE session_answers DROP COLUMN user_id")
 
     stmts.append("DROP TABLE IF EXISTS schema_migrations")
+    execute_batch(conn, stmts)
+    return {"rolled_back": True, "tables_remaining": list_user_tables(conn)}
+
+
+def apply_phase5_migrations(conn: Any) -> Dict[str, Any]:
+    """
+    Applies Phase 5 SM-2 Spaced Repetition schema migration (`003_phase5_user_question_srs`)
+    idempotently across SQLite and remote Turso using DDL-before-index batching.
+    """
+    _ensure_migrations_table(conn)
+    existing_tables = set(list_user_tables(conn))
+
+    if "user_question_srs" not in existing_tables:
+        execute_batch(conn, [USER_QUESTION_SRS_DDL.strip()])
+
+    existing_indexes = get_index_names(conn)
+    idx_003: List[Any] = []
+    for idx_name, idx_sql in SRS_INDEXES.items():
+        if idx_name not in existing_indexes:
+            idx_003.append(idx_sql)
+    idx_003.append(
+        _record_migration_stmt(
+            "003_phase5_user_question_srs",
+            "Create user_question_srs SM-2 spaced repetition table and due-queue indexes",
+            _checksum([USER_QUESTION_SRS_DDL] + list(SRS_INDEXES.values())),
+        )
+    )
+    execute_batch(conn, idx_003)
+
+    return {
+        "applied_migrations": ["003_phase5_user_question_srs"],
+        "parity": verify_phase5_schema_parity(conn),
+    }
+
+
+def apply_all_migrations(conn: Any) -> Dict[str, Any]:
+    """Applies Phase 1 (001, 002) and Phase 5 (003) migrations idempotently."""
+    p1 = apply_phase1_migrations(conn)
+    p5 = apply_phase5_migrations(conn)
+    combined_passed = bool(p1["parity"]["passed"] and p5["parity"]["passed"])
+    return {
+        "applied_migrations": p1["applied_migrations"] + p5["applied_migrations"],
+        "parity": {
+            "passed": combined_passed,
+            "phase1": p1["parity"],
+            "phase5": p5["parity"],
+        },
+    }
+
+
+def verify_phase5_schema_parity(conn: Any) -> Dict[str, Any]:
+    """Verifies Phase 5 user_question_srs table, columns, indexes, and zero FK orphans."""
+    tables = set(list_user_tables(conn))
+    indexes = get_index_names(conn)
+    srs_cols = get_table_columns(conn, "user_question_srs") if "user_question_srs" in tables else set()
+
+    expected_cols = {
+        "user_id",
+        "canonical_id",
+        "ease_factor",
+        "interval_days",
+        "repetitions",
+        "lapses",
+        "last_quality",
+        "last_reviewed_at",
+        "next_review_at",
+    }
+    missing_tables = sorted({"user_question_srs", "schema_migrations"} - tables)
+    missing_indexes = sorted(set(SRS_INDEXES.keys()) - indexes)
+    missing_cols = sorted(expected_cols - srs_cols)
+
+    orphans: Dict[str, int] = {}
+    if "user_question_srs" in tables:
+        cur = conn.cursor()
+        orphan_checks = {
+            "user_question_srs.user_id": (
+                "SELECT COUNT(*) FROM user_question_srs s LEFT JOIN telegram_users tu "
+                "ON s.user_id = tu.user_id WHERE tu.user_id IS NULL"
+            ),
+            "user_question_srs.canonical_id": (
+                "SELECT COUNT(*) FROM user_question_srs s LEFT JOIN canonical_questions cq "
+                "ON s.canonical_id = cq.canonical_id WHERE cq.canonical_id IS NULL"
+            ),
+        }
+        for label, sql in orphan_checks.items():
+            cur.execute(sql)
+            row = cur.fetchone()
+            cnt = row[0] if not hasattr(row, "values") else list(row.values())[0]
+            if cnt > 0:
+                orphans[label] = cnt
+
+    passed = not missing_tables and not missing_indexes and not missing_cols and not orphans
+    return {
+        "passed": passed,
+        "missing_tables": missing_tables,
+        "missing_indexes": missing_indexes,
+        "missing_srs_columns": missing_cols,
+        "fk_orphans": orphans,
+    }
+
+
+def rollback_phase5_migrations_local_test(conn: sqlite3.Connection) -> Dict[str, Any]:
+    """Removes Phase 5 SRS schema artifacts cleanly for isolated staging rollback drills."""
+    stmts: List[Any] = [f"DROP INDEX IF EXISTS {idx_name}" for idx_name in SRS_INDEXES.keys()]
+    stmts.append("DROP TABLE IF EXISTS user_question_srs")
+    stmts.append(("DELETE FROM schema_migrations WHERE version = ?", ["003_phase5_user_question_srs"]))
     execute_batch(conn, stmts)
     return {"rolled_back": True, "tables_remaining": list_user_tables(conn)}

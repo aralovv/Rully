@@ -8,7 +8,13 @@ import logging
 from typing import Dict, Any, List, Optional, Tuple
 import httpx
 from src.ai.prompts import SYSTEM_PROMPT_UZ, get_system_prompt
-from src.ai.tools import GEMINI_TOOLS_DECLARATIONS, TOOL_MAPPING, normalize_lang
+from src.ai.tools import (
+    GEMINI_TOOLS_DECLARATIONS,
+    TOOL_MAPPING,
+    normalize_lang,
+    get_provenance_select_sql,
+    format_legal_provenance_payload,
+)
 from src.db_adapter import get_db_connection
 
 logger = logging.getLogger(__name__)
@@ -200,9 +206,11 @@ class GeminiService:
                 if not resolved_id:
                     return None
 
-                c.execute("""
+                prov_sql = get_provenance_select_sql(conn, "cq")
+                c.execute(f"""
                 SELECT cq.canonical_id, cq.correct_option_key, cq.legal_reference, cq.category_name,
-                       ct.question_text, ct.explanation
+                       ct.question_text, ct.explanation,
+                       {prov_sql}
                 FROM canonical_questions cq
                 LEFT JOIN canonical_translations ct ON cq.canonical_id = ct.canonical_id AND ct.language = ?
                 WHERE cq.canonical_id = ?
@@ -211,11 +219,28 @@ class GeminiService:
                 if not q_row:
                     return None
 
-                correct_key = q_row["correct_option_key"] if isinstance(q_row, dict) else q_row[1]
-                legal_ref = q_row["legal_reference"] if isinstance(q_row, dict) else q_row[2]
-                category_name = q_row["category_name"] if isinstance(q_row, dict) else q_row[3]
-                q_text = q_row["question_text"] if isinstance(q_row, dict) else q_row[4]
-                explanation = q_row["explanation"] if isinstance(q_row, dict) else q_row[5]
+                if isinstance(q_row, dict) or hasattr(q_row, "keys"):
+                    q_dict = dict(q_row)
+                else:
+                    q_dict = {
+                        "canonical_id": q_row[0],
+                        "correct_option_key": q_row[1],
+                        "legal_reference": q_row[2],
+                        "category_name": q_row[3],
+                        "question_text": q_row[4],
+                        "explanation": q_row[5],
+                        "legal_verification_status": q_row[6] if len(q_row) > 6 else None,
+                        "legal_doc_title": q_row[7] if len(q_row) > 7 else None,
+                        "legal_chapter": q_row[8] if len(q_row) > 8 else None,
+                        "legal_clause": q_row[9] if len(q_row) > 9 else None,
+                        "legal_doc_url": q_row[10] if len(q_row) > 10 else None,
+                    }
+
+                correct_key = q_dict["correct_option_key"]
+                category_name = q_dict["category_name"]
+                q_text = q_dict["question_text"]
+                explanation = q_dict["explanation"]
+                prov = format_legal_provenance_payload(q_dict)
 
                 ans_col = f"text_{lang}" if lang in ("uz_latn", "uz_cyrl", "ru") else "text_uz_latn"
                 c.execute(f"""
@@ -225,7 +250,7 @@ class GeminiService:
                 LIMIT 1
                 """, (resolved_id, correct_key))
                 a_row = c.fetchone()
-                correct_text = (a_row[ans_col] if isinstance(a_row, dict) else a_row[1]) if a_row else ""
+                correct_text = (a_row[ans_col] if (isinstance(a_row, dict) or hasattr(a_row, "keys")) else a_row[1]) if a_row else ""
 
                 return {
                     "canonical_id": resolved_id,
@@ -233,28 +258,58 @@ class GeminiService:
                     "question_text": q_text,
                     "correct_key": correct_key,
                     "correct_text": correct_text,
-                    "legal_reference": legal_ref,
-                    "explanation": explanation
+                    "explanation": explanation,
+                    **prov,
                 }
         except Exception as e:
             logger.warning(f"Error fetching DB ground truth: {e}")
             return None
 
-    def _build_ground_truth_context(self, image_url: Optional[str], canonical_id: Optional[str], lang: str) -> Optional[str]:
-        """Combines verified scene passport and official DB exam ground truth into an authoritative prompt context."""
+    def _resolve_ground_truth_bundle(
+        self,
+        image_url: Optional[str],
+        canonical_id: Optional[str],
+        lang: str,
+        question_context: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+        """Builds prompt ground truth context and returns resolved DB metadata for post-guardrails."""
         clean_filename = os.path.basename(image_url.split("?")[0].replace("\\", "/")) if image_url else None
         scene = self._get_scene_annotation(clean_filename, canonical_id)
         db_gt = self._get_db_ground_truth(canonical_id, clean_filename, lang)
 
+        # Normalize client-passed provenance status ONLY as a defensive fallback if DB record is absent
+        if not db_gt and question_context and question_context.get("legal_verification_status"):
+            db_gt = {
+                "canonical_id": canonical_id,
+                "legal_verification_status": question_context.get("legal_verification_status"),
+                "legal_reference": question_context.get("legal_reference"),
+                "legal_chapter": question_context.get("legal_chapter"),
+                "legal_clause": question_context.get("legal_clause"),
+            }
+
         if not scene and not db_gt:
-            return None
+            return None, None
 
         lines = ["\n[TASDIQLANGAN RASMIY GROUND TRUTH VA VIZUAL SAHNA PASPORTI]:"]
 
         if db_gt:
-            lines.append(f"• Rasmiy to‘g‘ri javob: {db_gt.get('correct_key')}) {db_gt.get('correct_text')}")
-            if db_gt.get("legal_reference"):
-                lines.append(f"• Rasmiy YHQ qoidasi moddasi: {db_gt.get('legal_reference')}")
+            if db_gt.get("correct_key"):
+                lines.append(f"• Rasmiy to‘g‘ri javob: {db_gt.get('correct_key')}) {db_gt.get('correct_text') or ''}".strip())
+            v_status = db_gt.get("legal_verification_status") or "UNRESOLVED_LEGAL_REVIEW"
+            if v_status == "VERIFIED_PRIMARY_LAW":
+                doc = db_gt.get("legal_doc_title") or "VMQ 172"
+                parts = [p for p in (doc, db_gt.get("legal_chapter"), db_gt.get("legal_clause"), db_gt.get("legal_reference")) if p]
+                lines.append(f"• Tasdiqlangan YHQ manbasi ({v_status}): {' | '.join(parts)}")
+            elif v_status == "VERIFIED_FIRST_AID_OR_TECH":
+                lines.append(
+                    "• Huquqiy maqom (VERIFIED_FIRST_AID_OR_TECH): Bu savol birinchi tibbiy yordam yoki texnik xavfsizlik mezoniga oid. "
+                    "Bunda VMQ 172 bob/band raqamini to‘qib chiqarmang."
+                )
+            else:
+                lines.append(
+                    "• DIQQAT HUQUQIY GUARDRAIL (UNRESOLVED_LEGAL_REVIEW): Ushbu savolning rasmiy VMQ 172 bandi/moddasi hozirda huquqiy tekshiruvda! "
+                    "Javobda HECH QANDAY taxminiy VMQ 172 band yoki modda raqamini o‘ylab topmang; faqat qoida mantiqi va tasdiqlangan javobni tushuntiring."
+                )
             if db_gt.get("explanation"):
                 lines.append(f"• Rasmiy imtihon tushuntirishi: {db_gt.get('explanation')}")
 
@@ -290,7 +345,63 @@ class GeminiService:
             "Foydalanuvchiga tushuntirayotganda ushbu ma'lumotlarga qat'iy tayangan holda professional va aniq javob bering, hech narsani taxmin qilib o'ylab topmang!"
         )
 
-        return "\n".join(lines)
+        return "\n".join(lines), db_gt
+
+    def _build_ground_truth_context(self, image_url: Optional[str], canonical_id: Optional[str], lang: str) -> Optional[str]:
+        """Combines verified scene passport and official DB exam ground truth into an authoritative prompt context."""
+        ctx, _ = self._resolve_ground_truth_bundle(image_url, canonical_id, lang)
+        return ctx
+
+    @staticmethod
+    def _apply_legal_citation_guardrail(
+        reply_text: str,
+        db_gt: Optional[Dict[str, Any]],
+        lang: str,
+    ) -> Tuple[str, Dict[str, Any]]:
+        """Prevents fabricated VMQ 172 citations from reaching students on unverified legal items."""
+        if not db_gt:
+            return reply_text, {
+                "has_db_ground_truth": False,
+                "legal_verification_status": None,
+                "citation_flagged": False,
+            }
+
+        status = db_gt.get("legal_verification_status") or "UNRESOLVED_LEGAL_REVIEW"
+        meta: Dict[str, Any] = {
+            "has_db_ground_truth": True,
+            "legal_verification_status": status,
+            "legal_doc_title": db_gt.get("legal_doc_title"),
+            "legal_chapter": db_gt.get("legal_chapter"),
+            "legal_clause": db_gt.get("legal_clause"),
+            "citation_flagged": False,
+        }
+
+        if status == "UNRESOLVED_LEGAL_REVIEW":
+            unverified_pattern = re.compile(
+                r"(?:\b(?:VMQ|PKM|ВМҚ|ПКМ)\s*(?:№|-)?\s*172\b|\b\d{1,2}\.\d{1,3}[-\s]*(?:band|modda|банд|модда|пункт)\b)",
+                flags=re.IGNORECASE,
+            )
+            if unverified_pattern.search(reply_text or ""):
+                meta["citation_flagged"] = True
+                if lang == "ru":
+                    note = (
+                        "\n\n⚠️ Примечание редакции: точный номер пункта ПКМ 172 по данному вопросу "
+                        "сейчас проходит юридическую проверку; опирайтесь на логику правила и официальный ответ."
+                    )
+                elif lang == "uz_cyrl":
+                    note = (
+                        "\n\n⚠️ Таҳририят эслатмаси: ушбу савол бўйича аниқ ВМҚ 172 банд рақами ҳозирда ҳуқуқий "
+                        "текширувда; тасдиқланган жавоб ва қоида моҳиятига таянинг."
+                    )
+                else:
+                    note = (
+                        "\n\n⚠️ Tahririyat eslatmasi: ushbu savol bo‘yicha aniq VMQ 172 band raqami hozirda huquqiy "
+                        "tekshiruvda; tasdiqlangan javob va qoida mohiyatiga tayaning."
+                    )
+                if "tekshiruvda" not in reply_text.lower() and "проходит юридическую проверку" not in reply_text.lower():
+                    reply_text = f"{reply_text.rstrip()}{note}"
+
+        return reply_text, meta
 
     @staticmethod
     def _build_learner_context(
@@ -299,11 +410,17 @@ class GeminiService:
     ) -> str:
         blocks = []
         if student_snapshot:
+            srs_part = ""
+            if "srs_due_now" in student_snapshot or "srs_tracked_total" in student_snapshot:
+                srs_part = (
+                    f" Aqlli Takrorlash (SM-2): muddati kelgan {student_snapshot.get('srs_due_now', 0)} ta, "
+                    f"o‘zlashtirilgan {student_snapshot.get('srs_mastered_count', 0)}/{student_snapshot.get('srs_tracked_total', 0)} ta savol."
+                )
             blocks.append(
                 "\n[O‘QUVCHI PROFILI]: "
                 f"Yechilgan unikal savollar: {student_snapshot.get('unique_answered', 0)}, "
                 f"Imtihonlar: {student_snapshot.get('passed_exams', 0)}/{student_snapshot.get('total_exams', 0)}, "
-                f"Faol xatolar banki: {student_snapshot.get('active_mistakes', 0)} ta savol."
+                f"Faol xatolar banki: {student_snapshot.get('active_mistakes', 0)} ta savol.{srs_part}"
             )
         if question_context:
             sel = question_context.get("selected_key")
@@ -508,7 +625,7 @@ class GeminiService:
         history.append({"role": "user", "parts": current_parts})
         contents = history
         # Build ground truth, scene passport & live student profile context
-        gt_context = self._build_ground_truth_context(image_url, canonical_id, lang)
+        gt_context, db_gt_meta = self._resolve_ground_truth_bundle(image_url, canonical_id, lang, question_context)
         learner_ctx = self._build_learner_context(student_snapshot, question_context)
         sys_prompt_text = get_system_prompt(lang)
         if gt_context:
@@ -579,7 +696,7 @@ class GeminiService:
                             tool_result = {"error": f"Unknown tool: {fn_name}"}
 
                         if isinstance(tool_result, dict):
-                            for key in ("questions", "mistake_questions", "bookmarks"):
+                            for key in ("questions", "mistake_questions", "bookmarks", "srs_items"):
                                 if isinstance(tool_result.get(key), list):
                                     for item in tool_result[key]:
                                         if len(question_cards) < 3 and isinstance(item, dict):
@@ -607,9 +724,10 @@ class GeminiService:
                 Q_word = "Вопрос" if lang == "ru" else ("Савол" if lang == "uz_cyrl" else "Savol")
                 final_text = re.sub(r'\bCanon\s*yhq\b', q_word, final_text, flags=re.IGNORECASE)
                 final_text = re.sub(r'\bCanon\b', Q_word, final_text, flags=re.IGNORECASE)
+                final_text, grounding_meta = self._apply_legal_citation_guardrail(final_text, db_gt_meta, lang)
 
                 # Save assistant response
-                meta_json = json.dumps({"cards": len(question_cards)}) if question_cards else None
+                meta_json = json.dumps({"cards": len(question_cards), "grounding": grounding_meta}) if (question_cards or grounding_meta.get("has_db_ground_truth")) else None
                 self.save_message(user_id, session_id, "assistant", final_text, meta_json)
 
                 return {
@@ -617,7 +735,8 @@ class GeminiService:
                     "reply": final_text,
                     "limit_reached": False,
                     "usage": {"current": current_count, "max": max_limit},
-                    "cards": question_cards[:3]
+                    "cards": question_cards[:3],
+                    "grounding": grounding_meta,
                 }
 
             except Exception as e:

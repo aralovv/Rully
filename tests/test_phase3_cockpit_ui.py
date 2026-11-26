@@ -31,10 +31,10 @@ def test_unified_navigation_order_and_core_ids():
     assert sidebar_tabs == expected_tabs
     assert dock_tabs == expected_tabs
 
-    # Required defer scripts & v4 cache-busters preserved
-    assert '/static/css/rully.css?v=4.0.0' in html
+    # Required defer scripts & v5 cache-busters preserved
+    assert '/static/css/rully.css?v=5.0.0' in html
     for js in ("icons.js", "translations.js", "cheatsheet_data.js", "core/theme.js", "views/reference.js", "views/home.js", "app.js"):
-        assert f'script defer src="/static/js/{js}?v=4.0.0"' in html
+        assert f'script defer src="/static/js/{js}?v=5.0.0"' in html
 
     # Required view containers and modals preserved
     for dom_id in (
@@ -101,10 +101,10 @@ def test_cockpit_home_dial_and_translations():
 def test_cockpit_static_assets_served():
     for path in (
         "/",
-        "/static/css/rully.css?v=4.0.0",
-        "/static/js/views/reference.js?v=4.0.0",
-        "/static/js/views/home.js?v=4.0.0",
-        "/static/js/core/theme.js?v=4.0.0",
+        "/static/css/rully.css?v=5.0.0",
+        "/static/js/views/reference.js?v=5.0.0",
+        "/static/js/views/home.js?v=5.0.0",
+        "/static/js/core/theme.js?v=5.0.0",
     ):
         res = client.get(path)
         assert res.status_code == 200

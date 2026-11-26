@@ -51,6 +51,7 @@
         timeRemaining: data.time_limit_seconds || 0,
         timerInterval: null,
         startTime: Date.now(),
+        questionShownAt: Date.now(),
         showAnswer: data.show_answer !== false,
         showExplanation: data.show_explanation !== false,
         isSubmitting: false
@@ -102,6 +103,7 @@
     let modeLabel = qz.sessionType;
     if (isExam) modeLabel = R.t('hero_title');
     else if (qz.sessionType === 'BILET') modeLabel = R.t('ticket_label', { n: qz.ticketNumber || '' });
+    else if (qz.sessionType === 'SRS') modeLabel = R.t('srs_mode_title');
     else if (qz.sessionType === 'ADAPTIVE') modeLabel = R.t('adaptive_title');
     else if (qz.sessionType === 'MISTAKES') modeLabel = R.t('card_mistakes_title');
     else if (q.category_name) modeLabel = q.category_name;
@@ -140,6 +142,24 @@
     if (ans && (!isExam || qz.showExplanation)) {
       const cls = ans.is_correct ? 'correct' : 'wrong';
       const provHtml = typeof R.renderProvenanceBadge === 'function' ? R.renderProvenanceBadge(ans, q.canonical_id) : '';
+      let srsFeedbackHtml = '';
+      if (ans.srs && qz.showAnswer) {
+        const iv = Number(ans.srs.interval_days || 0);
+        const srsTxt = iv <= 0 ? R.t('srs_next_now') : R.t('srs_next_days', { d: iv });
+        const srsPillCls = iv <= 0 ? 'badge-amber' : 'badge-emerald';
+        const showRateButtons = (qz.sessionType === 'SRS' || qz.sessionType === 'ADAPTIVE') && ans.is_correct;
+        srsFeedbackHtml =
+          '<div class="srs-meta-row">' +
+          '  <span class="badge-pill ' + srsPillCls + ' font-mono">' + R.escHtml(srsTxt) + ' • EF ' + Number(ans.srs.ease_factor || 2.5).toFixed(2) + '</span>' +
+          (showRateButtons
+            ? '<div class="srs-rating-row">' +
+              '  <button type="button" class="filter-chip ' + (ans.srs.last_quality === 3 ? 'active' : '') + '" data-srs-rate="3">' + R.escHtml(R.t('srs_rate_hard')) + '</button>' +
+              '  <button type="button" class="filter-chip ' + (ans.srs.last_quality === 4 ? 'active' : '') + '" data-srs-rate="4">' + R.escHtml(R.t('srs_rate_good')) + '</button>' +
+              '  <button type="button" class="filter-chip ' + (ans.srs.last_quality === 5 ? 'active' : '') + '" data-srs-rate="5">' + R.escHtml(R.t('srs_rate_easy')) + '</button>' +
+              '</div>'
+            : '') +
+          '</div>';
+      }
       feedbackHtml =
         '<div class="feedback-panel ' + cls + '">' +
         '  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">' +
@@ -148,6 +168,7 @@
         R.escHtml(ans.is_correct ? R.t('correct_badge') : R.t('wrong_badge')) +
         '    </span>' +
         '  </div>' +
+        srsFeedbackHtml +
         provHtml +
         (ans.explanation ? '<p style="font-size:13px;line-height:1.5;color:var(--text-primary);">' + R.escHtml(ans.explanation) + '</p>' : '') +
         '  <div>' +
@@ -195,11 +216,11 @@
     document.getElementById('quiz-exit-btn')?.addEventListener('click', R.confirmAbortQuiz);
     document.getElementById('quiz-prev-btn')?.addEventListener('click', function () {
       clearAutoAdvance();
-      if (qz.currentIndex > 0) { qz.currentIndex -= 1; R.renderQuizQuestion(); }
+      if (qz.currentIndex > 0) { qz.currentIndex -= 1; qz.questionShownAt = Date.now(); R.renderQuizQuestion(); }
     });
     document.getElementById('quiz-next-btn')?.addEventListener('click', function () {
       clearAutoAdvance();
-      if (qz.currentIndex < qz.questions.length - 1) { qz.currentIndex += 1; R.renderQuizQuestion(); }
+      if (qz.currentIndex < qz.questions.length - 1) { qz.currentIndex += 1; qz.questionShownAt = Date.now(); R.renderQuizQuestion(); }
     });
     document.getElementById('quiz-autonext-btn')?.addEventListener('click', function () {
       R.state.quizAutoAdvance = !R.state.quizAutoAdvance;
@@ -238,7 +259,26 @@
     root.querySelectorAll('[data-q-jump]').forEach(function (dot) {
       dot.addEventListener('click', function () {
         qz.currentIndex = Number(dot.dataset.qJump);
+        qz.questionShownAt = Date.now();
         R.renderQuizQuestion();
+      });
+    });
+
+    root.querySelectorAll('[data-srs-rate]').forEach(function (btn) {
+      btn.addEventListener('click', async function () {
+        const qualityVal = Number(btn.dataset.srsRate);
+        try {
+          clearAutoAdvance();
+          const upd = await R.api('/api/srs/review', {
+            method: 'POST',
+            body: { canonical_id: q.canonical_id, quality: qualityVal }
+          });
+          if (upd && upd.srs && ans) {
+            ans.srs = upd.srs;
+            R.haptic('light');
+            R.renderQuizQuestion();
+          }
+        } catch (e) {}
       });
     });
 
@@ -256,6 +296,7 @@
     if (!q || qz.answers[q.canonical_id]) return;
 
     qz.isSubmitting = true;
+    const responseTimeMs = Math.max(0, Date.now() - (qz.questionShownAt || Date.now()));
     try {
       const res = await R.api('/api/session/answer', {
         method: 'POST',
@@ -263,7 +304,8 @@
           session_id: qz.sessionId,
           canonical_id: q.canonical_id,
           selected_key: selectedKey,
-          language: R.state.lang
+          language: R.state.lang,
+          response_time_ms: responseTimeMs
         }
       });
       qz.answers[q.canonical_id] = res;
@@ -284,6 +326,7 @@
         autoAdvanceTimer = setTimeout(function () {
           if (R.state.quiz.active && R.state.quiz.currentIndex < R.state.quiz.questions.length - 1) {
             R.state.quiz.currentIndex += 1;
+            R.state.quiz.questionShownAt = Date.now();
             R.renderQuizQuestion();
           }
         }, 900);
@@ -322,6 +365,7 @@
       });
       R.state.tickets = []; // Force fresh ticket mastery badge next load
       R.state.analytics = null;
+      R.state.srsQueue = null;
       await R.refreshProfileSnapshot();
       R.loadAnalyticsAsync();
       R.renderResults(fin, qz.ticketNumber);

@@ -32,6 +32,11 @@
           R.state.bookmarksCount = R.state.bookmarksList.length;
         }));
       }
+      if (R.state.prepareSubtab === 'adaptive' && !R.state.srsQueue) {
+        promises.push(R.api('/api/srs/queue?lang=' + lang + '&limit=10').then(function (d) {
+          R.state.srsQueue = d;
+        }));
+      }
       if (promises.length) {
         await Promise.all(promises);
         R.renderPrepare();
@@ -217,8 +222,56 @@
   function renderAdaptiveTab(container) {
     const cfg = R.state.customQuiz;
     const isPro = Boolean(R.state.subscription && R.state.subscription.is_pro);
+    const srsQ = R.state.srsQueue || {};
+    const analyticsSrs = (R.state.analytics && R.state.analytics.srs_summary) || {};
+    const statsSrs = (R.state.stats && R.state.stats.srs_summary) || {};
+    const sum = Object.assign({ due_now_count: 0, learning_count: 0, reviewing_count: 0, mastered_count: 0, tracked_count: 0, retention_rate: 100, avg_ease_factor: 2.5 }, statsSrs, analyticsSrs, srsQ.summary || {});
+    const queueItems = (srsQ.items || []).slice(0, 5);
+    const retentionPct = Math.max(0, Math.min(100, Math.round(Number(sum.retention_rate || 100))));
+
+    const queuePreviewHtml = queueItems.length
+      ? '<div class="srs-queue-list">' +
+        queueItems.map(function (it) {
+          const ivLabel = it.is_due
+            ? R.t('srs_due_now_lbl')
+            : R.t('srs_next_days', { d: it.interval_days || 1 });
+          const badgeCls = it.is_due ? 'badge-rose' : (it.mastery_level === 'MASTERED' ? 'badge-emerald' : 'badge-primary');
+          return '<div class="srs-queue-row">' +
+            '  <div style="min-width:0;flex:1;">' +
+            '    <div style="font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + R.escHtml(it.question_text || it.canonical_id) + '</div>' +
+            '    <div style="font-size:11px;color:var(--text-muted);">' + R.escHtml(it.category_name || '') + ' • EF ' + Number(it.ease_factor || 2.5).toFixed(2) + '</div>' +
+            '  </div>' +
+            '  <span class="badge-pill ' + badgeCls + ' font-mono" style="flex-shrink:0;">' + R.escHtml(ivLabel) + '</span>' +
+            '</div>';
+        }).join('') +
+        '</div>'
+      : '<p style="font-size:12px;color:var(--text-secondary);">' + R.escHtml(R.t('srs_queue_empty')) + '</p>';
 
     container.innerHTML =
+      '<section class="surface-card srs-hero-card" style="margin-bottom:14px;">' +
+      '  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">' +
+      '    <div>' +
+      '      <span class="badge-pill badge-primary" style="margin-bottom:6px;">' + R.icon('flame', 'xs') + ' SM-2</span>' +
+      '      <h3 style="font-family:var(--font-display);font-size:18px;font-weight:800;">' + R.escHtml(R.t('srs_mode_title')) + '</h3>' +
+      '      <p style="font-size:12.5px;color:var(--text-secondary);margin-top:2px;">' + R.escHtml(R.t('srs_subtitle')) + '</p>' +
+      '    </div>' +
+      '    <button type="button" class="btn btn-primary" id="btn-launch-srs">' + R.icon('zap', 'sm') + '<span>' + R.escHtml(R.t('btn_start_srs')) + (sum.due_now_count > 0 ? ' (' + sum.due_now_count + ')' : ' (20)') + '</span></button>' +
+      '  </div>' +
+      '  <div class="srs-stats-strip">' +
+      '    <div class="srs-stat-box"><span class="srs-stat-val text-rose">' + (sum.due_now_count || 0) + '</span><span class="srs-stat-lbl">' + R.escHtml(R.t('srs_due_now_lbl')) + '</span></div>' +
+      '    <div class="srs-stat-box"><span class="srs-stat-val" style="color:var(--color-amber);">' + (sum.learning_count || 0) + '</span><span class="srs-stat-lbl">' + R.escHtml(R.t('srs_learning_lbl')) + '</span></div>' +
+      '    <div class="srs-stat-box"><span class="srs-stat-val" style="color:var(--color-primary);">' + (sum.reviewing_count || 0) + '</span><span class="srs-stat-lbl">' + R.escHtml(R.t('srs_reviewing_lbl')) + '</span></div>' +
+      '    <div class="srs-stat-box"><span class="srs-stat-val text-emerald">' + (sum.mastered_count || 0) + '</span><span class="srs-stat-lbl">' + R.escHtml(R.t('srs_mastered_lbl')) + '</span></div>' +
+      '  </div>' +
+      '  <div>' +
+      '    <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;"><span>' + R.escHtml(R.t('srs_retention_lbl')) + '</span><span class="font-mono" style="font-weight:700;">' + retentionPct + '% • EF ' + Number(sum.avg_ease_factor || 2.5).toFixed(2) + '</span></div>' +
+      '    <div class="progress-track"><div class="progress-fill ' + (retentionPct >= 75 ? 'emerald' : 'amber') + '" style="width:' + retentionPct + '%"></div></div>' +
+      '  </div>' +
+      '  <div>' +
+      '    <div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:6px;">' + R.escHtml(R.t('srs_queue_preview_title')) + '</div>' +
+      queuePreviewHtml +
+      '  </div>' +
+      '</section>' +
       '<div class="builder-grid">' +
       '  <section class="surface-card" style="display:flex;flex-direction:column;justify-content:space-between;gap:14px;">' +
       '    <div>' +
@@ -260,6 +313,10 @@
       '    <button type="button" class="btn btn-secondary btn-block" id="btn-launch-custom">' + R.escHtml(R.t('btn_start_custom_quiz')) + '</button>' +
       '  </section>' +
       '</div>';
+
+    document.getElementById('btn-launch-srs')?.addEventListener('click', function () {
+      R.startSession({ session_type: 'SRS', total_questions: 20 });
+    });
 
     document.getElementById('btn-launch-adaptive')?.addEventListener('click', function () {
       R.startSession({ session_type: 'ADAPTIVE', total_questions: 20 });

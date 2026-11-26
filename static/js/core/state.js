@@ -30,6 +30,7 @@
     scenarios: [],
     refSigns: null,
     refLaw: null,
+    srsQueue: null,
     activeTab: 'home',
     prepareSubtab: 'topics',
     topicFilter: 'all',
@@ -60,6 +61,7 @@
       timeRemaining: 25 * 60,
       timerInterval: null,
       startTime: null,
+      questionShownAt: null,
       showAnswer: true,
       showExplanation: true,
       isSubmitting: false

@@ -158,15 +158,29 @@ async def send_late_payment_approved_alert(order_id: str, amount_uzs: int, user_
     return await broadcast_order_alert(text)
 
 
-async def send_unmatched_payment_alert(amount_uzs: int, card_suffix: str, payment_source: str) -> bool:
+async def send_unmatched_payment_alert(
+    amount_uzs: int,
+    card_suffix: str,
+    payment_source: str,
+    diagnostic_hint: Optional[str] = None,
+    candidate_order_id: Optional[str] = None,
+) -> bool:
     """Alerts the 'Buyurtmalar Rully' group and admin when an incoming payment does not match any order."""
     amount_str = f"{amount_uzs:,}".replace(",", " ")
+    hint_block = ""
+    if candidate_order_id or diagnostic_hint:
+        hint_block = "\n"
+        if candidate_order_id:
+            hint_block += f"Ehtimoliy buyurtma: <code>{candidate_order_id}</code>\n"
+        if diagnostic_hint:
+            hint_block += f"Diagnostika: <i>{diagnostic_hint}</i>\n"
     text = (
         "❓ <b>Noma’lum to‘lov kelib tushdi</b>\n\n"
         f"Summa: <b>{amount_str} UZS</b>\n"
         f"Karta: <b>*{card_suffix}</b>\n"
         f"Manba: <b>{payment_source}</b>\n"
-        "Holati: ⚪ Mos buyurtma topilmadi (Tekshirish lozim)"
+        f"{hint_block}"
+        "Holati: ⚪ Mos buyurtma topilmadi (Admin panel orqali tekshiring)"
     )
     return await broadcast_order_alert(text)
 

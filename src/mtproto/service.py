@@ -42,6 +42,7 @@ except ImportError:
     ApiIdInvalidError = Exception
 
 from src.security.crypto import encrypt_data, decrypt_data
+from src.security.telegram_notifier import send_mtproto_status_alert
 from src.payments.parser import parse_humocard_notification
 from src.payments.matching_engine import process_incoming_payment_event
 from src.payments.order_manager import get_active_orders_count
@@ -129,8 +130,14 @@ class MTProtoManager:
             ))
             conn.commit()
 
-    def _sync_status_to_db(self, status: str, last_error: Optional[str] = None) -> None:
-        """Persists live worker status and last error to mtproto_accounts without modifying session."""
+    def _sync_status_to_db(
+        self,
+        status: str,
+        last_error: Optional[str] = None,
+        last_event_at: Optional[str] = None,
+        last_payment_at: Optional[str] = None,
+    ) -> None:
+        """Persists live worker status, heartbeat timestamps, and last error to mtproto_accounts."""
         if os.getenv("VERCEL"):
             return
         try:
@@ -138,12 +145,22 @@ class MTProtoManager:
                 c = conn.cursor()
                 c.execute("""
                     UPDATE mtproto_accounts
-                    SET connection_status = ?, last_error = ?, updated_at = ?
+                    SET connection_status = ?,
+                        last_error = ?,
+                        last_event_at = COALESCE(?, last_event_at),
+                        last_payment_at = COALESCE(?, last_payment_at),
+                        updated_at = ?
                     WHERE id = (SELECT id FROM mtproto_accounts ORDER BY id DESC LIMIT 1)
-                """, (status, last_error, datetime.utcnow().isoformat()))
+                """, (status, last_error, last_event_at, last_payment_at, datetime.utcnow().isoformat()))
                 conn.commit()
         except Exception as dbe:
             logger.warning(f"Could not sync mtproto status to db: {dbe}")
+
+    async def _notify_status_safely(self, status: str, detail: str = "") -> None:
+        try:
+            await send_mtproto_status_alert(status, detail=detail)
+        except Exception as e:
+            logger.debug(f"MTProto alert dispatch skipped: {e}")
 
     async def initialize_and_start(self):
         """Attempts to start Telethon using existing stored session."""
@@ -170,6 +187,7 @@ class MTProtoManager:
                 self.connection_status = "AUTH_REQUIRED"
                 self.last_error = "Session unauthorized; re-authentication required."
                 self._sync_status_to_db("AUTH_REQUIRED", self.last_error)
+                await self._notify_status_safely("AUTH_REQUIRED", self.last_error)
                 return False
 
             me = await self.client.get_me()
@@ -195,6 +213,7 @@ class MTProtoManager:
                 logger.warning(f"Could not update mtproto status in db: {dbe}")
 
             self._register_message_handlers()
+            await self._notify_status_safely("CONNECTED")
             logger.info(f"MTProto client connected as {me.first_name} (@{me.username})")
             return True
         except Exception as e:
@@ -202,6 +221,7 @@ class MTProtoManager:
             self.connection_status = "ERROR"
             self.last_error = str(e)
             self._sync_status_to_db("ERROR", str(e)[:250])
+            await self._notify_status_safely("ERROR", str(e)[:200])
             return False
 
     def _register_message_handlers(self):
@@ -234,6 +254,7 @@ class MTProtoManager:
                 # Parse Humocard notification
                 parsed = parse_humocard_notification(raw_text)
                 if not parsed or not parsed.get("is_incoming"):
+                    self._sync_status_to_db("CONNECTED", last_event_at=self.last_event_at)
                     return
 
                 # Process through payment matching engine
@@ -245,8 +266,10 @@ class MTProtoManager:
 
                 if res.get("status") == "MATCHED":
                     self.last_payment_at = datetime.utcnow().isoformat()
+                    self._sync_status_to_db("CONNECTED", last_event_at=self.last_event_at, last_payment_at=self.last_payment_at)
                     logger.info(f"MTProto Auto-Matched payment: {res}")
                 else:
+                    self._sync_status_to_db("CONNECTED", last_event_at=self.last_event_at)
                     logger.info(f"MTProto Processed payment event: {res.get('status')}")
             except Exception as ex:
                 logger.error(f"Error handling MTProto incoming message: {ex}")
@@ -420,6 +443,7 @@ class MTProtoManager:
             except Exception as e:
                 logger.error(f"Error fetching mtproto status from database: {e}")
 
+        is_live = self.connection_status == "CONNECTED"
         return {
             "connection_status": self.connection_status,
             "account_info": self.account_info,
@@ -428,7 +452,10 @@ class MTProtoManager:
             "last_event_at": self.last_event_at,
             "last_payment_at": self.last_payment_at,
             "last_error": self.last_error,
-            "is_ready_for_matching": self.connection_status == "CONNECTED" or True  # Engine can match simulated or live
+            "has_telethon": HAS_TELETHON,
+            "is_live_connected": is_live,
+            "can_accept_simulated_events": True,
+            "is_ready_for_matching": is_live,
         }
 
 

@@ -724,13 +724,14 @@ class AvtotestProductEngine:
         qids = self.get_ticket_question_ids(ticket_number)
         return [q for q in (self.get_question(qid, language=language) for qid in qids) if q]
 
-    # 10. Smart Adaptive Practice Selection (Mistakes -> Weak Categories -> Unseen Bank)
+    # 10. Smart Adaptive & SM-2 Spaced Repetition Selection (Due SRS -> Mistakes -> Weak Categories -> Unseen)
     def get_adaptive_question_ids(
         self,
         count: int = 20,
         unresolved_mistakes: Optional[List[str]] = None,
         weak_category_ids: Optional[List[int]] = None,
         solved_correct_ids: Optional[Set[str]] = None,
+        due_srs_ids: Optional[List[str]] = None,
     ) -> List[str]:
         all_ids = self._ordered_all_ids()
         if not all_ids:
@@ -751,6 +752,10 @@ class AvtotestProductEngine:
                     seen.add(qid)
                     selected.append(qid)
                     added += 1
+
+        # Bucket 0: Overdue SM-2 cards first (preserving overdue priority order)
+        if due_srs_ids:
+            add_candidates(list(due_srs_ids), max(1, int(count * 0.50)))
 
         # Bucket 1: Unresolved mistakes (up to ~40%)
         mistakes_pool = list(unresolved_mistakes or [])
@@ -779,6 +784,62 @@ class AvtotestProductEngine:
 
         random.shuffle(selected)
         return selected
+
+    def get_srs_session_question_ids(
+        self,
+        count: int = 20,
+        due_srs_ids: Optional[List[str]] = None,
+        unresolved_mistakes: Optional[List[str]] = None,
+        weak_category_ids: Optional[List[int]] = None,
+        solved_correct_ids: Optional[Set[str]] = None,
+    ) -> Tuple[List[str], Dict[str, int]]:
+        """
+        Builds a daily "Aqlli Takrorlash" session queue strictly prioritized by:
+        1) Overdue SM-2 items (in urgency order), 2) Active mistakes, 3) Weak categories, 4) Fresh bank items.
+        """
+        all_ids = self._ordered_all_ids()
+        if not all_ids:
+            return [], {"due_srs": 0, "mistakes": 0, "weak_or_new": 0}
+
+        count = max(1, min(int(count or 20), len(all_ids)))
+        valid_set = set(all_ids)
+        solved_set = solved_correct_ids or set()
+        selected: List[str] = []
+        seen: Set[str] = set()
+        counts = {"due_srs": 0, "mistakes": 0, "weak_or_new": 0}
+
+        def take_from(pool: List[str], bucket: str) -> None:
+            for qid in pool:
+                if len(selected) >= count:
+                    break
+                if qid in valid_set and qid not in seen:
+                    seen.add(qid)
+                    selected.append(qid)
+                    counts[bucket] += 1
+
+        take_from(list(due_srs_ids or []), "due_srs")
+        mistakes_pool = list(unresolved_mistakes or [])
+        random.shuffle(mistakes_pool)
+        take_from(mistakes_pool, "mistakes")
+
+        weak_pool: List[str] = []
+        for cid_cat in (weak_category_ids or []):
+            cat_qids = [q for q in self._by_category.get(cid_cat, []) if q not in solved_set and q not in seen]
+            random.shuffle(cat_qids)
+            weak_pool.extend(cat_qids)
+        take_from(weak_pool, "weak_or_new")
+
+        if len(selected) < count:
+            unseen = [q for q in all_ids if q not in solved_set and q not in seen]
+            random.shuffle(unseen)
+            take_from(unseen, "weak_or_new")
+
+        if len(selected) < count:
+            rest = [q for q in all_ids if q not in seen]
+            random.shuffle(rest)
+            take_from(rest, "weak_or_new")
+
+        return selected, counts
 
 
 def run_interactive_demo():

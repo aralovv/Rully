@@ -36,6 +36,104 @@ def _get_connection():
     return get_db_connection(DB_PATH)
 
 
+def _inspect_unmatched_candidates(cursor: Any, amount_uzs: int, card_suffix: str) -> Dict[str, Any]:
+    """
+    Finds near-match pending/expired order candidates to speed up admin resolution
+    when a student sent a slightly wrong amount or used a different card.
+    """
+    # 1. Exact amount on a different card suffix among pending orders
+    cursor.execute(
+        """
+        SELECT order_id, user_id, final_amount_uzs, card_suffix, status
+        FROM payment_orders
+        WHERE final_amount_uzs = ? AND card_suffix != ? AND status = 'PENDING'
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        (amount_uzs, card_suffix),
+    )
+    row = cursor.fetchone()
+    if row:
+        return {
+            "reason_code": "CARD_SUFFIX_MISMATCH",
+            "candidate_order_id": row["order_id"],
+            "candidate_user_id": row["user_id"],
+            "candidate_amount_uzs": row["final_amount_uzs"],
+            "candidate_card_suffix": row["card_suffix"],
+            "hint": f"Exact amount {amount_uzs} UZS found on pending order for card *{row['card_suffix']}",
+        }
+
+    # 2. Same card suffix with close amount (+/- 1000 UZS, e.g. user omitted unique suffix)
+    cursor.execute(
+        """
+        SELECT order_id, user_id, final_amount_uzs, card_suffix, status
+        FROM payment_orders
+        WHERE card_suffix = ? AND status = 'PENDING'
+          AND ABS(final_amount_uzs - ?) <= 1000
+        ORDER BY ABS(final_amount_uzs - ?) ASC, created_at DESC
+        LIMIT 1
+        """,
+        (card_suffix, amount_uzs, amount_uzs),
+    )
+    row = cursor.fetchone()
+    if row:
+        diff = amount_uzs - int(row["final_amount_uzs"])
+        return {
+            "reason_code": "NEAR_AMOUNT_PENDING",
+            "candidate_order_id": row["order_id"],
+            "candidate_user_id": row["user_id"],
+            "candidate_amount_uzs": row["final_amount_uzs"],
+            "candidate_card_suffix": row["card_suffix"],
+            "hint": f"Pending order expects {row['final_amount_uzs']} UZS on *{card_suffix} (delta {diff:+d} UZS)",
+        }
+
+    # 3. Expired order with near amount on same card suffix
+    cursor.execute(
+        """
+        SELECT order_id, user_id, final_amount_uzs, card_suffix, status
+        FROM payment_orders
+        WHERE card_suffix = ? AND status = 'EXPIRED'
+          AND ABS(final_amount_uzs - ?) <= 1000
+        ORDER BY ABS(final_amount_uzs - ?) ASC, expires_at DESC
+        LIMIT 1
+        """,
+        (card_suffix, amount_uzs, amount_uzs),
+    )
+    row = cursor.fetchone()
+    if row:
+        return {
+            "reason_code": "EXPIRED_NEAR_MATCH",
+            "candidate_order_id": row["order_id"],
+            "candidate_user_id": row["user_id"],
+            "candidate_amount_uzs": row["final_amount_uzs"],
+            "candidate_card_suffix": row["card_suffix"],
+            "hint": f"Expired order {row['order_id']} expected {row['final_amount_uzs']} UZS on *{card_suffix}",
+        }
+
+    return {
+        "reason_code": "NO_CANDIDATE_FOUND",
+        "candidate_order_id": None,
+        "candidate_user_id": None,
+        "candidate_amount_uzs": None,
+        "candidate_card_suffix": None,
+        "hint": "No pending or near-amount order found matching payment.",
+    }
+
+
+def _compute_extended_expiry_iso(cursor: Any, user_id: int, duration_days: int, now_dt: datetime) -> str:
+    cursor.execute("SELECT is_pro, subscription_expires_at FROM telegram_users WHERE user_id = ?", (user_id,))
+    u_row = cursor.fetchone()
+    base_dt = now_dt
+    if u_row and u_row["is_pro"] and u_row["subscription_expires_at"]:
+        try:
+            curr_exp = datetime.fromisoformat(str(u_row["subscription_expires_at"]).replace("Z", ""))
+            if curr_exp > now_dt:
+                base_dt = curr_exp
+        except Exception:
+            pass
+    return (base_dt + timedelta(days=duration_days)).isoformat()
+
+
 def _reconcile_payment_sync(
     parsed: Dict[str, Any],
     source_chat: str,
@@ -282,6 +380,11 @@ def _reconcile_payment_sync(
             )
 
         # --- SCENARIO 3: UNMATCHED PAYMENT (Atomic execute_batch) ---
+        diag = _inspect_unmatched_candidates(c, amount_uzs, card_suffix)
+        diag_details = (
+            f"Amount: {amount_uzs} UZS, Card: {card_suffix}, Source: {payment_source}, "
+            f"Reason: {diag['reason_code']}, Candidate: {diag.get('candidate_order_id') or 'none'}"
+        )
         unmatched_stmts: List[Any] = [
             (
                 """
@@ -314,7 +417,7 @@ def _reconcile_payment_sync(
                 INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
                 VALUES (0, 'UNMATCHED_PAYMENT_LOGGED', ?, ?)
                 """,
-                [f"Amount: {amount_uzs} UZS, Card: {card_suffix}, Source: {payment_source}", now_str],
+                [diag_details, now_str],
             ),
         ]
         execute_batch(conn, unmatched_stmts)
@@ -325,14 +428,175 @@ def _reconcile_payment_sync(
                 "message": "No active or expired order found matching exact amount and card.",
                 "amount_uzs": amount_uzs,
                 "card_suffix": card_suffix,
+                "diagnostic": diag,
             },
             {
                 "kind": "UNMATCHED",
                 "amount_uzs": amount_uzs,
                 "card_suffix": card_suffix,
                 "payment_source": payment_source,
+                "diagnostic_hint": diag["hint"],
+                "candidate_order_id": diag.get("candidate_order_id"),
             },
         )
+
+
+def link_unmatched_to_order_sync(
+    unmatched_id: int,
+    order_id: str,
+    admin_id: int,
+    admin_username: str,
+    notes: str = "",
+) -> Dict[str, Any]:
+    """
+    Atomically links an UNRESOLVED unmatched payment to a target pending/expired order,
+    activates or extends PRO, writes payment_transactions, and records admin audit log.
+    """
+    now_dt = datetime.utcnow()
+    now_str = now_dt.isoformat()
+    with _get_connection() as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT * FROM unmatched_payments WHERE id = ? AND status = 'UNRESOLVED'",
+            (unmatched_id,),
+        )
+        unmatched = c.fetchone()
+        if not unmatched:
+            raise ValueError("Unresolved unmatched payment not found")
+
+        c.execute(
+            """
+            SELECT * FROM payment_orders
+            WHERE order_id = ? AND status IN ('PENDING', 'EXPIRED')
+            """,
+            (order_id,),
+        )
+        order = c.fetchone()
+        if not order:
+            raise ValueError("Target pending/expired order not found")
+
+        user_id = int(order["user_id"])
+        plan_id = order["plan_id"]
+        plan_name = order["plan_name"]
+        duration_days = int(order["duration_days"])
+        amount_uzs = int(unmatched["amount_uzs"])
+        card_suffix = unmatched["card_suffix"]
+        event_id = unmatched["event_id"]
+
+        new_expires_str = _compute_extended_expiry_iso(c, user_id, duration_days, now_dt)
+        audit_note = notes.strip() or f"Linked unmatched #{unmatched_id} to order {order_id}"
+
+        execute_batch(
+            conn,
+            [
+                (
+                    """
+                    UPDATE unmatched_payments
+                    SET status = 'RESOLVED_LINKED', resolution_notes = ?, resolved_by_admin = ?, resolved_at = ?
+                    WHERE id = ? AND status = 'UNRESOLVED'
+                    """,
+                    [audit_note, admin_username, now_str, unmatched_id],
+                ),
+                (
+                    "UPDATE payment_orders SET status = 'PAID', paid_at = ? WHERE order_id = ?",
+                    [now_str, order_id],
+                ),
+                (
+                    "UPDATE payment_events SET status = 'MATCHED', matched_order_id = ? WHERE id = ?",
+                    [order_id, event_id],
+                ),
+                (
+                    """
+                    INSERT INTO payment_transactions (
+                        order_id, user_id, event_id, amount_uzs, plan_id, card_suffix, payment_timestamp, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [order_id, user_id, event_id, amount_uzs, plan_id, card_suffix, now_str, now_str],
+                ),
+                (
+                    """
+                    UPDATE telegram_users
+                    SET is_pro = 1, subscription_tier = ?, subscription_expires_at = ?
+                    WHERE user_id = ?
+                    """,
+                    [plan_id, new_expires_str, user_id],
+                ),
+                (
+                    """
+                    INSERT INTO user_subscriptions (
+                        user_id, plan_id, plan_name, duration_days, price_uzs, status, created_at, expires_at
+                    ) VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
+                    """,
+                    [user_id, plan_id, plan_name, duration_days, amount_uzs, now_str, new_expires_str],
+                ),
+                (
+                    """
+                    INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
+                    VALUES (?, 'UNMATCHED_PAYMENT_LINKED', ?, ?)
+                    """,
+                    [admin_id, f"Unmatched: {unmatched_id}, Order: {order_id}, User: {user_id}, Notes: {audit_note}", now_str],
+                ),
+            ],
+        )
+
+    try:
+        from src.api.deps import invalidate_user_cache
+        invalidate_user_cache(user_id)
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "unmatched_id": unmatched_id,
+        "order_id": order_id,
+        "user_id": user_id,
+        "plan_name": plan_name,
+        "duration_days": duration_days,
+        "amount_uzs": amount_uzs,
+        "expires_at": new_expires_str,
+    }
+
+
+def get_payment_reconciliation_health_sync() -> Dict[str, Any]:
+    """Returns compact financial reconciliation and queue observability telemetry."""
+    with _get_connection() as conn:
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT
+                COUNT(*) AS total_events,
+                SUM(CASE WHEN status = 'MATCHED' THEN 1 ELSE 0 END) AS matched_events,
+                SUM(CASE WHEN status = 'LATE_REVIEW' THEN 1 ELSE 0 END) AS late_review_events,
+                SUM(CASE WHEN status = 'UNMATCHED' THEN 1 ELSE 0 END) AS unmatched_events,
+                MAX(created_at) AS last_event_at
+            FROM payment_events
+            """
+        )
+        ev = dict(c.fetchone() or {})
+        c.execute("SELECT COUNT(*) FROM unmatched_payments WHERE status = 'UNRESOLVED'")
+        unresolved_unmatched = int(c.fetchone()[0] or 0)
+        c.execute("SELECT COUNT(*) FROM payment_review_cases WHERE status = 'PENDING'")
+        pending_reviews = int(c.fetchone()[0] or 0)
+        c.execute("SELECT COUNT(*) FROM payment_orders WHERE status = 'PENDING'")
+        pending_orders = int(c.fetchone()[0] or 0)
+        c.execute("SELECT COUNT(*) FROM payment_transactions")
+        ledger_tx = int(c.fetchone()[0] or 0)
+
+    matched_ev = int(ev.get("matched_events") or 0)
+    discrepancy = abs(matched_ev - ledger_tx)
+    return {
+        "total_events": int(ev.get("total_events") or 0),
+        "matched_events": matched_ev,
+        "late_review_events": int(ev.get("late_review_events") or 0),
+        "unmatched_events": int(ev.get("unmatched_events") or 0),
+        "unresolved_unmatched": unresolved_unmatched,
+        "pending_reviews": pending_reviews,
+        "pending_orders": pending_orders,
+        "ledger_transactions": ledger_tx,
+        "discrepancy_count": discrepancy,
+        "is_balanced": discrepancy == 0,
+        "last_event_at": ev.get("last_event_at"),
+    }
 
 
 async def process_incoming_payment_event(
@@ -383,6 +647,8 @@ async def process_incoming_payment_event(
                     notify["amount_uzs"],
                     notify["card_suffix"],
                     notify["payment_source"],
+                    diagnostic_hint=notify.get("diagnostic_hint"),
+                    candidate_order_id=notify.get("candidate_order_id"),
                 )
         except Exception as e:
             logger.error(f"Error sending payment notification ({notify.get('kind')}): {e}")

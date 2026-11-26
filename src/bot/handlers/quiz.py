@@ -156,11 +156,20 @@ async def cb_submit_answer(callback: CallbackQuery, bot: Bot,
 
     await callback.answer()
 
-    # 2. Mistake tracking
+    # 2. Mistake tracking + SM-2 spaced repetition sync
     if not is_correct:
         db.record_mistake(user_id, canonical_id)
     else:
         db.resolve_mistake(user_id, canonical_id)
+
+    try:
+        db.record_srs_review(
+            user_id=user_id,
+            canonical_id=canonical_id,
+            quality=(4 if is_correct else 1),
+        )
+    except Exception as srs_err:
+        logger.debug(f"Non-blocking SM-2 sync note for {canonical_id}: {srs_err}")
 
     # Check auto-termination on 3rd mistake in EXAM mode (Uzbekistan DYHXX VMQ 408: max 2 mistakes)
     if session["session_type"] == "EXAM":

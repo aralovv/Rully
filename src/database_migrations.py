@@ -306,6 +306,24 @@ CREATE TABLE IF NOT EXISTS user_ticket_progress (
 );
 CREATE INDEX IF NOT EXISTS idx_ticket_progress_user ON user_ticket_progress(user_id);
 CREATE INDEX IF NOT EXISTS idx_session_answers_user_canon ON session_answers(user_id, canonical_id, is_correct);
+
+-- 17. RULLY 2.0 Phase 5 SM-2 Spaced Repetition Memory State
+CREATE TABLE IF NOT EXISTS user_question_srs (
+    user_id INTEGER NOT NULL,
+    canonical_id TEXT NOT NULL,
+    ease_factor REAL NOT NULL DEFAULT 2.5,
+    interval_days INTEGER NOT NULL DEFAULT 0,
+    repetitions INTEGER NOT NULL DEFAULT 0,
+    lapses INTEGER NOT NULL DEFAULT 0,
+    last_quality INTEGER NOT NULL DEFAULT 0,
+    last_reviewed_at TEXT NOT NULL,
+    next_review_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, canonical_id),
+    FOREIGN KEY (user_id) REFERENCES telegram_users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (canonical_id) REFERENCES canonical_questions(canonical_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_srs_user_due ON user_question_srs(user_id, next_review_at);
+CREATE INDEX IF NOT EXISTS idx_srs_user_reps ON user_question_srs(user_id, repetitions, lapses);
 """
 
 def run_migrations(db_path: str = "master_database.sqlite"):
@@ -380,8 +398,8 @@ def run_migrations(db_path: str = "master_database.sqlite"):
             """, (k, v, d, now_str))
 
         conn.commit()
-        from src.db.migrations_v2 import apply_phase1_migrations
-        apply_phase1_migrations(conn)
+        from src.db.migrations_v2 import apply_all_migrations
+        apply_all_migrations(conn)
 
     conn.close()
     logger.info("Database migration completed successfully!")
@@ -389,7 +407,7 @@ def run_migrations(db_path: str = "master_database.sqlite"):
 
 def run_turso_migrations(apply: bool = False):
     """
-    Explicit Turso schema migration runner (Phase 1D/1E).
+    Explicit Turso schema migration runner (Phase 1D/1E & Phase 5).
     Never runs implicitly on import or FastAPI startup unless explicitly invoked.
     """
     if not is_turso_enabled():
@@ -397,14 +415,19 @@ def run_turso_migrations(apply: bool = False):
     if not apply:
         conn = get_db_connection()
         try:
-            from src.db.migrations_v2 import verify_schema_parity
-            return {"dry_run": True, "parity": verify_schema_parity(conn)}
+            from src.db.migrations_v2 import verify_phase5_schema_parity, verify_schema_parity
+            p1 = verify_schema_parity(conn)
+            p5 = verify_phase5_schema_parity(conn)
+            return {
+                "dry_run": True,
+                "parity": {"passed": bool(p1["passed"] and p5["passed"]), "phase1": p1, "phase5": p5},
+            }
         finally:
             conn.close()
     conn = get_db_connection()
     try:
-        from src.db.migrations_v2 import apply_phase1_migrations
-        return apply_phase1_migrations(conn)
+        from src.db.migrations_v2 import apply_all_migrations
+        return apply_all_migrations(conn)
     finally:
         conn.close()
 

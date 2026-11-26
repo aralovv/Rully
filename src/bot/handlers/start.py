@@ -1,15 +1,278 @@
 """
 Start, Onboarding, Language Selection, and Help Handlers.
 """
+import re
+from typing import Dict, Any, Optional, Tuple
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart, Command, CommandObject
 from src.bot.database import BotDatabase
-from src.bot.keyboards import get_language_keyboard, get_main_menu_keyboard, get_main_reply_keyboard
+from src.bot.keyboards import (
+    get_language_keyboard,
+    get_main_menu_keyboard,
+    get_main_reply_keyboard,
+    get_deep_link_card_keyboard,
+)
 from src.bot.strings import get_str
 from src.bot.config import WEB_APP_URL
 
 start_router = Router(name="start_router")
+
+_DEEP_LINK_CARDS: Dict[str, Dict[str, Any]] = {
+    "amaliy": {
+        "route": "amaliy",
+        "title": {
+            "uz_latn": "🚗 <b>RULLY Amaliy Imtihon</b>",
+            "uz_cyrl": "🚗 <b>RULLY Амалий Имтиҳон</b>",
+            "ru": "🚗 <b>RULLY Практический Экзамен</b>",
+        },
+        "desc": {
+            "uz_latn": "10 ta o‘quv darsligi, avtodrom cheklisti va vaziyatli savollardan foydalanish uchun RULLY'ni oching!",
+            "uz_cyrl": "10 та ўқув дарслиги, автодром чеклисти ва вазиятли саволлардан фойдаланиш учун RULLY'ни очинг!",
+            "ru": "Для доступа к 10 обучающим модулям, чек-листу автодрома и дорожным ситуациям откройте RULLY!",
+        },
+        "app_btn": {
+            "uz_latn": "🚀 Avtodrom va Amaliyotni ochish",
+            "uz_cyrl": "🚀 Автодром ва Амалиётни очиш",
+            "ru": "🚀 Открыть Автодром и Практику",
+        },
+    },
+    "exam": {
+        "route": "exam",
+        "title": {
+            "uz_latn": "🏆 <b>Davlat Nazariy Imtihoni (VMQ 408)</b>",
+            "uz_cyrl": "🏆 <b>Давлат Назарий Имтиҳони (ВМҚ 408)</b>",
+            "ru": "🏆 <b>Государственный Теоретический Экзамен</b>",
+        },
+        "desc": {
+            "uz_latn": "20 ta savol • 25 daqiqa • o‘tish talabi kamida 18 ta to‘g‘ri javob (F1–F4 tezkor klaviatura).",
+            "uz_cyrl": "20 та савол • 25 дақиқа • ўтиш талаби камида 18 та тўғри жавоб.",
+            "ru": "20 вопросов • 25 минут • проходной балл не менее 18 правильных ответов.",
+        },
+        "app_btn": {
+            "uz_latn": "🏆 RULLY'da imtihon boshlash",
+            "uz_cyrl": "🏆 RULLY'да имтиҳон бошлаш",
+            "ru": "🏆 Начать экзамен в RULLY",
+        },
+    },
+    "signs": {
+        "route": "signs",
+        "title": {
+            "uz_latn": "🛑 <b>O‘zbekiston Yo‘l Belgilari (VMQ 172)</b>",
+            "uz_cyrl": "🛑 <b>Ўзбекистон Йўл Белгилари (ВМҚ 172)</b>",
+            "ru": "🛑 <b>Дорожные Знаки Узбекистана (ПКМ 172)</b>",
+        },
+        "desc": {
+            "uz_latn": "Barcha rasmiy yo‘l belgilari guruhlari va qisqa izohlarini bir joyda o‘rganing.",
+            "uz_cyrl": "Барча расмий йўл белгилари гуруҳлари ва қисқа изоҳларини бир жойда ўрганинг.",
+            "ru": "Изучайте все официальные группы дорожных знаков и их значения в одном месте.",
+        },
+        "app_btn": {
+            "uz_latn": "🛑 Yo‘l belgilarini ochish",
+            "uz_cyrl": "🛑 Йўл белгиларини очиш",
+            "ru": "🛑 Открыть дорожные знаки",
+        },
+    },
+    "rules": {
+        "route": "rules",
+        "title": {
+            "uz_latn": "📜 <b>Rasmiy YHQ Qonuni (VMQ 172)</b>",
+            "uz_cyrl": "📜 <b>Расмий ЙҲҚ Қонуни (ВМҚ 172)</b>",
+            "ru": "📜 <b>Официальные ПДД Узбекистана (ПКМ 172)</b>",
+        },
+        "desc": {
+            "uz_latn": "VMQ 172 boblari, bandlari, tezlik me'yorlari va shpargalka jadvallari.",
+            "uz_cyrl": "ВМҚ 172 боблари, бандлари, тезлик меъёрлари ва шпаргалка жадваллари.",
+            "ru": "Главы ПКМ 172, пункты ПДД, скоростные ограничения и справочник.",
+        },
+        "app_btn": {
+            "uz_latn": "📜 Qonun va jadvallarni ochish",
+            "uz_cyrl": "📜 Қонун ва жадвалларни очиш",
+            "ru": "📜 Открыть справочник ПДД",
+        },
+    },
+    "ai": {
+        "route": "ai",
+        "title": {
+            "uz_latn": "🤖 <b>AI Ustoz — YHQ Ekspert Yordamchisi</b>",
+            "uz_cyrl": "🤖 <b>AI Устоз — ЙҲҚ Эксперт Ёрдамчиси</b>",
+            "ru": "🤖 <b>AI Наставник — Эксперт по ПДД</b>",
+        },
+        "desc": {
+            "uz_latn": "Murakkab chorrahalar, belgilar va xato qilingan savollar bo‘yicha shaxsiy tahlil oling.",
+            "uz_cyrl": "Мураккаб чорраҳалар, белгилар ва хато қилинган саволлар бўйича шахсий таҳлил олинг.",
+            "ru": "Получайте персональные разборы сложных перекрёстков, знаков и ваших ошибок.",
+        },
+        "app_btn": {
+            "uz_latn": "🤖 AI Ustozni ochish",
+            "uz_cyrl": "🤖 AI Устозни очиш",
+            "ru": "🤖 Открыть AI Наставника",
+        },
+    },
+    "mistakes": {
+        "route": "mistakes",
+        "title": {
+            "uz_latn": "📚 <b>Xatolar Banki</b>",
+            "uz_cyrl": "📚 <b>Хатолар Банки</b>",
+            "ru": "📚 <b>Банк Ошибок</b>",
+        },
+        "desc": {
+            "uz_latn": "Oldin adashgan savollaringizni qayta ishlab mustahkamlang.",
+            "uz_cyrl": "Олдин адашган саволларингизни қайта ишлаб мустаҳкамланг.",
+            "ru": "Отработайте ранее допущенные ошибки до уверенного результата.",
+        },
+        "app_btn": {
+            "uz_latn": "🚗 RULLY'da ko‘rish",
+            "uz_cyrl": "🚗 RULLY'да кўриш",
+            "ru": "🚗 Открыть в RULLY",
+        },
+        "inline_cb": "menu:mistakes",
+        "inline_btn": {
+            "uz_latn": "📚 Botda xatolarni ishlash",
+            "uz_cyrl": "📚 Ботда хатоларни ишлаш",
+            "ru": "📚 Решать ошибки в боте",
+        },
+    },
+    "profile": {
+        "route": "profile",
+        "title": {
+            "uz_latn": "📊 <b>Tayyorgarlik Indeksi va Profil</b>",
+            "uz_cyrl": "📊 <b>Тайёргарлик Индекси ва Профил</b>",
+            "ru": "📊 <b>Индекс Готовности и Профиль</b>",
+        },
+        "desc": {
+            "uz_latn": "Shaxsiy tayyorgarlik ko‘rsatkichi, kunlik maqsad va RULLY PRO boshqaruvi.",
+            "uz_cyrl": "Шахсий тайёргарлик кўрсаткичи, кунлик мақсад ва RULLY PRO бошқаруви.",
+            "ru": "Персональный индекс готовности, дневная цель и управление подпиской RULLY PRO.",
+        },
+        "app_btn": {
+            "uz_latn": "📊 Profilni ochish",
+            "uz_cyrl": "📊 Профилни очиш",
+            "ru": "📊 Открыть профиль",
+        },
+        "inline_cb": "menu:results",
+        "inline_btn": {
+            "uz_latn": "📈 Botda statistikani ko‘rish",
+            "uz_cyrl": "📈 Ботда статистикани кўриш",
+            "ru": "📈 Посмотреть статистику в боте",
+        },
+    },
+    "tests": {
+        "route": "tests",
+        "title": {
+            "uz_latn": "📖 <b>Tayyorlov Markazi</b>",
+            "uz_cyrl": "📖 <b>Тайёрлов Маркази</b>",
+            "ru": "📖 <b>Центр Подготовки</b>",
+        },
+        "desc": {
+            "uz_latn": "43 ta mavzu, 67 ta rasmiy bilet, Aqlli Takrorlash va YHQ ma'lumotnomasi.",
+            "uz_cyrl": "43 та мавзу, 67 та расмий билет, Ақлли Такрорлаш ва ЙҲҚ маълумотномаси.",
+            "ru": "43 темы, 67 официальных билетов, Умное повторение и справочник ПДД.",
+        },
+        "app_btn": {
+            "uz_latn": "📖 Tayyorlov bo‘limini ochish",
+            "uz_cyrl": "📖 Тайёрлов бўлимини очиш",
+            "ru": "📖 Открыть раздел подготовки",
+        },
+        "inline_cb": "menu:bilets",
+        "inline_btn": {
+            "uz_latn": "🎫 Botda bilet tanlash",
+            "uz_cyrl": "🎫 Ботда билет танлаш",
+            "ru": "🎫 Выбрать билет в боте",
+        },
+    },
+}
+
+_DEEP_LINK_ALIASES = {
+    "belgilar": "signs",
+    "qoidalar": "rules",
+    "law": "rules",
+    "ustoz": "ai",
+    "xatolar": "mistakes",
+    "stats": "profile",
+    "topics": "tests",
+    "tickets": "tests",
+    "bilets": "tests",
+}
+
+
+def build_deep_link_response(
+    raw_arg: str,
+    lang: str,
+    db: BotDatabase,
+    user_id: int,
+) -> Optional[Tuple[str, Any]]:
+    """Resolves /start deep-link payloads into rich localized Mini App + inline quiz cards."""
+    arg = (raw_arg or "").strip().lower()
+    if not arg:
+        return None
+    arg = _DEEP_LINK_ALIASES.get(arg, arg)
+
+    # 1. SM-2 Aqlli Takrorlash deep link (/start srs | /start takrorlash | /start adaptive)
+    if arg in ("srs", "takrorlash", "adaptive"):
+        srs_data = db.get_srs_queue_summary(user_id, limit=10)
+        summary = srs_data.get("summary", {})
+        text = get_str(
+            "srs_intro",
+            lang,
+            due_now=summary.get("due_now_count", 0),
+            mastered=summary.get("mastered_count", 0),
+            tracked=summary.get("tracked_count", 0),
+        )
+        app_btn = {
+            "uz_latn": "🚀 Mini App: Aqlli Takrorlash",
+            "uz_cyrl": "🚀 Mini App: Ақлли Такрорлаш",
+            "ru": "🚀 Mini App: Умное повторение",
+        }.get(lang, "🚀 Mini App: Aqlli Takrorlash")
+        inline_btn = {
+            "uz_latn": "🧠 Botda takrorlash (SM-2)",
+            "uz_cyrl": "🧠 Ботда такрорлаш (SM-2)",
+            "ru": "🧠 Повторять в боте (SM-2)",
+        }.get(lang, "🧠 Botda takrorlash (SM-2)")
+        return text, get_deep_link_card_keyboard("srs", app_btn, lang, inline_callback="menu:srs", inline_btn_text=inline_btn)
+
+    # 2. Specific Bilet deep link (/start bilet_5 | /start bilet-5 | /start ticket_5)
+    m_bilet = re.match(r"^(?:bilet|ticket)[_-]?(\d{1,3})$", arg)
+    if m_bilet:
+        bilet_no = int(m_bilet.group(1))
+        if 1 <= bilet_no <= 100:
+            title = {
+                "uz_latn": f"🎫 <b>Rasmiy Bilet #{bilet_no}</b>",
+                "uz_cyrl": f"🎫 <b>Расмий Билет #{bilet_no}</b>",
+                "ru": f"🎫 <b>Официальный Билет №{bilet_no}</b>",
+            }.get(lang, f"🎫 <b>Rasmiy Bilet #{bilet_no}</b>")
+            desc = {
+                "uz_latn": f"Bilet #{bilet_no} savollarini hoziroq Telegram Botda yoki RULLY Mini App ichida yeching!",
+                "uz_cyrl": f"Билет #{bilet_no} саволларини ҳозироқ Telegram Ботда ёки RULLY Mini App ичида ечинг!",
+                "ru": f"Решайте вопросы билета №{bilet_no} прямо в Telegram-боте или в приложении RULLY!",
+            }.get(lang, f"Bilet #{bilet_no} savollarini yechishni boshlang:")
+            app_btn = {
+                "uz_latn": f"🚗 Mini App: Bilet #{bilet_no}",
+                "uz_cyrl": f"🚗 Mini App: Билет #{bilet_no}",
+                "ru": f"🚗 Mini App: Билет №{bilet_no}",
+            }.get(lang, f"🚗 Mini App: Bilet #{bilet_no}")
+            inline_btn = {
+                "uz_latn": f"📝 Botda Bilet #{bilet_no} ni boshlash",
+                "uz_cyrl": f"📝 Ботда Билет #{bilet_no} ни бошлаш",
+                "ru": f"📝 Начать Билет №{bilet_no} в боте",
+            }.get(lang, f"📝 Botda Bilet #{bilet_no} ni boshlash")
+            return f"{title}\n\n{desc}", get_deep_link_card_keyboard(
+                f"bilet_{bilet_no}", app_btn, lang, inline_callback=f"bilet:start:{bilet_no}", inline_btn_text=inline_btn
+            )
+
+    # 3. Static table-driven cards
+    card = _DEEP_LINK_CARDS.get(arg)
+    if card:
+        title = card["title"].get(lang, card["title"]["uz_latn"])
+        desc = card["desc"].get(lang, card["desc"]["uz_latn"])
+        app_btn = card["app_btn"].get(lang, card["app_btn"]["uz_latn"])
+        inline_cb = card.get("inline_cb")
+        inline_btn = card["inline_btn"].get(lang, card["inline_btn"]["uz_latn"]) if card.get("inline_btn") else None
+        return f"{title}\n\n{desc}", get_deep_link_card_keyboard(
+            card["route"], app_btn, lang, inline_callback=inline_cb, inline_btn_text=inline_btn
+        )
+
+    return None
 
 @start_router.message(CommandStart())
 async def cmd_start(message: Message, command: CommandObject, db: BotDatabase):
@@ -25,19 +288,10 @@ async def cmd_start(message: Message, command: CommandObject, db: BotDatabase):
     lang = user["language"]
 
     # Deep linking support
-    args = (command.args or "").strip().lower()
-    if args == "amaliy":
-        amaliy_title = "🚗 <b>RULLY Amaliy Imtihon</b>" if lang == "uz_latn" else ("🚗 <b>RULLY Амалий Имтиҳон</b>" if lang == "uz_cyrl" else "🚗 <b>RULLY Практический Экзамен</b>")
-        amaliy_text = (
-            "10 ta o‘quv darsligi, avtodrom cheklisti va vaziyatli savollardan foydalanish uchun RULLY'ni oching!" if lang == "uz_latn" else (
-                "10 та ўқув дарслиги, автодром чеклисти ва вазиятли саволлардан фойдаланиш учун RULLY'ни очинг!" if lang == "uz_cyrl" else
-                "Для доступа к 10 обучающим модулям, чек-листу автодрома и дорожным ситуациям откройте RULLY!"
-            )
-        )
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🚀 Avtodrom va Amaliyotni ochish", web_app=WebAppInfo(url=f"{WEB_APP_URL}#amaliy"))]
-        ])
-        await message.answer(f"{amaliy_title}\n\n{amaliy_text}", parse_mode="HTML", reply_markup=kb)
+    deep_res = build_deep_link_response(command.args or "", lang, db, user_id)
+    if deep_res:
+        text, kb = deep_res
+        await message.answer(text, parse_mode="HTML", reply_markup=kb)
         return
 
     # Check if user has already selected a language (only ask once on first launch)

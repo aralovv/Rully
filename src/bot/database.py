@@ -2,6 +2,7 @@
 Bot Database Repository & Data Access Layer for Telegram User Sessions,
 Answers, Mistake Tracking, and Admin Analytics.
 """
+import os
 import sqlite3
 import json
 import logging
@@ -9,6 +10,12 @@ import time
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Any, Tuple, Union, Set
 from src.db_adapter import get_db_connection, is_turso_enabled, execute_batch
+from src.db.sm2_engine import (
+    build_srs_upsert_stmt,
+    classify_srs_mastery,
+    compute_next_sm2_state,
+    derive_sm2_quality,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +48,10 @@ def compute_driver_accuracy(
     recent_correct: int = 0,
     categories_tested: int = 0,
     unresolved_mistakes: int = 0,
-    return_details: bool = False
+    return_details: bool = False,
+    srs_mastered: int = 0,
+    srs_due: int = 0,
+    srs_tracked: int = 0,
 ) -> Union[float, Dict[str, Any]]:
     """
     RULLY Multi-Criteria Driver Accuracy Engine (0.0 to 100.0%).
@@ -55,8 +65,9 @@ def compute_driver_accuracy(
        Unique correct questions / unique questions tested, preventing repetition cheating.
     4. Cross-Category Breadth (10% weight):
        Consistent accuracy across diverse YHQ traffic categories.
-    5. Bayesian Statistical Confidence:
-       Scales with sample size to prevent a 1-question beginner from getting a fake 100% accuracy.
+    5. Bayesian Statistical Confidence + SM-2 Retention Prior:
+       Scales with sample size (Beta(1, 3) random-guessing prior at 25%) and adjusts gently
+       for long-term SM-2 retention vs overdue memory decay when SRS history exists.
     """
     if total_answered <= 0 or correct_answers <= 0:
         if return_details:
@@ -66,11 +77,15 @@ def compute_driver_accuracy(
                 "net_knowledge_score": 0.0,
                 "recent_accuracy": 0.0,
                 "distinct_accuracy": 0.0,
-                "confidence_factor": 0.0
+                "confidence_factor": 0.0,
+                "bayesian_accuracy": 0.0,
+                "srs_retention_rate": 100.0,
             }
         return 0.0
 
     raw_acc = min(100.0, max(0.0, (correct_answers / total_answered) * 100.0))
+    # Empirical Beta(1, 3) Bayesian estimate centered on 25% 4-choice random baseline
+    bayesian_acc = ((correct_answers + 1.0) / (total_answered + 4.0)) * 100.0
 
     # 1. Net Knowledge Accuracy above 25% guessing baseline (40% weight)
     if raw_acc <= 25.0:
@@ -115,6 +130,19 @@ def compute_driver_accuracy(
 
     final_acc = composite * confidence
 
+    # Phase 5 SM-2 Retention Adjustment (strictly bounded [-3.0, +2.5], neutral when srs_tracked == 0)
+    srs_retention = 100.0
+    if srs_tracked > 0:
+        bounded_due = min(srs_tracked, max(0, srs_due))
+        srs_retention = round(((srs_tracked - bounded_due) / srs_tracked) * 100.0, 1)
+        if srs_tracked >= 10:
+            mastery_ratio = min(1.0, max(0.0, srs_mastered / srs_tracked))
+            due_ratio = bounded_due / srs_tracked
+            if mastery_ratio >= 0.4 and bounded_due <= 3:
+                final_acc += min(2.5, mastery_ratio * 2.5)
+            elif due_ratio > 0.45 and bounded_due >= 15:
+                final_acc -= min(3.0, (due_ratio - 0.45) * 6.0)
+
     # Safeguards:
     if raw_acc <= 25.0:
         final_acc = min(final_acc, 8.0)
@@ -134,7 +162,9 @@ def compute_driver_accuracy(
             "net_knowledge_score": round(net_acc, 1),
             "recent_accuracy": round(recent_acc, 1),
             "distinct_accuracy": round(distinct_acc, 1),
-            "confidence_factor": round(confidence, 2)
+            "confidence_factor": round(confidence, 2),
+            "bayesian_accuracy": round(bayesian_acc, 1),
+            "srs_retention_rate": srs_retention,
         }
     return final_acc
 
@@ -152,7 +182,10 @@ def compute_driver_readiness(
     current_streak: int = 0,
     avg_exam_time_seconds: float = 0.0,
     recent_pass_rate: float = None,
-    return_details: bool = False
+    return_details: bool = False,
+    srs_mastered: int = 0,
+    srs_due: int = 0,
+    srs_tracked: int = 0,
 ) -> Union[float, Dict[str, Any]]:
     """
     RULLY Intelligent 5-Pillar Exam Readiness Engine (0.0 to 100.0%).
@@ -267,6 +300,18 @@ def compute_driver_readiness(
     if total_answered < 60:
         final_score = min(final_score, 30.0)
 
+    srs_retention_pct = 100.0
+    if srs_tracked > 0:
+        bounded_due = min(srs_tracked, max(0, srs_due))
+        srs_retention_pct = round(((srs_tracked - bounded_due) / srs_tracked) * 100.0, 1)
+        if srs_tracked >= 10 and passed_exams >= 1:
+            mastery_ratio = min(1.0, max(0.0, srs_mastered / srs_tracked))
+            due_ratio = bounded_due / srs_tracked
+            if mastery_ratio >= 0.5 and bounded_due <= 3:
+                final_score += min(2.0, mastery_ratio * 2.0)
+            elif due_ratio > 0.5 and bounded_due >= 15:
+                final_score -= min(3.0, (due_ratio - 0.5) * 6.0)
+
     final_score = round(max(0.0, min(100.0, final_score)), 1)
 
     if final_score >= 85.0:
@@ -281,6 +326,7 @@ def compute_driver_readiness(
     details = {
         "readiness_score": final_score,
         "grade": grade,
+        "srs_retention_pct": srs_retention_pct,
         "pillars": {
             "exam_mastery": round(p_exam, 1),
             "accuracy": round(p_acc, 1),
@@ -294,11 +340,44 @@ def compute_driver_readiness(
 
 class BotDatabase:
     _ticket_schema_ready: bool = False
+    _srs_ready_paths: Set[str] = set()
 
     def __init__(self, db_path: str = "master_database.sqlite"):
         self.db_path = db_path
         if not is_turso_enabled():
             self._init_bot_schema()
+
+    def _ensure_srs_schema(self, conn) -> None:
+        key = "__turso__" if is_turso_enabled() else os.path.abspath(self.db_path)
+        if key in BotDatabase._srs_ready_paths:
+            return
+        try:
+            execute_batch(
+                conn,
+                [
+                    """
+                    CREATE TABLE IF NOT EXISTS user_question_srs (
+                        user_id INTEGER NOT NULL,
+                        canonical_id TEXT NOT NULL,
+                        ease_factor REAL NOT NULL DEFAULT 2.5,
+                        interval_days INTEGER NOT NULL DEFAULT 0,
+                        repetitions INTEGER NOT NULL DEFAULT 0,
+                        lapses INTEGER NOT NULL DEFAULT 0,
+                        last_quality INTEGER NOT NULL DEFAULT 0,
+                        last_reviewed_at TEXT NOT NULL,
+                        next_review_at TEXT NOT NULL,
+                        PRIMARY KEY (user_id, canonical_id),
+                        FOREIGN KEY (user_id) REFERENCES telegram_users(user_id) ON DELETE CASCADE,
+                        FOREIGN KEY (canonical_id) REFERENCES canonical_questions(canonical_id) ON DELETE CASCADE
+                    )
+                    """.strip(),
+                    "CREATE INDEX IF NOT EXISTS idx_srs_user_due ON user_question_srs(user_id, next_review_at)",
+                    "CREATE INDEX IF NOT EXISTS idx_srs_user_reps ON user_question_srs(user_id, repetitions, lapses)",
+                ],
+            )
+            BotDatabase._srs_ready_paths.add(key)
+        except Exception as exc:
+            logger.warning("SRS lazy schema sync failed cleanly: %s", exc)
 
     def _ensure_ticket_progress_table(self, conn) -> None:
         if BotDatabase._ticket_schema_ready:
@@ -600,6 +679,24 @@ class BotDatabase:
             );
             """)
 
+            # 14. SM-2 Spaced Repetition Schedule (Phase 5)
+            c.execute("""
+            CREATE TABLE IF NOT EXISTS user_question_srs (
+                user_id INTEGER NOT NULL,
+                canonical_id TEXT NOT NULL,
+                ease_factor REAL NOT NULL DEFAULT 2.5,
+                interval_days INTEGER NOT NULL DEFAULT 0,
+                repetitions INTEGER NOT NULL DEFAULT 0,
+                lapses INTEGER NOT NULL DEFAULT 0,
+                last_quality INTEGER NOT NULL DEFAULT 0,
+                last_reviewed_at TEXT NOT NULL,
+                next_review_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, canonical_id),
+                FOREIGN KEY (user_id) REFERENCES telegram_users(user_id) ON DELETE CASCADE,
+                FOREIGN KEY (canonical_id) REFERENCES canonical_questions(canonical_id) ON DELETE CASCADE
+            );
+            """)
+
             # Performance indexes
             c.execute("CREATE INDEX IF NOT EXISTS idx_bookmarks_user ON user_bookmarks(user_id);")
             c.execute("CREATE INDEX IF NOT EXISTS idx_checklist_user ON practical_checklist(user_id);")
@@ -611,9 +708,12 @@ class BotDatabase:
             c.execute("CREATE INDEX IF NOT EXISTS idx_session_answers_user_recent ON session_answers(user_id, id DESC);")
             c.execute("CREATE INDEX IF NOT EXISTS idx_ticket_progress_user ON user_ticket_progress(user_id);")
             c.execute("CREATE INDEX IF NOT EXISTS idx_session_answers_user_canon ON session_answers(user_id, canonical_id, is_correct);")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_srs_user_due ON user_question_srs(user_id, next_review_at);")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_srs_user_reps ON user_question_srs(user_id, repetitions, lapses);")
 
             conn.commit()
             BotDatabase._ticket_schema_ready = True
+            BotDatabase._srs_ready_paths.add(os.path.abspath(self.db_path))
 
     # --- User Management ---
     def get_or_create_user(self, user_id: int, username: Optional[str] = None,
@@ -1215,15 +1315,19 @@ class BotDatabase:
 
     def process_session_answer(self, session_id: str, user_id: int, canonical_id: str,
                                selected_key: str, correct_key: str, is_correct: bool,
-                               session_type: str = "EXAM") -> Dict[str, Any]:
+                               session_type: str = "EXAM",
+                               response_time_ms: Optional[int] = None,
+                               quality: Optional[int] = None) -> Dict[str, Any]:
         """
         Atomic execution for answer submission, mistake tracking, streak update,
-        and exam termination check.
-        Uses execute_batch() to group all write operations into a single Turso HTTP round-trip (<60ms).
+        SM-2 spaced-repetition scheduling update, and exam termination check.
+        Uses execute_batch() to group all write operations into a single Turso HTTP round-trip.
         """
-        now_ts = datetime.utcnow().isoformat()
-        today_str = datetime.utcnow().strftime("%Y-%m-%d")
+        now_dt = datetime.utcnow()
+        now_ts = now_dt.isoformat()
+        today_str = now_dt.strftime("%Y-%m-%d")
         with self._get_connection() as conn:
+            self._ensure_srs_schema(conn)
             c = conn.cursor()
 
             # Guard: If EXAM session already reached 3 mistakes or was terminated, reject further answers
@@ -1234,30 +1338,55 @@ class BotDatabase:
                     return {
                         "is_new": False,
                         "streak": {"current_streak": 0, "today_questions_count": 0},
-                        "is_exam_terminated": True
+                        "is_exam_terminated": True,
+                        "srs": None,
                     }
             else:
                 c.execute("SELECT status, incorrect_count FROM user_sessions WHERE session_id = ?", (session_id,))
                 sess_row = c.fetchone()
+
+            # Fetch existing SM-2 state for (user_id, canonical_id)
+            c.execute(
+                """
+                SELECT ease_factor, interval_days, repetitions, lapses, last_quality, last_reviewed_at, next_review_at
+                FROM user_question_srs
+                WHERE user_id = ? AND canonical_id = ?
+                """,
+                (user_id, canonical_id),
+            )
+            srs_row = c.fetchone()
+            prev_srs = dict(srs_row) if srs_row else None
 
             # Check if this question was already answered to guarantee idempotency
             c.execute("SELECT is_correct FROM session_answers WHERE session_id = ? AND canonical_id = ?", (session_id, canonical_id))
             if c.fetchone() is not None:
                 c.execute("SELECT current_streak, today_questions_count FROM learning_streak WHERE user_id = ?", (user_id,))
                 st_row = c.fetchone()
+                cur_srs = None
+                if prev_srs:
+                    cur_srs = {
+                        **prev_srs,
+                        "mastery_level": classify_srs_mastery(
+                            int(prev_srs.get("repetitions") or 0),
+                            int(prev_srs.get("interval_days") or 0),
+                            float(prev_srs.get("ease_factor") or 2.5),
+                            int(prev_srs.get("lapses") or 0),
+                        ),
+                    }
                 return {
                     "is_new": False,
                     "streak": {
                         "current_streak": st_row["current_streak"] if st_row else 1,
                         "today_questions_count": st_row["today_questions_count"] if st_row else 1
                     },
-                    "is_exam_terminated": (sess_row["status"] == "FAILED_MISTAKES") if sess_row else False
+                    "is_exam_terminated": (sess_row["status"] == "FAILED_MISTAKES") if sess_row else False,
+                    "srs": cur_srs,
                 }
 
             # Fetch streak state to calculate updated consecutive-day streak & daily count
             c.execute("SELECT current_streak, today_questions_count, last_active_date, daily_goal_questions FROM learning_streak WHERE user_id = ?", (user_id,))
             st_row = c.fetchone()
-            yesterday_str = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+            yesterday_str = (now_dt - timedelta(days=1)).strftime("%Y-%m-%d")
             if st_row:
                 last_date = st_row["last_active_date"]
                 prev_streak = st_row["current_streak"] or 1
@@ -1300,6 +1429,16 @@ class BotDatabase:
             new_incorrect = curr_incorrect + (0 if is_correct else 1)
             is_exam_terminated = (session_type == "EXAM" and new_incorrect >= 3)
 
+            # Calculate SM-2 memory transition
+            derived_q = derive_sm2_quality(
+                is_correct=is_correct,
+                session_type=session_type,
+                response_time_ms=response_time_ms,
+                previous_lapses=int(prev_srs.get("lapses") or 0) if prev_srs else 0,
+                explicit_quality=quality,
+            )
+            next_srs = compute_next_sm2_state(prev_srs, quality=derived_q, now=now_dt)
+
             # Build batch containing all write operations
             batch_stmts = [
                 ("""
@@ -1336,6 +1475,7 @@ class BotDatabase:
                 ))
 
             batch_stmts.append(streak_stmt)
+            batch_stmts.append(build_srs_upsert_stmt(user_id, canonical_id, next_srs))
 
             if is_exam_terminated:
                 batch_stmts.append((
@@ -1348,7 +1488,8 @@ class BotDatabase:
             return {
                 "is_new": True,
                 "streak": streak_info,
-                "is_exam_terminated": is_exam_terminated
+                "is_exam_terminated": is_exam_terminated,
+                "srs": next_srs,
             }
 
     def get_session_answers(self, session_id: str) -> Dict[str, Dict[str, Any]]:
@@ -1485,8 +1626,50 @@ class BotDatabase:
                 res.append(d)
             return res
 
+    def _query_srs_aggregate(self, conn: Any, user_id: int, now_iso: Optional[str] = None) -> Dict[str, Any]:
+        """Returns compact SM-2 progress aggregates using a single indexed query on user_question_srs."""
+        self._ensure_srs_schema(conn)
+        now_ts = now_iso or datetime.utcnow().isoformat()
+        end_of_day_ts = f"{now_ts[:10]}T23:59:59.999999"
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT
+                COUNT(*) AS tracked_count,
+                COALESCE(SUM(CASE WHEN next_review_at <= ? THEN 1 ELSE 0 END), 0) AS due_now_count,
+                COALESCE(SUM(CASE WHEN next_review_at <= ? THEN 1 ELSE 0 END), 0) AS due_today_count,
+                COALESCE(SUM(CASE WHEN repetitions <= 0 OR (repetitions = 1 AND lapses > 1) THEN 1 ELSE 0 END), 0) AS learning_count,
+                COALESCE(SUM(CASE WHEN repetitions >= 3 AND interval_days >= 21 AND ease_factor >= 2.0 THEN 1 ELSE 0 END), 0) AS mastered_count,
+                COALESCE(AVG(ease_factor), 2.5) AS avg_ease_factor
+            FROM user_question_srs
+            WHERE user_id = ?
+            """,
+            (now_ts, end_of_day_ts, user_id),
+        )
+        r = dict(c.fetchone() or {})
+        tracked = int(r.get("tracked_count") or 0)
+        due_now = int(r.get("due_now_count") or 0)
+        due_today = int(r.get("due_today_count") or 0)
+        learning = int(r.get("learning_count") or 0)
+        mastered = int(r.get("mastered_count") or 0)
+        reviewing = max(0, tracked - learning - mastered)
+        avg_ef = round(float(r.get("avg_ease_factor") or 2.5), 2) if tracked > 0 else 2.5
+        retention = round(((tracked - min(tracked, due_now)) / tracked) * 100.0, 1) if tracked > 0 else 100.0
+        return {
+            "tracked_count": tracked,
+            "due_now_count": due_now,
+            "due_today_count": due_today,
+            "learning_count": learning,
+            "reviewing_count": reviewing,
+            "mastered_count": mastered,
+            "avg_ease_factor": avg_ef,
+            "retention_rate": retention,
+        }
+
     def get_user_stats(self, user_id: int) -> Dict[str, Any]:
+        now_ts = datetime.utcnow().isoformat()
         with self._get_connection() as conn:
+            self._ensure_srs_schema(conn)
             c = conn.cursor()
             c.execute("""
             SELECT
@@ -1507,6 +1690,7 @@ class BotDatabase:
               (SELECT COALESCE(SUM(is_correct), 0) FROM (SELECT sa.is_correct FROM session_answers sa JOIN user_sessions us ON sa.session_id = us.session_id WHERE us.user_id = ? ORDER BY sa.id DESC LIMIT 40)) AS recent_ans_correct
             """, tuple([user_id] * 15))
             row = dict(c.fetchone() or {})
+            srs_agg = self._query_srs_aggregate(conn, user_id, now_iso=now_ts)
 
             total_exams = int(row.get("total_exams") or 0)
             passed_exams = int(row.get("passed_exams") or 0)
@@ -1536,7 +1720,10 @@ class BotDatabase:
                 recent_correct=recent_ans_correct,
                 categories_tested=categories_tested,
                 unresolved_mistakes=mistakes_cnt,
-                return_details=True
+                return_details=True,
+                srs_mastered=srs_agg["mastered_count"],
+                srs_due=srs_agg["due_now_count"],
+                srs_tracked=srs_agg["tracked_count"],
             )
             accuracy = accuracy_info["accuracy"]
 
@@ -1553,7 +1740,10 @@ class BotDatabase:
                 current_streak=current_streak,
                 avg_exam_time_seconds=avg_exam_time,
                 recent_pass_rate=recent_pass_rate,
-                return_details=True
+                return_details=True,
+                srs_mastered=srs_agg["mastered_count"],
+                srs_due=srs_agg["due_now_count"],
+                srs_tracked=srs_agg["tracked_count"],
             )
 
             return {
@@ -1572,7 +1762,8 @@ class BotDatabase:
                 "avg_exam_time_seconds": round(avg_exam_time, 1),
                 "readiness_score": readiness_info["readiness_score"],
                 "readiness_grade": readiness_info["grade"],
-                "readiness_pillars": readiness_info["pillars"]
+                "readiness_pillars": readiness_info["pillars"],
+                "srs_summary": srs_agg,
             }
 
     # --- Admin Analytics ---
@@ -1922,11 +2113,13 @@ class BotDatabase:
         engine_total_questions: int = 1327,
     ) -> Dict[str, Any]:
         """
-        Computes per-category mastery, weak/strong topic rankings, milestones,
-        and a real-time Smart Next Action recommendation using 2 compact queries.
+        Computes per-category mastery, SM-2 spaced repetition summary, weak/strong topic rankings,
+        milestones, and a real-time Smart Next Action recommendation.
         """
+        now_ts = datetime.utcnow().isoformat()
         with self._get_connection() as conn:
             self._ensure_ticket_progress_table(conn)
+            self._ensure_srs_schema(conn)
             c = conn.cursor()
             c.execute(
                 """
@@ -1980,6 +2173,7 @@ class BotDatabase:
                 tuple([user_id] * 7),
             )
             summary_row = dict(c.fetchone() or {})
+            srs_agg = self._query_srs_aggregate(conn, user_id, now_iso=now_ts)
 
         category_mastery = []
         total_unique_correct = 0
@@ -2028,14 +2222,23 @@ class BotDatabase:
         current_streak = int(summary_row.get("current_streak") or 1)
         completed_modules = int(summary_row.get("completed_modules") or 0)
         passed_tickets = int(summary_row.get("passed_tickets") or 0)
+        srs_due_now = int(srs_agg["due_now_count"])
+        srs_mastered = int(srs_agg["mastered_count"])
 
-        # Smart Next Action Recommendation Engine
-        if total_unique_answered < 10:
+        # Smart Next Action Recommendation Engine (SM-2 integrated)
+        if total_unique_answered < 10 and srs_due_now < 5:
             recommendation = {
                 "kind": "adaptive_starter",
                 "target_type": "ADAPTIVE",
                 "target_id": None,
                 "metric": total_unique_answered,
+            }
+        elif srs_due_now >= 5:
+            recommendation = {
+                "kind": "srs_review",
+                "target_type": "SRS",
+                "target_id": None,
+                "metric": srs_due_now,
             }
         elif active_mistakes >= 5:
             recommendation = {
@@ -2043,6 +2246,13 @@ class BotDatabase:
                 "target_type": "MISTAKES",
                 "target_id": None,
                 "metric": active_mistakes,
+            }
+        elif srs_due_now >= 1:
+            recommendation = {
+                "kind": "srs_review",
+                "target_type": "SRS",
+                "target_id": None,
+                "metric": srs_due_now,
             }
         elif weak_categories:
             w = weak_categories[0]
@@ -2075,6 +2285,7 @@ class BotDatabase:
             {"id": "mistake_slayer", "unlocked": resolved_mistakes >= 5, "progress": min(5, resolved_mistakes), "target": 5},
             {"id": "ticket_finisher", "unlocked": passed_tickets >= 5, "progress": min(5, passed_tickets), "target": 5},
             {"id": "avtodrom_pro", "unlocked": completed_modules >= 5, "progress": min(5, completed_modules), "target": 5},
+            {"id": "memory_master", "unlocked": srs_mastered >= 25, "progress": min(25, srs_mastered), "target": 25},
         ]
 
         return {
@@ -2085,6 +2296,7 @@ class BotDatabase:
             "total_bank_questions": engine_total_questions,
             "passed_tickets": passed_tickets,
             "completed_modules": completed_modules,
+            "srs_summary": srs_agg,
             "category_mastery": category_mastery,
             "weak_categories": weak_categories,
             "strong_categories": strong_categories,
@@ -2092,8 +2304,150 @@ class BotDatabase:
             "milestones": milestones,
         }
 
+    # --- Phase 5: SM-2 Spaced Repetition Repository Methods ---
+    def record_srs_review(
+        self,
+        user_id: int,
+        canonical_id: str,
+        quality: int,
+        now_dt: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        """
+        Records a direct SM-2 spaced-repetition quality review (0..5) and keeps
+        user_mistakes consistent inside a single atomic execute_batch().
+        """
+        ts_dt = now_dt or datetime.utcnow()
+        now_ts = ts_dt.isoformat()
+        with self._get_connection() as conn:
+            self._ensure_srs_schema(conn)
+            c = conn.cursor()
+            c.execute(
+                """
+                SELECT ease_factor, interval_days, repetitions, lapses
+                FROM user_question_srs
+                WHERE user_id = ? AND canonical_id = ?
+                """,
+                (user_id, canonical_id),
+            )
+            row = c.fetchone()
+            prev = dict(row) if row else None
+            next_srs = compute_next_sm2_state(prev, quality=quality, now=ts_dt)
+
+            batch_stmts = [build_srs_upsert_stmt(user_id, canonical_id, next_srs)]
+            if next_srs["last_quality"] >= 4:
+                batch_stmts.append((
+                    "UPDATE user_mistakes SET is_resolved = 1 WHERE user_id = ? AND canonical_id = ?",
+                    [user_id, canonical_id],
+                ))
+            elif next_srs["last_quality"] < 3:
+                batch_stmts.append((
+                    """
+                    INSERT INTO user_mistakes (user_id, canonical_id, mistake_count, last_mistake_at, is_resolved)
+                    VALUES (?, ?, 1, ?, 0)
+                    ON CONFLICT(user_id, canonical_id) DO UPDATE SET
+                        mistake_count = mistake_count + 1,
+                        last_mistake_at = excluded.last_mistake_at,
+                        is_resolved = 0
+                    """.strip(),
+                    [user_id, canonical_id, now_ts],
+                ))
+            execute_batch(conn, batch_stmts)
+            return next_srs
+
+    def get_srs_queue_summary(
+        self,
+        user_id: int,
+        now_iso: Optional[str] = None,
+        total_bank_questions: int = 1327,
+        limit: int = 30,
+    ) -> Dict[str, Any]:
+        """
+        Fetches overdue & due-now SM-2 review queue plus summary stats for "Aqlli Takrorlash".
+        Orders most critical items first: lowest ease_factor, highest lapses, earliest next_review_at.
+        """
+        now_ts = now_iso or datetime.utcnow().isoformat()
+        with self._get_connection() as conn:
+            self._ensure_srs_schema(conn)
+            agg = self._query_srs_aggregate(conn, user_id, now_iso=now_ts)
+            agg["total_bank_questions"] = int(total_bank_questions)
+            c = conn.cursor()
+            c.execute(
+                """
+                SELECT canonical_id, ease_factor, interval_days, repetitions, lapses,
+                       last_quality, last_reviewed_at, next_review_at
+                FROM user_question_srs
+                WHERE user_id = ?
+                ORDER BY
+                    CASE WHEN next_review_at <= ? THEN 0 ELSE 1 END ASC,
+                    next_review_at ASC,
+                    ease_factor ASC,
+                    lapses DESC
+                LIMIT ?
+                """,
+                (user_id, now_ts, max(1, int(limit))),
+            )
+            items: List[Dict[str, Any]] = []
+            due_ids: List[str] = []
+            for r in c.fetchall():
+                d = dict(r)
+                is_due = str(d["next_review_at"]) <= now_ts
+                d["is_due"] = is_due
+                d["ease_factor"] = round(float(d.get("ease_factor") or 2.5), 2)
+                d["interval_days"] = int(d.get("interval_days") or 0)
+                d["repetitions"] = int(d.get("repetitions") or 0)
+                d["lapses"] = int(d.get("lapses") or 0)
+                d["mastery_level"] = classify_srs_mastery(
+                    d["repetitions"], d["interval_days"], d["ease_factor"], d["lapses"]
+                )
+                items.append(d)
+                if is_due:
+                    due_ids.append(d["canonical_id"])
+            return {
+                "summary": agg,
+                "due_question_ids": due_ids,
+                "items": items,
+            }
+
+    def get_question_srs_map(self, user_id: int, canonical_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+        """Returns compact SM-2 state keyed by canonical_id for the requested question IDs."""
+        clean_ids = [str(cid) for cid in canonical_ids if cid]
+        if not clean_ids:
+            return {}
+        now_ts = datetime.utcnow().isoformat()
+        with self._get_connection() as conn:
+            self._ensure_srs_schema(conn)
+            c = conn.cursor()
+            ph = ",".join("?" for _ in clean_ids)
+            c.execute(
+                f"""
+                SELECT canonical_id, ease_factor, interval_days, repetitions, lapses, last_quality, next_review_at
+                FROM user_question_srs
+                WHERE user_id = ? AND canonical_id IN ({ph})
+                """,
+                tuple([user_id] + clean_ids),
+            )
+            out: Dict[str, Dict[str, Any]] = {}
+            for r in c.fetchall():
+                ef = round(float(r["ease_factor"] or 2.5), 2)
+                iv = int(r["interval_days"] or 0)
+                reps = int(r["repetitions"] or 0)
+                lapses = int(r["lapses"] or 0)
+                nra = str(r["next_review_at"])
+                out[r["canonical_id"]] = {
+                    "ease_factor": ef,
+                    "interval_days": iv,
+                    "repetitions": reps,
+                    "lapses": lapses,
+                    "last_quality": int(r["last_quality"] or 0),
+                    "next_review_at": nra,
+                    "is_due": nra <= now_ts,
+                    "mastery_level": classify_srs_mastery(reps, iv, ef, lapses),
+                }
+            return out
+
     def get_ai_student_snapshot(self, user_id: int) -> Dict[str, Any]:
         with self._get_connection() as conn:
+            self._ensure_srs_schema(conn)
             c = conn.cursor()
             c.execute(
                 """
@@ -2106,9 +2460,15 @@ class BotDatabase:
                 (user_id, user_id, user_id, user_id),
             )
             r = dict(c.fetchone() or {})
+            srs_agg = self._query_srs_aggregate(conn, user_id)
             return {
                 "total_exams": int(r.get("total_exams") or 0),
                 "passed_exams": int(r.get("passed_exams") or 0),
                 "active_mistakes": int(r.get("active_mistakes") or 0),
                 "unique_answered": int(r.get("unique_answered") or 0),
+                "srs_tracked_total": int(srs_agg.get("tracked_count") or 0),
+                "srs_due_now": int(srs_agg.get("due_now_count") or 0),
+                "srs_mastered_count": int(srs_agg.get("mastered_count") or 0),
+                "srs_learning_count": int(srs_agg.get("learning_count") or 0),
+                "srs_avg_ease_factor": float(srs_agg.get("avg_ease_factor") or 2.5),
             }

@@ -116,9 +116,9 @@ def get_question(
     is_bm = db.is_bookmarked(user["user_id"], canonical_id)
     return serialize_question(q, is_bookmarked=is_bm, include_correct=True)
 
-# 3. Start Session (Exam, Category, Random, Mistakes, Custom, Bilet, Adaptive)
+# 3. Start Session (Exam, Category, Random, Mistakes, Custom, Bilet, Adaptive, SRS)
 class SessionStartRequest(BaseModel):
-    session_type: str = Field(..., pattern="^(EXAM|CATEGORY|RANDOM|MISTAKES|CUSTOM|BILET|ADAPTIVE)$")
+    session_type: str = Field(..., pattern="^(EXAM|CATEGORY|RANDOM|MISTAKES|CUSTOM|BILET|ADAPTIVE|SRS)$")
     category_id: Optional[int] = None
     ticket_number: Optional[int] = None
     total_questions: Optional[int] = 20
@@ -166,6 +166,7 @@ def start_session(
     # Select questions according to session type
     question_ids: List[str] = []
     loaded_questions: List[QuestionItem] = []
+    queue_breakdown: Optional[Dict[str, int]] = None
     if req.session_type == "EXAM":
         # 20 questions, 25 minutes standard
         session_data = engine.create_exam_session(language=lang)
@@ -201,18 +202,30 @@ def start_session(
         question_ids = [q.canonical_id for q in loaded_questions]
         req.category_id = t_num
         time_limit = req.time_limit_seconds or 0
-    elif req.session_type == "ADAPTIVE":
+    elif req.session_type in ("ADAPTIVE", "SRS"):
         count = max(5, min(40, int(req.total_questions or 20)))
+        srs_queue = db.get_srs_queue_summary(user_id, total_bank_questions=engine.get_total_question_count(), limit=40)
+        due_srs_ids = srs_queue.get("due_question_ids", [])
         unresolved = db.get_user_mistakes(user_id, limit=30)
         solved_ok = db.get_solved_correct_ids(user_id)
         analytics = db.get_learning_analytics(user_id, engine.get_categories(lang), engine.get_total_question_count())
         weak_cat_ids = [w["category_id"] for w in analytics.get("weak_categories", [])]
-        question_ids = engine.get_adaptive_question_ids(
-            count=count,
-            unresolved_mistakes=unresolved,
-            weak_category_ids=weak_cat_ids,
-            solved_correct_ids=solved_ok,
-        )
+        if req.session_type == "SRS":
+            question_ids, queue_breakdown = engine.get_srs_session_question_ids(
+                count=count,
+                due_srs_ids=due_srs_ids,
+                unresolved_mistakes=unresolved,
+                weak_category_ids=weak_cat_ids,
+                solved_correct_ids=solved_ok,
+            )
+        else:
+            question_ids = engine.get_adaptive_question_ids(
+                count=count,
+                unresolved_mistakes=unresolved,
+                weak_category_ids=weak_cat_ids,
+                solved_correct_ids=solved_ok,
+                due_srs_ids=due_srs_ids,
+            )
         loaded_questions = [q for q in (engine.get_question(qid, language=lang) for qid in question_ids) if q]
         time_limit = req.time_limit_seconds or 0
     else:  # RANDOM / CUSTOM
@@ -239,12 +252,17 @@ def start_session(
 
     # Fetch serialized question objects (using bookmarks fetched atomically with session)
     bookmarks = session_info.get("bookmark_ids") or set()
-    questions_list = [
-        serialize_question(q, is_bookmarked=(q.canonical_id in bookmarks), include_correct=True)
-        for q in loaded_questions if q
-    ]
+    srs_map = db.get_question_srs_map(user_id, question_ids) if req.session_type in ("SRS", "ADAPTIVE") else {}
+    questions_list = []
+    for q in loaded_questions:
+        if not q:
+            continue
+        item = serialize_question(q, is_bookmarked=(q.canonical_id in bookmarks), include_correct=True)
+        if q.canonical_id in srs_map:
+            item["srs_meta"] = srs_map[q.canonical_id]
+        questions_list.append(item)
 
-    return {
+    payload: Dict[str, Any] = {
         "session_id": session_info["session_id"],
         "session_type": req.session_type,
         "language": lang,
@@ -252,8 +270,11 @@ def start_session(
         "total_questions": len(questions_list),
         "questions": questions_list,
         "show_answer": session_info["show_answer"],
-        "show_explanation": session_info["show_explanation"]
+        "show_explanation": session_info["show_explanation"],
     }
+    if queue_breakdown is not None:
+        payload["queue_breakdown"] = queue_breakdown
+    return payload
 
 # 4. Submit Answer
 class SubmitAnswerRequest(BaseModel):
@@ -261,6 +282,8 @@ class SubmitAnswerRequest(BaseModel):
     canonical_id: str
     selected_key: str
     language: Optional[str] = None
+    response_time_ms: Optional[int] = Field(None, ge=0, le=3600000)
+    quality: Optional[int] = Field(None, ge=0, le=5)
 
 @router.post("/session/answer")
 def submit_answer(
@@ -284,7 +307,8 @@ def submit_answer(
             "explanation": "",
             "legal_reference": "",
             "streak": {"current_streak": 0, "today_questions_count": 0},
-            "is_exam_terminated": True
+            "is_exam_terminated": True,
+            "srs": None,
         }
 
     lang = req.language or session.get("language", "uz_latn")
@@ -293,7 +317,7 @@ def submit_answer(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-    # Record in session_answers atomically (batch DB operations)
+    # Record in session_answers + SM-2 schedule atomically (batch DB operations)
     res = db.process_session_answer(
         session_id=req.session_id,
         user_id=user_id,
@@ -301,7 +325,9 @@ def submit_answer(
         selected_key=req.selected_key.upper(),
         correct_key=feedback.correct_key,
         is_correct=feedback.is_correct,
-        session_type=session.get("session_type", "EXAM")
+        session_type=session.get("session_type", "EXAM"),
+        response_time_ms=req.response_time_ms,
+        quality=req.quality,
     )
 
     return {
@@ -316,7 +342,8 @@ def submit_answer(
         "legal_clause": getattr(feedback, "legal_clause", None),
         "legal_doc_title": getattr(feedback, "legal_doc_title", None),
         "streak": res["streak"],
-        "is_exam_terminated": res["is_exam_terminated"]
+        "is_exam_terminated": res["is_exam_terminated"],
+        "srs": res.get("srs"),
     }
 
 # 5. Finish Session & Calculate Score
@@ -618,4 +645,71 @@ def get_reference_law_endpoint(
     selected_lang = lang if lang in ("uz_latn", "uz_cyrl", "ru") else "uz_latn"
     response.headers["Cache-Control"] = "public, max-age=300, s-maxage=3600, stale-while-revalidate=3600"
     return get_law_reference(selected_lang)
+
+
+# 13. RULLY 2.0 Phase 5 — SM-2 Spaced Repetition Daily Queue ("Aqlli Takrorlash")
+class SrsReviewRequest(BaseModel):
+    canonical_id: str
+    quality: int = Field(..., ge=0, le=5)
+
+
+@router.get("/srs/queue")
+def get_srs_queue_endpoint(
+    lang: Optional[str] = Query(None),
+    limit: int = Query(20, ge=1, le=50),
+    user: Dict[str, Any] = Depends(get_current_user),
+    db: BotDatabase = Depends(get_db),
+):
+    selected_lang = lang or user.get("language", "uz_latn")
+    if selected_lang not in ("uz_latn", "uz_cyrl", "ru"):
+        selected_lang = "uz_latn"
+
+    user_id = user["user_id"]
+    queue = db.get_srs_queue_summary(
+        user_id=user_id,
+        total_bank_questions=engine.get_total_question_count(),
+        limit=limit,
+    )
+    enriched_items = []
+    for row in queue["items"]:
+        q = engine.get_question(row["canonical_id"], language=selected_lang)
+        enriched_items.append({
+            **row,
+            "question_text": q.question_text if q else "",
+            "category_id": q.category_id if q else None,
+            "category_name": q.category_name if q else "",
+            "has_image": bool(q and q.has_image),
+        })
+
+    return {
+        "ok": True,
+        "language": selected_lang,
+        "summary": queue["summary"],
+        "due_question_ids": queue["due_question_ids"],
+        "items": enriched_items,
+    }
+
+
+@router.post("/srs/review")
+def submit_srs_review_endpoint(
+    req: SrsReviewRequest,
+    user: Dict[str, Any] = Depends(get_current_user),
+    db: BotDatabase = Depends(get_db),
+):
+    q = engine.get_question(req.canonical_id, language=user.get("language", "uz_latn"))
+    if not q:
+        raise HTTPException(status_code=404, detail="Canonical question not found")
+
+    user_id = user["user_id"]
+    srs_state = db.record_srs_review(
+        user_id=user_id,
+        canonical_id=req.canonical_id,
+        quality=req.quality,
+    )
+    invalidate_auth_cache(user_id)
+    return {
+        "ok": True,
+        "canonical_id": req.canonical_id,
+        "srs": srs_state,
+    }
 
