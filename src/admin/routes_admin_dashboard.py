@@ -23,7 +23,7 @@ def _get_connection():
 
 
 @router.get("/kpi")
-async def get_dashboard_kpis(current_admin: dict = Depends(get_current_admin)):
+def get_dashboard_kpis(current_admin: dict = Depends(get_current_admin)):
     """
     Returns 10 real database-backed KPI metrics for the executive overview.
     All monetary amounts are represented in Uzbek So'm (UZS).
@@ -98,7 +98,7 @@ async def get_dashboard_kpis(current_admin: dict = Depends(get_current_admin)):
 
 
 @router.get("/sales-analytics")
-async def get_sales_analytics(
+def get_sales_analytics(
     range_filter: str = Query("7d", description="today, yesterday, 7d, 30d, 90d, custom"),
     start_date: Optional[str] = Query(None, description="YYYY-MM-DD for custom range"),
     end_date: Optional[str] = Query(None, description="YYYY-MM-DD for custom range"),

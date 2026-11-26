@@ -43,10 +43,10 @@ logger = logging.getLogger(__name__)
 
 # Background worker for order expiration
 async def order_expiration_worker():
-    """Runs periodically (every 15 minutes) to expire stale payment orders without waking up CPU constantly."""
+    """Runs periodically (every 15 minutes) to expire stale payment orders without blocking the event loop."""
     while True:
         try:
-            expired_count = expire_stale_orders()
+            expired_count = await asyncio.to_thread(expire_stale_orders)
             if expired_count > 0:
                 logger.info(f"Order expiration worker: Expired {expired_count} stale orders.")
         except Exception as e:
@@ -55,17 +55,24 @@ async def order_expiration_worker():
 
 
 async def periodic_question_sync_worker():
-    """Periodically checks external theory sources for new questions every 12 hours."""
+    """
+    Periodically checks external theory sources for new questions every 12 hours in a worker thread.
+    Respects ENABLE_INTERNAL_QUESTION_SYNC=false when offloaded to external GitHub Actions cron (Decision U-03).
+    """
     await asyncio.sleep(60)  # Initial grace delay after startup
     while True:
         try:
             from src.sync.service import QuestionSyncService
-            svc = QuestionSyncService()
-            check_res = svc.check_for_updates(auto_stage=True)
+
+            def _sync_once():
+                svc = QuestionSyncService()
+                return svc.check_for_updates(auto_stage=True)
+
+            check_res = await asyncio.to_thread(_sync_once)
             if check_res.get("has_updates"):
                 logger.info(f"Periodic question sync worker: Staged {check_res.get('newly_staged_count', 0)} items for admin review.")
         except Exception as e:
-            logger.error(f"Error in periodic question sync worker: {e}")
+            logger.error(f"Error in periodic question sync worker (isolated from MTProto/Bot): {e}")
         await asyncio.sleep(43200)  # 12 hours
 
 
@@ -94,8 +101,11 @@ async def lifespan(app: FastAPI):
         # 2. Start background order expiration task
         expiration_task = asyncio.create_task(order_expiration_worker())
 
-        # 3. Start periodic question sync worker
-        question_sync_task = asyncio.create_task(periodic_question_sync_worker())
+        # 3. Start periodic question sync worker unless offloaded to GitHub Actions (U-03)
+        if os.getenv("ENABLE_INTERNAL_QUESTION_SYNC", "true").lower() in ("true", "1", "yes"):
+            question_sync_task = asyncio.create_task(periodic_question_sync_worker())
+        else:
+            logger.info("Internal 12h question sync disabled (offloaded to scheduled webhook/GitHub Actions).")
 
         # 4. Start resilient 24/7 MTProto worker loop
         async def mtproto_worker_loop():
@@ -300,7 +310,7 @@ async def add_no_cache_header(request: Request, call_next):
     elif path.startswith(("/static/css/", "/static/js/", "/static/img/", "/static/images/")):
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     elif path == "/api/categories":
-        response.headers["Cache-Control"] = "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400"
+        response.headers["Cache-Control"] = "public, max-age=300, s-maxage=3600, stale-while-revalidate=3600"
     elif path.startswith("/api/amaliy/"):
         response.headers["Cache-Control"] = "private, no-cache, no-store, must-revalidate"
     return response

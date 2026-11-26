@@ -529,8 +529,9 @@
         `).join('');
       }
 
-      // 4. Load Question Sync & Source Monitoring
+      // 4. Load Question Sync & Source Monitoring + Editorial Legal Queue
       await loadQuestionSyncStatus();
+      await loadEditorialQueue(1);
 
     } catch (e) {
       console.error("Sozlamalar yuklashda xatolik:", e);
@@ -730,11 +731,236 @@
     document.getElementById('inp-edit-staged-ru').value = q.text_ru || '';
     document.getElementById('inp-edit-staged-correct-key').value = q.correct_option_key || 'A';
     document.getElementById('inp-edit-staged-explanation').value = q.explanation || '';
+    if (document.getElementById('inp-edit-staged-expl-cyrl')) {
+      document.getElementById('inp-edit-staged-expl-cyrl').value = '';
+    }
+    if (document.getElementById('inp-edit-staged-expl-ru')) {
+      document.getElementById('inp-edit-staged-expl-ru').value = '';
+    }
+    if (document.getElementById('inp-edit-staged-legal-status')) {
+      document.getElementById('inp-edit-staged-legal-status').value = 'UNRESOLVED_LEGAL_REVIEW';
+      document.getElementById('inp-edit-staged-legal-doc-title').value = '';
+      document.getElementById('inp-edit-staged-legal-chapter').value = '';
+      document.getElementById('inp-edit-staged-legal-clause').value = '';
+      document.getElementById('inp-edit-staged-legal-doc-url').value = '';
+    }
 
     const titleEl = document.getElementById('edit-staged-title');
     if (titleEl) titleEl.textContent = `Savol #${q.id} ni Tahrirlash & Tasdiqlash (${q.source_code.toUpperCase()})`;
 
     openModal('modal-edit-staged');
+  };
+
+  // ================= 4.2 EDITORIAL PROVENANCE & LEGAL QUALITY CONTROLLER =================
+  const editorialState = {
+    status: 'PENDING_EDITORIAL_REVIEW',
+    page: 1,
+    limit: 20,
+    total: 0,
+    items: []
+  };
+
+  window.setEditorialStatusFilter = function (newStatus) {
+    editorialState.status = newStatus;
+    document.querySelectorAll('#ed-status-pills .subtab-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.edStatus === newStatus);
+    });
+    loadEditorialQueue(1);
+  };
+
+  window.changeEditorialPage = function (delta) {
+    const maxPage = Math.max(1, Math.ceil((editorialState.total || 0) / editorialState.limit));
+    const target = Math.min(maxPage, Math.max(1, editorialState.page + delta));
+    if (target !== editorialState.page) {
+      loadEditorialQueue(target);
+    }
+  };
+
+  window.loadEditorialQueue = async function (page = 1) {
+    const listEl = document.getElementById('editorial-queue-list');
+    if (!listEl) return;
+
+    editorialState.page = page;
+    const offset = (page - 1) * editorialState.limit;
+    const qVal = (document.getElementById('ed-filter-q')?.value || '').trim();
+    const flagVal = (document.getElementById('ed-filter-flag')?.value || '').trim();
+
+    const params = new URLSearchParams({
+      status: editorialState.status,
+      limit: String(editorialState.limit),
+      offset: String(offset)
+    });
+    if (qVal) params.set('q', qVal);
+    if (flagVal) params.set('issue_flag', flagVal);
+
+    try {
+      const res = await apiFetch(`/api/admin/questions/editorial?${params.toString()}`);
+      editorialState.items = res.items || [];
+      editorialState.total = Number(res.total || 0);
+
+      const sc = res.status_counts || {};
+      const pendingCount = Number(sc.PENDING_EDITORIAL_REVIEW || 0);
+      const aiCount = Number(sc.AI_DRAFT_PENDING_REVIEW || 0);
+      const approvedCount = Number(sc.APPROVED || 0);
+      const rejectedCount = Number(sc.REJECTED || 0);
+
+      const setTxt = (id, v) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = v;
+      };
+      setTxt('ed-count-pending', pendingCount.toLocaleString());
+      setTxt('ed-count-ai', aiCount.toLocaleString());
+      setTxt('ed-count-approved', approvedCount.toLocaleString());
+      setTxt('ed-count-rejected', rejectedCount.toLocaleString());
+      setTxt('editorial-overall-badge', `${(pendingCount + aiCount).toLocaleString()} ta ko‘rib chiqilmagan`);
+
+      const maxPage = Math.max(1, Math.ceil(editorialState.total / editorialState.limit));
+      setTxt('ed-pagination-summary', `Jami: ${editorialState.total.toLocaleString()} ta savol (${page}/${maxPage}-sahifa)`);
+      setTxt('ed-page-label', `${page} / ${maxPage}`);
+      const prevBtn = document.getElementById('ed-btn-prev');
+      const nextBtn = document.getElementById('ed-btn-next');
+      if (prevBtn) prevBtn.disabled = page <= 1;
+      if (nextBtn) nextBtn.disabled = page >= maxPage;
+
+      if (!editorialState.items.length) {
+        listEl.innerHTML = `
+          <div class="text-xs text-muted text-center py-4 bg-slate-900/40 rounded border border-slate-800">
+            Tanlangan filtr bo‘yicha tahririyat elementlari topilmadi.
+          </div>
+        `;
+        return;
+      }
+
+      listEl.innerHTML = editorialState.items.map(item => {
+        const flags = item.issue_flags || [];
+        const flagsHtml = flags.map(f => {
+          const isBleed = f.includes('BLEED') || f.includes('MISMATCH');
+          return `<span class="editorial-flag-pill ${isBleed ? 'bleed' : ''}">${escapeHtml(f)}</span>`;
+        }).join('');
+
+        const legalBadgeClass = item.current_legal_status === 'VERIFIED_PRIMARY_LAW'
+          ? 'badge-emerald'
+          : (item.current_legal_status === 'VERIFIED_FIRST_AID_OR_TECH' ? 'badge-blue' : 'badge-amber');
+
+        const tr = item.translations || {};
+        const uzLatnQ = (tr.uz_latn && tr.uz_latn.question_text) || item.preview_text_uz_latn || '';
+        const draftBanner = item.draft_explanation ? `
+          <div class="text-[11px] p-2 rounded bg-indigo-950/40 border border-indigo-500/30 text-indigo-200">
+            <b>🤖 Qoralama (${escapeHtml(item.language)}):</b> ${escapeHtml(item.draft_explanation)}
+          </div>
+        ` : '';
+
+        return `
+          <div class="staged-card" id="editorial-card-${item.id}">
+            <div class="staged-card-top">
+              <div class="staged-source-meta">
+                <span class="font-bold text-slate-200 font-mono">${escapeHtml(item.canonical_id)}</span>
+                <span>•</span>
+                <span>${escapeHtml(item.category_name || 'Kategoriyasiz')}</span>
+                <span>•</span>
+                <span class="badge ${legalBadgeClass} text-[10px]">${escapeHtml(item.current_legal_status || 'UNRESOLVED_LEGAL_REVIEW')}</span>
+              </div>
+              <div class="text-[11px] text-muted">${escapeHtml(item.source_type || 'AUDIT_FLAG')} • #${item.id}</div>
+            </div>
+
+            <div class="text-xs text-slate-200 leading-relaxed">${escapeHtml(uzLatnQ)}</div>
+
+            ${item.current_legal_hint ? `
+              <div class="text-[11px] text-slate-400">
+                <b>Joriy havola izi:</b> ${escapeHtml(item.current_legal_hint)}
+              </div>
+            ` : ''}
+
+            ${draftBanner}
+
+            ${flagsHtml ? `<div class="flex flex-wrap gap-1">${flagsHtml}</div>` : ''}
+
+            <div class="staged-actions-row">
+              <button type="button" class="btn btn-primary btn-sm" onclick="openEditEditorialModal(${item.id})">
+                ✏️ Huquqiy Asos & 3 Tilli Izoh
+              </button>
+              ${item.review_status !== 'REJECTED' ? `
+                <button type="button" class="btn btn-danger btn-sm" onclick="rejectEditorialQueueItem(${item.id})">
+                  ❌ Rad etish
+                </button>
+              ` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+    } catch (e) {
+      console.error("Editorial queue load error:", e);
+      listEl.innerHTML = `<div class="text-xs text-red-400 p-3">Tahririyat navbatini yuklashda xatolik: ${escapeHtml(e.message)}</div>`;
+    }
+  };
+
+  window.runEditorialAuditSeed = async function () {
+    const btn = document.getElementById('btn-editorial-audit-seed');
+    if (btn) btn.disabled = true;
+    try {
+      const res = await apiFetch('/api/admin/questions/editorial/audit-seed', { method: 'POST' });
+      showToast(`Audit yakunlandi: ${res.queued_new_items || 0} ta yangi element qo‘shildi.`, 'success');
+      await loadEditorialQueue(1);
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  };
+
+  window.openEditEditorialModal = function (queueId) {
+    const item = editorialState.items.find(x => x.id === queueId);
+    if (!item) return;
+
+    const tr = item.translations || {};
+    document.getElementById('ed-modal-queue-id').value = item.id;
+    document.getElementById('ed-modal-title').textContent = `${item.canonical_id} — Huquqiy Asos & Izoh`;
+
+    const flagsText = (item.issue_flags || []).join(', ') || 'Yo‘q';
+    document.getElementById('ed-modal-meta-box').innerHTML = `
+      <div><b>Kategoriya:</b> ${escapeHtml(item.category_name || '')} &nbsp;|&nbsp; <b>Til doirasi:</b> ${escapeHtml(item.language)}</div>
+      <div><b>Joriy havola izi:</b> ${escapeHtml(item.current_legal_hint || 'Mavjud emas')}</div>
+      <div><b>Aniqlangan belgilar:</b> ${escapeHtml(flagsText)}</div>
+    `;
+
+    document.getElementById('ed-modal-q-latn').value = (tr.uz_latn && tr.uz_latn.question_text) || '';
+    document.getElementById('ed-modal-q-cyrl').value = (tr.uz_cyrl && tr.uz_cyrl.question_text) || '';
+    document.getElementById('ed-modal-q-ru').value = (tr.ru && tr.ru.question_text) || '';
+
+    document.getElementById('ed-modal-expl-latn').value =
+      (item.language === 'uz_latn' && item.draft_explanation) || (tr.uz_latn && tr.uz_latn.explanation) || '';
+    document.getElementById('ed-modal-expl-cyrl').value =
+      (item.language === 'uz_cyrl' && item.draft_explanation) || (tr.uz_cyrl && tr.uz_cyrl.explanation) || '';
+    document.getElementById('ed-modal-expl-ru').value =
+      (item.language === 'ru' && item.draft_explanation) || (tr.ru && tr.ru.explanation) || '';
+
+    const defaultStatus = item.current_legal_status === 'VERIFIED_FIRST_AID_OR_TECH'
+      ? 'VERIFIED_FIRST_AID_OR_TECH'
+      : (item.current_legal_status === 'UNRESOLVED_LEGAL_REVIEW' ? 'VERIFIED_PRIMARY_LAW' : (item.current_legal_status || 'VERIFIED_PRIMARY_LAW'));
+    document.getElementById('ed-modal-legal-status').value = defaultStatus;
+    document.getElementById('ed-modal-legal-doc-title').value = item.current_legal_doc_title || item.draft_legal_doc_title || '';
+    document.getElementById('ed-modal-legal-doc-url').value = item.current_legal_doc_url || item.draft_legal_doc_url || '';
+    document.getElementById('ed-modal-legal-chapter').value = item.current_legal_chapter || item.draft_legal_chapter || '';
+    document.getElementById('ed-modal-legal-clause').value = item.current_legal_clause || item.draft_legal_clause || '';
+    document.getElementById('ed-modal-legal-effective-date').value = item.current_legal_effective_date || '';
+    document.getElementById('ed-modal-reviewer-notes').value = 'Human verified';
+
+    openModal('modal-edit-editorial');
+  };
+
+  window.rejectEditorialQueueItem = async function (queueId) {
+    const reason = prompt("Ushbu tahririyat yozuvini rad etish sababini kiriting:", "Qo‘shimcha tekshiruv uchun rad etildi");
+    if (!reason) return;
+    try {
+      await apiFetch(`/api/admin/questions/editorial/${queueId}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+      showToast(`Tahririyat yozuvi #${queueId} rad etildi.`, 'info');
+      await loadEditorialQueue(editorialState.page);
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
   };
 
   window.approveAllStagedQuestions = async function () {
@@ -1136,18 +1362,36 @@
     const btnApproveAll = document.getElementById('btn-approve-all-sync');
     if (btnApproveAll) btnApproveAll.onclick = approveAllStagedQuestions;
 
-    // 11. Edit Staged Question Form Submission
+    // 11. Edit Staged Question Form Submission (with 3-language explanations & legal provenance)
     document.getElementById('form-edit-staged')?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const stagedId = document.getElementById('inp-edit-staged-id')?.value;
       if (!stagedId) return;
+
+      const legalStatus = document.getElementById('inp-edit-staged-legal-status')?.value || 'UNRESOLVED_LEGAL_REVIEW';
+      const legalDocTitle = document.getElementById('inp-edit-staged-legal-doc-title')?.value.trim() || null;
+      const legalChapter = document.getElementById('inp-edit-staged-legal-chapter')?.value.trim() || null;
+      const legalClause = document.getElementById('inp-edit-staged-legal-clause')?.value.trim() || null;
+      const legalDocUrl = document.getElementById('inp-edit-staged-legal-doc-url')?.value.trim() || null;
+
+      if (legalStatus === 'VERIFIED_PRIMARY_LAW' && (!legalDocTitle || (!legalChapter && !legalClause))) {
+        showToast("VERIFIED_PRIMARY_LAW uchun hujjat nomi va bob/band majburiy!", "error");
+        return;
+      }
 
       const payload = {
         text_uz_latn: document.getElementById('inp-edit-staged-latn')?.value.trim(),
         text_uz_cyrl: document.getElementById('inp-edit-staged-cyrl')?.value.trim(),
         text_ru: document.getElementById('inp-edit-staged-ru')?.value.trim(),
         correct_option_key: document.getElementById('inp-edit-staged-correct-key')?.value,
-        explanation: document.getElementById('inp-edit-staged-explanation')?.value.trim()
+        explanation: document.getElementById('inp-edit-staged-explanation')?.value.trim(),
+        explanation_uz_cyrl: document.getElementById('inp-edit-staged-expl-cyrl')?.value.trim() || null,
+        explanation_ru: document.getElementById('inp-edit-staged-expl-ru')?.value.trim() || null,
+        legal_verification_status: legalStatus,
+        legal_doc_title: legalDocTitle,
+        legal_chapter: legalChapter,
+        legal_clause: legalClause,
+        legal_doc_url: legalDocUrl
       };
 
       try {
@@ -1160,6 +1404,63 @@
         await loadQuestionSyncStatus();
       } catch (err) {
         showToast(err.message, "error");
+      }
+    });
+
+    // 12. Editorial Legal Provenance & Translation Moderation Form
+    document.getElementById('form-edit-editorial')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const queueId = document.getElementById('ed-modal-queue-id')?.value;
+      if (!queueId) return;
+
+      const legalStatus = document.getElementById('ed-modal-legal-status')?.value || 'VERIFIED_PRIMARY_LAW';
+      const docTitle = document.getElementById('ed-modal-legal-doc-title')?.value.trim() || null;
+      const chapter = document.getElementById('ed-modal-legal-chapter')?.value.trim() || null;
+      const clause = document.getElementById('ed-modal-legal-clause')?.value.trim() || null;
+
+      if (legalStatus === 'VERIFIED_PRIMARY_LAW' && (!docTitle || (!chapter && !clause))) {
+        showToast("VERIFIED_PRIMARY_LAW uchun normativ hujjat nomi va bob yoki band kiritilishi shart!", "error");
+        return;
+      }
+
+      const explanationsByLang = {};
+      const explLatn = document.getElementById('ed-modal-expl-latn')?.value.trim();
+      const explCyrl = document.getElementById('ed-modal-expl-cyrl')?.value.trim();
+      const explRu = document.getElementById('ed-modal-expl-ru')?.value.trim();
+      if (explLatn) explanationsByLang.uz_latn = explLatn;
+      if (explCyrl) explanationsByLang.uz_cyrl = explCyrl;
+      if (explRu) explanationsByLang.ru = explRu;
+
+      const questionTextsByLang = {};
+      const qLatn = document.getElementById('ed-modal-q-latn')?.value.trim();
+      const qCyrl = document.getElementById('ed-modal-q-cyrl')?.value.trim();
+      const qRu = document.getElementById('ed-modal-q-ru')?.value.trim();
+      if (qLatn) questionTextsByLang.uz_latn = qLatn;
+      if (qCyrl) questionTextsByLang.uz_cyrl = qCyrl;
+      if (qRu) questionTextsByLang.ru = qRu;
+
+      const payload = {
+        legal_verification_status: legalStatus,
+        legal_doc_title: docTitle,
+        legal_doc_url: document.getElementById('ed-modal-legal-doc-url')?.value.trim() || null,
+        legal_chapter: chapter,
+        legal_clause: clause,
+        legal_effective_date: document.getElementById('ed-modal-legal-effective-date')?.value.trim() || null,
+        explanations_by_lang: Object.keys(explanationsByLang).length ? explanationsByLang : null,
+        question_texts_by_lang: Object.keys(questionTextsByLang).length ? questionTextsByLang : null,
+        reviewer_notes: document.getElementById('ed-modal-reviewer-notes')?.value.trim() || 'Human verified'
+      };
+
+      try {
+        const res = await apiFetch(`/api/admin/questions/editorial/${queueId}/approve`, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+        showToast(`${res.canonical_id} huquqiy asosi va izohlari tasdiqlandi!`, 'success');
+        closeModal('modal-edit-editorial');
+        await loadEditorialQueue(editorialState.page);
+      } catch (err) {
+        showToast(err.message, 'error');
       }
     });
   }

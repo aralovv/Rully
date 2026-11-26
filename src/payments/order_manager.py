@@ -8,19 +8,20 @@ Handles:
 - Server-side 15-minute order expiration
 """
 
+import json
 import os
 import time
 import sqlite3
 import secrets
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, List
 from src.security.crypto import decrypt_data
 
 DB_PATH = os.getenv("DB_PATH", "master_database.sqlite")
 ORDER_LIFETIME_MINUTES = 15
 
 
-from src.db_adapter import get_db_connection
+from src.db_adapter import execute_batch, get_db_connection
 
 def _get_connection():
     return get_db_connection(DB_PATH)
@@ -226,6 +227,7 @@ def create_or_get_payment_order(user_id: int, plan_id: str) -> Tuple[bool, str, 
         """, (user_id,))
         existing_order = c.fetchone()
 
+        stale_order_to_expire: Optional[str] = None
         if existing_order:
             exp_dt = datetime.fromisoformat(existing_order["expires_at"].replace("Z", ""))
             if now_dt < exp_dt:
@@ -247,12 +249,10 @@ def create_or_get_payment_order(user_id: int, plan_id: str) -> Tuple[bool, str, 
                             order_data["card_number_formatted"] = order_data.get("card_number_masked", "")
                     return True, "Amaldagi to‘lov buyurtmasi ochildi.", order_data
                 else:
-                    # Scenario B: Different plan requested before expiration -> Expire old order, create new
-                    c.execute("UPDATE payment_orders SET status = 'EXPIRED' WHERE order_id = ?", (existing_order["order_id"],))
-                    conn.commit()
+                    # Scenario B: Different plan requested before expiration -> Expire atomically with new order insert
+                    stale_order_to_expire = existing_order["order_id"]
             else:
-                c.execute("UPDATE payment_orders SET status = 'EXPIRED' WHERE order_id = ?", (existing_order["order_id"],))
-                conn.commit()
+                stale_order_to_expire = existing_order["order_id"]
 
         # 5. Generate Unique Suffix (1 to 999 UZS) with retry protection against race condition
         base_price = plan["base_price_uzs"]
@@ -286,32 +286,47 @@ def create_or_get_payment_order(user_id: int, plan_id: str) -> Tuple[bool, str, 
             expires_str = expires_dt.isoformat()
 
             try:
-                # 6. Insert new payment order atomically
-                c.execute("""
+                # 6. Atomically expire prior pending order (if any), insert new order, and log activity
+                batch_stmts: List[Any] = []
+                if stale_order_to_expire:
+                    batch_stmts.append((
+                        "UPDATE payment_orders SET status = 'EXPIRED' WHERE order_id = ?",
+                        [stale_order_to_expire],
+                    ))
+                batch_stmts.append((
+                    """
                     INSERT INTO payment_orders (
                         order_id, user_id, plan_id, plan_name, duration_days, base_price_uzs,
                         suffix_uzs, final_amount_uzs, card_id, card_suffix, card_number_masked,
                         cardholder_name, status, created_at, expires_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
-                """, (
-                    order_id, user_id, plan["id"], plan["name"], plan["duration_days"],
-                    base_price, allocated_suffix, final_amount, card["id"],
-                    card["card_suffix"], card["card_number_masked"], card["cardholder_name"],
-                    now_str, expires_str
+                    """,
+                    [
+                        order_id, user_id, plan["id"], plan["name"], plan["duration_days"],
+                        base_price, allocated_suffix, final_amount, card["id"],
+                        card["card_suffix"], card["card_number_masked"], card["cardholder_name"],
+                        now_str, expires_str,
+                    ],
                 ))
-
-                # 7. Record user activity event
-                c.execute("""
+                batch_stmts.append((
+                    """
                     INSERT INTO user_activity_events (user_id, event_name, event_data, created_at)
                     VALUES (?, 'PAYMENT_ORDER_CREATED', ?, ?)
-                """, (user_id, f'{{"order_id": "{order_id}", "plan_id": "{plan_id}", "amount": {final_amount}}}', now_str))
-
-                conn.commit()
+                    """,
+                    [
+                        user_id,
+                        json.dumps({"order_id": order_id, "plan_id": plan_id, "amount": final_amount}),
+                        now_str,
+                    ],
+                ))
+                execute_batch(conn, batch_stmts)
                 created_order_id = order_id
                 break
-            except sqlite3.IntegrityError:
-                # Collision detected on concurrent insertion - retry with new suffix
-                continue
+            except Exception as exc:
+                # Retry on concurrent unique suffix collision; re-raise unexpected errors
+                if isinstance(exc, sqlite3.IntegrityError) or "UNIQUE constraint failed" in str(exc):
+                    continue
+                raise
 
         if not created_order_id:
             return False, "To‘lov tizimida ziddiyat yuz berdi. Iltimos, qayta urinib ko‘ring.", None

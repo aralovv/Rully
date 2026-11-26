@@ -379,8 +379,34 @@ def run_migrations(db_path: str = "master_database.sqlite"):
                 VALUES (?, ?, ?, ?);
             """, (k, v, d, now_str))
 
+        conn.commit()
+        from src.db.migrations_v2 import apply_phase1_migrations
+        apply_phase1_migrations(conn)
+
     conn.close()
     logger.info("Database migration completed successfully!")
+
+
+def run_turso_migrations(apply: bool = False):
+    """
+    Explicit Turso schema migration runner (Phase 1D/1E).
+    Never runs implicitly on import or FastAPI startup unless explicitly invoked.
+    """
+    if not is_turso_enabled():
+        raise RuntimeError("Turso is not enabled in environment configuration.")
+    if not apply:
+        conn = get_db_connection()
+        try:
+            from src.db.migrations_v2 import verify_schema_parity
+            return {"dry_run": True, "parity": verify_schema_parity(conn)}
+        finally:
+            conn.close()
+    conn = get_db_connection()
+    try:
+        from src.db.migrations_v2 import apply_phase1_migrations
+        return apply_phase1_migrations(conn)
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
     run_migrations()

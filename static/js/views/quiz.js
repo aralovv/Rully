@@ -6,7 +6,17 @@
 
   const R = (window.RULLY = window.RULLY || {});
 
+  let autoAdvanceTimer = null;
+
+  function clearAutoAdvance() {
+    if (autoAdvanceTimer) {
+      clearTimeout(autoAdvanceTimer);
+      autoAdvanceTimer = null;
+    }
+  }
+
   function clearQuizTimer() {
+    clearAutoAdvance();
     if (R.state.quiz.timerInterval) {
       clearInterval(R.state.quiz.timerInterval);
       R.state.quiz.timerInterval = null;
@@ -129,6 +139,7 @@
     let feedbackHtml = '';
     if (ans && (!isExam || qz.showExplanation)) {
       const cls = ans.is_correct ? 'correct' : 'wrong';
+      const provHtml = typeof R.renderProvenanceBadge === 'function' ? R.renderProvenanceBadge(ans, q.canonical_id) : '';
       feedbackHtml =
         '<div class="feedback-panel ' + cls + '">' +
         '  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">' +
@@ -136,14 +147,18 @@
         R.icon(ans.is_correct ? 'checkCircle' : 'xCircle', 'xs') + ' ' +
         R.escHtml(ans.is_correct ? R.t('correct_badge') : R.t('wrong_badge')) +
         '    </span>' +
-        (ans.legal_reference ? '<span class="badge-pill badge-neutral">' + R.escHtml(ans.legal_reference) + '</span>' : '') +
         '  </div>' +
+        provHtml +
         (ans.explanation ? '<p style="font-size:13px;line-height:1.5;color:var(--text-primary);">' + R.escHtml(ans.explanation) + '</p>' : '') +
         '  <div>' +
         '    <button type="button" class="btn btn-sm btn-secondary" id="btn-quiz-ask-ai">' + R.icon('sparkles', 'xs') + ' ' + R.escHtml(R.t('btn_ask_ai_question')) + '</button>' +
         '  </div>' +
         '</div>';
     }
+
+    const autoNextPill = (!isExam && qz.showAnswer)
+      ? '<button type="button" class="filter-chip ' + (R.state.quizAutoAdvance ? 'active' : '') + '" id="quiz-autonext-btn" aria-pressed="' + Boolean(R.state.quizAutoAdvance) + '">' + R.icon('zap', 'xs') + ' <span>' + R.escHtml(R.t('quiz_auto_next')) + '</span></button>'
+      : '';
 
     const isLast = qz.currentIndex >= qz.questions.length - 1;
 
@@ -153,6 +168,7 @@
       '  <div class="quiz-status-group">' +
       '    <span class="badge-pill badge-neutral font-mono">' + (qz.currentIndex + 1) + ' / ' + qz.questions.length + '</span>' +
       mistakeDotsHtml +
+      autoNextPill +
       (qz.timeRemaining > 0 ? '<span class="badge-pill badge-primary font-mono" id="quiz-clock-val">' + R.fmtClock(qz.timeRemaining) + '</span>' : '') +
       '    <button type="button" class="icon-pill-btn" id="quiz-bm-btn" aria-label="Bookmark">' +
       R.icon(q.is_bookmarked ? 'bookmarkFill' : 'bookmark', 'sm') +
@@ -178,10 +194,26 @@
 
     document.getElementById('quiz-exit-btn')?.addEventListener('click', R.confirmAbortQuiz);
     document.getElementById('quiz-prev-btn')?.addEventListener('click', function () {
+      clearAutoAdvance();
       if (qz.currentIndex > 0) { qz.currentIndex -= 1; R.renderQuizQuestion(); }
     });
     document.getElementById('quiz-next-btn')?.addEventListener('click', function () {
+      clearAutoAdvance();
       if (qz.currentIndex < qz.questions.length - 1) { qz.currentIndex += 1; R.renderQuizQuestion(); }
+    });
+    document.getElementById('quiz-autonext-btn')?.addEventListener('click', function () {
+      R.state.quizAutoAdvance = !R.state.quizAutoAdvance;
+      R.haptic('light');
+      R.renderQuizQuestion();
+    });
+    root.querySelectorAll('[data-open-law-ch]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        clearAutoAdvance();
+        if (typeof R.openLawModal === 'function') {
+          const ch = Number(btn.dataset.openLawCh);
+          R.openLawModal(ch || null);
+        }
+      });
     });
     document.getElementById('quiz-finish-btn')?.addEventListener('click', function () { R.finishSession(false); });
     document.getElementById('quiz-media-zoom')?.addEventListener('click', function () {
@@ -246,6 +278,16 @@
       }
       qz.isSubmitting = false;
       R.renderQuizQuestion();
+
+      if (res.is_correct && qz.sessionType !== 'EXAM' && qz.showAnswer && R.state.quizAutoAdvance && qz.currentIndex < qz.questions.length - 1) {
+        clearAutoAdvance();
+        autoAdvanceTimer = setTimeout(function () {
+          if (R.state.quiz.active && R.state.quiz.currentIndex < R.state.quiz.questions.length - 1) {
+            R.state.quiz.currentIndex += 1;
+            R.renderQuizQuestion();
+          }
+        }, 900);
+      }
     } catch (err) {
       qz.isSubmitting = false;
       R.showToast(err.detail || err.message || R.t('ai_generic_error'));
@@ -360,39 +402,77 @@
 
     try {
       const data = await R.api('/api/session/' + encodeURIComponent(sessionId) + '/review?lang=' + R.state.lang);
-      const items = data.items || [];
-      body.innerHTML = items.map(function (it) {
-        const tag = it.selected_key === null
-          ? '<span class="badge-pill badge-neutral">' + R.escHtml(R.t('review_skipped_tag')) + '</span>'
-          : (it.is_correct
-            ? '<span class="badge-pill badge-emerald">' + R.escHtml(R.t('review_correct_tag')) + '</span>'
-            : '<span class="badge-pill badge-rose">' + R.escHtml(R.t('review_wrong_tag')) + '</span>');
+      const allItems = data.items || [];
+      R.state.reviewFilter = 'all';
 
-        return '<div class="surface-card">' +
-          '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:8px;">' +
-          '  <span class="font-mono" style="font-weight:700;font-size:12.5px;">#' + it.index + ' • ' + R.escHtml(it.category_name || '') + '</span>' +
-          tag +
-          '</div>' +
-          (it.image_url ? '<div class="quiz-media-frame" style="margin-bottom:8px;min-height:120px;max-height:190px;"><img src="' + R.escHtml(it.image_url) + '" alt="" loading="lazy"></div>' : '') +
-          '<p style="font-weight:700;font-size:13.5px;margin-bottom:8px;">' + R.escHtml(it.question_text) + '</p>' +
-          '<div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:6px;">' +
-          (it.selected_key ? R.escHtml(R.t('ticket_in_progress')) + ': <b>' + R.escHtml(it.selected_key) + '</b> • ' : '') +
-          R.escHtml(R.t('saved_correct_answer_label')) + ' <b style="color:var(--color-emerald);">' + R.escHtml(it.correct_option_key) + ' — ' + R.escHtml(it.correct_answer_text || '') + '</b>' +
-          '</div>' +
-          (it.explanation ? '<p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">' + R.escHtml(it.explanation) + '</p>' : '') +
-          '<button type="button" class="btn btn-sm btn-secondary" data-rev-ai="' + it.index + '">' + R.icon('sparkles', 'xs') + ' ' + R.escHtml(R.t('btn_ask_ai_question')) + '</button>' +
+      function renderReviewList() {
+        const filter = R.state.reviewFilter || 'all';
+        const wrongCount = allItems.filter(function (x) { return x.is_correct === false; }).length;
+        const shown = filter === 'mistakes' ? allItems.filter(function (x) { return x.is_correct === false; }) : allItems;
+
+        const filterBar =
+          '<div class="filter-chip-row" style="margin-bottom:4px;">' +
+          '  <button type="button" class="filter-chip ' + (filter === 'all' ? 'active' : '') + '" data-rev-filter="all">' + R.escHtml(R.t('filter_all')) + ' (' + allItems.length + ')</button>' +
+          '  <button type="button" class="filter-chip ' + (filter === 'mistakes' ? 'active' : '') + '" data-rev-filter="mistakes">' + R.escHtml(R.t('review_filter_mistakes')) + ' (' + wrongCount + ')</button>' +
           '</div>';
-      }).join('');
 
-      body.querySelectorAll('[data-rev-ai]').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-          const item = items.find(function (x) { return String(x.index) === btn.dataset.revAi; });
-          if (item) {
-            R.closeModal('session-review-modal');
-            R.askAiAboutQuestion(item, item.selected_key, item.is_correct);
-          }
+        const listHtml = !shown.length
+          ? '<div class="surface-card empty-state-box"><strong>' + R.escHtml(R.t('mistakes_zero_title')) + '</strong></div>'
+          : shown.map(function (it) {
+              const tag = it.selected_key === null
+                ? '<span class="badge-pill badge-neutral">' + R.escHtml(R.t('review_skipped_tag')) + '</span>'
+                : (it.is_correct
+                  ? '<span class="badge-pill badge-emerald">' + R.escHtml(R.t('review_correct_tag')) + '</span>'
+                  : '<span class="badge-pill badge-rose">' + R.escHtml(R.t('review_wrong_tag')) + '</span>');
+              const provHtml = typeof R.renderProvenanceBadge === 'function' ? R.renderProvenanceBadge(it, it.canonical_id) : '';
+
+              return '<div class="surface-card">' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:8px;">' +
+                '  <span class="font-mono" style="font-weight:700;font-size:12.5px;">#' + it.index + ' • ' + R.escHtml(it.category_name || '') + '</span>' +
+                tag +
+                '</div>' +
+                (it.image_url ? '<div class="quiz-media-frame" style="margin-bottom:8px;min-height:120px;max-height:190px;"><img src="' + R.escHtml(it.image_url) + '" alt="" loading="lazy"></div>' : '') +
+                '<p style="font-weight:700;font-size:13.5px;margin-bottom:8px;">' + R.escHtml(it.question_text) + '</p>' +
+                '<div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:6px;">' +
+                (it.selected_key ? R.escHtml(R.t('ticket_in_progress')) + ': <b>' + R.escHtml(it.selected_key) + '</b> • ' : '') +
+                R.escHtml(R.t('saved_correct_answer_label')) + ' <b style="color:var(--color-emerald);">' + R.escHtml(it.correct_option_key) + ' — ' + R.escHtml(it.correct_answer_text || '') + '</b>' +
+                '</div>' +
+                provHtml +
+                (it.explanation ? '<p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">' + R.escHtml(it.explanation) + '</p>' : '') +
+                '<button type="button" class="btn btn-sm btn-secondary" data-rev-ai="' + it.index + '">' + R.icon('sparkles', 'xs') + ' ' + R.escHtml(R.t('btn_ask_ai_question')) + '</button>' +
+                '</div>';
+            }).join('');
+
+        body.innerHTML = filterBar + listHtml;
+
+        body.querySelectorAll('[data-rev-filter]').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            R.state.reviewFilter = btn.dataset.revFilter;
+            renderReviewList();
+          });
         });
-      });
+
+        body.querySelectorAll('[data-open-law-ch]').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            R.closeModal('session-review-modal');
+            if (typeof R.openLawModal === 'function') {
+              R.openLawModal(Number(btn.dataset.openLawCh) || null);
+            }
+          });
+        });
+
+        body.querySelectorAll('[data-rev-ai]').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            const item = allItems.find(function (x) { return String(x.index) === btn.dataset.revAi; });
+            if (item) {
+              R.closeModal('session-review-modal');
+              R.askAiAboutQuestion(item, item.selected_key, item.is_correct);
+            }
+          });
+        });
+      }
+
+      renderReviewList();
     } catch (err) {
       body.innerHTML = '<p style="color:var(--color-rose);">' + R.escHtml(err.message) + '</p>';
     }

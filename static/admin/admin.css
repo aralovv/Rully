@@ -1416,3 +1416,57 @@ body {
   background: #10b981;
   color: #ffffff;
 }
+
+/* Editorial Provenance & Quality Queue Styles */
+.editorial-status-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.editorial-filters-bar {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+}
+@media (max-width: 768px) {
+  .editorial-filters-bar {
+    grid-template-columns: 1fr;
+  }
+}
+.editorial-flag-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+.editorial-flag-pill.bleed {
+  background: rgba(239, 68, 68, 0.14);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+.editorial-legal-box {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.editorial-lang-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+.editorial-hint-box {
+  background: rgba(30, 41, 59, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #cbd5e1;
+  line-height: 1.45;
+}

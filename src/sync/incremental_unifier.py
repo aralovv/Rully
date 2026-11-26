@@ -4,12 +4,14 @@ Safely ingests newly discovered questions and amends existing questions into mas
 WITHOUT modifying existing canonical IDs (CQ-0001..CQ-1295) or breaking user session data.
 """
 import os
-import shutil
 import sqlite3
 import json
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 
+from src.db.catalog_bundle import bump_catalog_version_sql
+from src.db.sqlite_utils import backup_sqlite_wal_safe, get_table_columns
+from src.db_adapter import execute_batch, get_db_connection, is_turso_enabled
 from src.sync.adapters.base_adapter import BaseSourceAdapter, RawQuestion
 from src.sync.diff_detector import DiffDetector, QuestionDiffItem, SourceDiffReport
 from src.sync.media_sync import MediaSyncPipeline
@@ -23,13 +25,14 @@ class IncrementalUnifier:
         except OSError:
             pass
 
-    def create_database_backup(self) -> str:
-        """Creates a timestamped snapshot of the master database before executing sync."""
+    def create_database_backup(self) -> Optional[str]:
+        """Creates a WAL-safe snapshot of the local master database before executing sync."""
+        if is_turso_enabled() or not os.path.exists(self.db_path):
+            return None
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_filename = f"master_database_pre_sync_{timestamp}.sqlite"
         backup_path = os.path.join(self.backup_dir, backup_filename)
-        shutil.copy2(self.db_path, backup_path)
-        return backup_path
+        return backup_sqlite_wal_safe(self.db_path, backup_path, allow_overwrite=False)
 
     def _get_next_canonical_int(self, conn: sqlite3.Connection) -> int:
         cur = conn.cursor()
@@ -62,7 +65,7 @@ class IncrementalUnifier:
         Only ingests new tickets / questions or applies verified amendments.
         """
         backup_path = self.create_database_backup()
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection(self.db_path)
         media_pipeline = MediaSyncPipeline(conn)
         detector = DiffDetector(conn)
         source_id = detector.source_id_map.get(adapter.source_code, 1)
@@ -88,6 +91,8 @@ class IncrementalUnifier:
         try:
             cur = conn.cursor()
             next_cq_int = self._get_next_canonical_int(conn)
+            cq_cols = get_table_columns(conn, "canonical_questions")
+            batch_stmts: List[Any] = []
 
             # 1. Process New Tickets
             for t_num in tickets_to_process:
@@ -120,24 +125,43 @@ class IncrementalUnifier:
                     next_cq_int += 1
                     correct_opt_key = chr(ord('A') + q_latn.correct_idx)
 
-                    # Insert canonical question
+                    # Insert canonical question without fabricated legal act claims
                     source_meta = json.dumps({
                         "source": adapter.source_code,
                         "ticket": t_num,
                         "position": pos,
                         "original_id": q_latn.original_id
                     })
-                    cur.execute("""
-                        INSERT INTO canonical_questions (
-                            canonical_id, category_id, category_name, primary_image_id, has_image,
-                            correct_option_key, legal_reference, legal_act_title, verification_status,
-                            deduplication_status, source_providers, source_metadata, rights_review_status,
-                            created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, NULL, 'Cabinet of Ministers Resolution No. 172',
-                                  'SOURCE_CONFIRMED', 'CANONICAL_SYNCHRONIZED', ?, ?, 'PUBLIC_ACCESS',
-                                  datetime('now'), datetime('now'));
-                    """, (cq_id, cat_id, q_latn.category_name, image_id, 1 if image_id else 0,
-                          correct_opt_key, adapter.source_code.upper(), source_meta))
+                    if "legal_verification_status" in cq_cols:
+                        batch_stmts.append((
+                            """
+                            INSERT INTO canonical_questions (
+                                canonical_id, category_id, category_name, primary_image_id, has_image,
+                                correct_option_key, legal_reference, legal_act_title, verification_status,
+                                legal_verification_status, deduplication_status, source_providers,
+                                source_metadata, rights_review_status, created_at, updated_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, 'SOURCE_CONFIRMED',
+                                      'UNRESOLVED_LEGAL_REVIEW', 'CANONICAL_SYNCHRONIZED', ?, ?, 'PUBLIC_ACCESS',
+                                      datetime('now'), datetime('now'))
+                            """,
+                            [cq_id, cat_id, q_latn.category_name, image_id, 1 if image_id else 0,
+                             correct_opt_key, adapter.source_code.upper(), source_meta],
+                        ))
+                    else:
+                        batch_stmts.append((
+                            """
+                            INSERT INTO canonical_questions (
+                                canonical_id, category_id, category_name, primary_image_id, has_image,
+                                correct_option_key, legal_reference, legal_act_title, verification_status,
+                                deduplication_status, source_providers, source_metadata, rights_review_status,
+                                created_at, updated_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, 'SOURCE_CONFIRMED',
+                                      'CANONICAL_SYNCHRONIZED', ?, ?, 'PUBLIC_ACCESS',
+                                      datetime('now'), datetime('now'))
+                            """,
+                            [cq_id, cat_id, q_latn.category_name, image_id, 1 if image_id else 0,
+                             correct_opt_key, adapter.source_code.upper(), source_meta],
+                        ))
 
                     result_summary["new_canonical_questions"] += 1
 
@@ -149,11 +173,14 @@ class IncrementalUnifier:
                         lang_items.append(("ru", q_ru))
 
                     for lang_code, raw_q in lang_items:
-                        cur.execute("""
+                        batch_stmts.append((
+                            """
                             INSERT INTO canonical_translations (
                                 canonical_id, language, question_text, explanation, translation_status
-                            ) VALUES (?, ?, ?, ?, 'ORIGINAL_VERIFIED');
-                        """, (cq_id, lang_code, raw_q.question_text, raw_q.explanation))
+                            ) VALUES (?, ?, ?, ?, 'ORIGINAL_VERIFIED')
+                            """,
+                            [cq_id, lang_code, raw_q.question_text, raw_q.explanation],
+                        ))
                         result_summary["new_translations_added"] += 1
 
                     # Insert canonical answers (combining options across languages)
@@ -165,51 +192,77 @@ class IncrementalUnifier:
                         txt_cyrl = q_cyrl.options[opt_idx] if (q_cyrl and opt_idx < len(q_cyrl.options)) else txt_latn
                         txt_ru = q_ru.options[opt_idx] if (q_ru and opt_idx < len(q_ru.options)) else txt_latn
 
-                        cur.execute("""
+                        batch_stmts.append((
+                            """
                             INSERT INTO canonical_answers (
                                 canonical_id, option_key, sort_order, is_correct,
                                 text_uz_latn, text_uz_cyrl, text_ru
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?);
-                        """, (cq_id, opt_key, opt_idx, is_correct, txt_latn, txt_cyrl, txt_ru))
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            [cq_id, opt_key, opt_idx, is_correct, txt_latn, txt_cyrl, txt_ru],
+                        ))
 
-                    # Insert raw traces in question_sources for auditability
+                    # Maintain FK-valid parent questions row before inserting question_sources
                     raw_hash = detector.compute_canonical_hash(q_latn.language, q_latn.question_text, q_latn.options)
-                    cur.execute("""
+                    batch_stmts.append((
+                        """
+                        INSERT OR IGNORE INTO questions (
+                            id, canonical_hash, question_text, category_id, language, image_id,
+                            explanation, verification_status, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, 'uz_latn', ?, ?, 'SOURCE_CONFIRMED', datetime('now'), datetime('now'))
+                        """,
+                        [cq_id, raw_hash, q_latn.question_text, cat_id, image_id, q_latn.explanation],
+                    ))
+                    batch_stmts.append((
+                        """
                         INSERT INTO question_sources (
                             question_id, source_id, original_question_id, original_ticket,
                             original_position, original_url, original_language, collection_timestamp, raw_payload
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), ?);
-                    """, (cq_id, source_id, q_latn.original_id, t_num, pos,
-                          f"{adapter.base_url}/ticket-{t_num}", "uz_latn", q_latn.raw_payload))
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
+                        """,
+                        [cq_id, source_id, q_latn.original_id, t_num, pos,
+                         f"{adapter.base_url}/ticket-{t_num}", "uz_latn", q_latn.raw_payload],
+                    ))
 
                     # Insert audit merge log
-                    cur.execute("""
+                    batch_stmts.append((
+                        """
                         INSERT INTO audit_merge_log (
                             canonical_id, operation_type, propdd_slot, yesprava_slot, match_criteria, performed_at
-                        ) VALUES (?, 'INCREMENTAL_INGEST', ?, ?, 'AUTOMATED_SYNC', datetime('now'));
-                    """, (cq_id,
-                          f"t{t_num}_p{pos}" if adapter.source_code == 'propdd' else None,
-                          f"t{t_num}_p{pos}" if adapter.source_code == 'yesprava' else None))
+                        ) VALUES (?, 'INCREMENTAL_INGEST', ?, ?, 'AUTOMATED_SYNC', datetime('now'))
+                        """,
+                        [cq_id,
+                         f"t{t_num}_p{pos}" if adapter.source_code == 'propdd' else None,
+                         f"t{t_num}_p{pos}" if adapter.source_code == 'yesprava' else None],
+                    ))
 
             # 2. Process Amendments if any
             for amend in diff_report.amended_items:
                 if amend.existing_question_id:
                     new_key = chr(ord('A') + amend.new_correct_idx)
-                    cur.execute("""
+                    batch_stmts.append((
+                        """
                         UPDATE canonical_questions
                         SET correct_option_key = ?, updated_at = datetime('now')
-                        WHERE canonical_id = ?;
-                    """, (new_key, amend.existing_question_id))
+                        WHERE canonical_id = ?
+                        """,
+                        [new_key, amend.existing_question_id],
+                    ))
 
-                    cur.execute("""
+                    batch_stmts.append((
+                        """
                         UPDATE canonical_answers
                         SET is_correct = (CASE WHEN option_key = ? THEN 1 ELSE 0 END)
-                        WHERE canonical_id = ?;
-                    """, (new_key, amend.existing_question_id))
+                        WHERE canonical_id = ?
+                        """,
+                        [new_key, amend.existing_question_id],
+                    ))
 
                     result_summary["amendments_applied"] += 1
 
-            conn.commit()
+            if batch_stmts:
+                batch_stmts.append(bump_catalog_version_sql())
+            execute_batch(conn, batch_stmts)
         except Exception as e:
             conn.rollback()
             result_summary["errors"].append(str(e))

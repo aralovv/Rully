@@ -30,10 +30,12 @@
       document.documentElement.dataset.theme = resolved;
 
       const tg = window.Telegram && window.Telegram.WebApp;
+      const bg = resolved === 'dark' ? '#090B0E' : '#F1F2F4';
+      const hdr = resolved === 'dark' ? '#11141B' : '#FFFFFF';
+      const metaTheme = document.querySelector('meta[name="theme-color"]');
+      if (metaTheme) metaTheme.setAttribute('content', bg);
       if (tg) {
         try {
-          const bg = resolved === 'dark' ? '#0A0D12' : '#F3F5F8';
-          const hdr = resolved === 'dark' ? '#121720' : '#FFFFFF';
           if (typeof tg.setHeaderColor === 'function') tg.setHeaderColor(hdr);
           if (typeof tg.setBackgroundColor === 'function') tg.setBackgroundColor(bg);
         } catch (e) {}

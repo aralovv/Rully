@@ -72,6 +72,33 @@ def get_shared_turso_client(url: str, token: str):
     return client
 
 
+def close_shared_turso_client() -> None:
+    """Explicitly closes the current thread's shared Turso client (useful for CLI exit)."""
+    client = getattr(_thread_local, "turso_client", None)
+    if client is not None and not getattr(client, "closed", False):
+        try:
+            client.close()
+        except Exception:
+            pass
+    _thread_local.turso_client = None
+
+
+def _is_transient_turso_error(exc: Exception) -> bool:
+    err_msg = f"{type(exc).__name__} {exc}".lower()
+    terms = ("disconnect", "connection", "closed", "socket", "timeout", "reset", "broken", "eof")
+    return any(term in err_msg for term in terms)
+
+
+def _refresh_shared_turso_client(url: str, token: str):
+    close_shared_turso_client()
+    client = libsql_client.create_client_sync(
+        url=url.replace("libsql://", "https://"),
+        auth_token=token,
+    )
+    _thread_local.turso_client = client
+    return client
+
+
 class TursoRow:
     """Drop-in replacement for sqlite3.Row wrapping Turso result rows."""
     __slots__ = ("_raw", "_columns", "_dict")
@@ -117,8 +144,10 @@ class TursoRow:
 
 class TursoCursor:
     """Cursor wrapper for Turso libSQL client."""
-    def __init__(self, client):
+    def __init__(self, client, url: Optional[str] = None, token: Optional[str] = None):
         self._client = client
+        self._url = url or os.getenv("TURSO_DATABASE_URL", "").strip()
+        self._token = token or os.getenv("TURSO_AUTH_TOKEN", "").strip()
         self._current_result = None
         self._row_idx = 0
         self.lastrowid = None
@@ -134,17 +163,9 @@ class TursoCursor:
         except (sqlite3.IntegrityError, sqlite3.OperationalError):
             raise
         except Exception as e:
-            err_msg = str(e).lower()
-            if any(term in err_msg for term in ["connection", "closed", "socket", "timeout", "reset", "broken"]):
+            if _is_transient_turso_error(e):
                 logger.warning(f"Turso client error ({e}), refreshing thread-local persistent connection and retrying...")
-                try:
-                    old_c = getattr(_thread_local, "turso_client", None)
-                    if old_c and not getattr(old_c, "closed", False):
-                        old_c.close()
-                except Exception:
-                    pass
-                _thread_local.turso_client = libsql_client.create_client_sync(url=TURSO_URL, auth_token=TURSO_TOKEN)
-                self._client = _thread_local.turso_client
+                self._client = _refresh_shared_turso_client(self._url, self._token)
                 res = self._client.execute(clean_sql, args)
             else:
                 logger.error(f"Turso execute error on [{clean_sql}]: {e}")
@@ -208,7 +229,7 @@ class TursoConnection:
         self.row_factory = None
 
     def cursor(self) -> TursoCursor:
-        return TursoCursor(self._client)
+        return TursoCursor(self._client, url=self.url, token=self.token)
 
     def execute(self, sql: str, params: Optional[Union[List, Tuple]] = None) -> TursoCursor:
         cur = self.cursor()
@@ -230,13 +251,22 @@ class TursoConnection:
                 formatted_stmts.append((sql, params))
             else:
                 formatted_stmts.append(s.strip().rstrip(";"))
-        return self._client.batch(formatted_stmts)
+        try:
+            return self._client.batch(formatted_stmts)
+        except Exception as e:
+            if _is_transient_turso_error(e) and self._shared:
+                # Evict poisoned socket from thread-local cache so subsequent requests start clean
+                close_shared_turso_client()
+            raise
 
     def commit(self):
         pass
 
     def rollback(self):
-        pass
+        logger.debug(
+            "TursoConnection.rollback() is a no-op on autocommitted single HTTP statements; "
+            "use execute_batch() for atomic multi-statement writes."
+        )
 
     def close(self):
         # Keep persistent pooled connection open across queries; only close if dedicated
@@ -254,9 +284,16 @@ class TursoConnection:
         return False
 
 
+def _get_turso_credentials() -> Tuple[str, str]:
+    url = os.getenv("TURSO_DATABASE_URL", "").strip()
+    token = os.getenv("TURSO_AUTH_TOKEN", "").strip()
+    return url, token
+
+
 def is_turso_enabled() -> bool:
-    """Returns True if Turso cloud database credentials are fully configured."""
-    return bool(TURSO_URL and TURSO_TOKEN and HAS_LIBSQL)
+    """Returns True if Turso cloud database credentials are dynamically configured."""
+    url, token = _get_turso_credentials()
+    return bool(url and token and HAS_LIBSQL)
 
 
 def get_db_connection(db_path: str = "master_database.sqlite"):
@@ -265,7 +302,9 @@ def get_db_connection(db_path: str = "master_database.sqlite"):
     Returns TursoConnection if TURSO_DATABASE_URL is set; otherwise local sqlite3.Connection.
     """
     if is_turso_enabled():
-        return TursoConnection(url=TURSO_URL, token=TURSO_TOKEN)
+        url, token = _get_turso_credentials()
+        http_url = url.replace("libsql://", "https://")
+        return TursoConnection(url=http_url, token=token)
     
     conn = sqlite3.connect(db_path, timeout=30.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
@@ -281,7 +320,7 @@ def execute_batch(conn: Union[sqlite3.Connection, TursoConnection], stmts: List[
     """
     Executes a sequence of SQL statements atomically.
     Uses Turso libSQL client's native batch() for a single HTTP round-trip when available,
-    or sequential cursor execution with transaction commit for standard SQLite.
+    or sequential cursor execution with transaction commit/rollback for standard SQLite.
     """
     if not stmts:
         return []
@@ -290,13 +329,17 @@ def execute_batch(conn: Union[sqlite3.Connection, TursoConnection], stmts: List[
 
     cur = conn.cursor()
     results = []
-    for s in stmts:
-        if isinstance(s, (tuple, list)):
-            sql = s[0]
-            params = s[1] if len(s) > 1 and s[1] is not None else ()
-            cur.execute(sql, params)
-        else:
-            cur.execute(s)
-    conn.commit()
-    return results
+    try:
+        for s in stmts:
+            if isinstance(s, (tuple, list)):
+                sql = s[0]
+                params = s[1] if len(s) > 1 and s[1] is not None else ()
+                cur.execute(sql, params)
+            else:
+                cur.execute(s)
+        conn.commit()
+        return results
+    except Exception:
+        conn.rollback()
+        raise
 

@@ -11,7 +11,8 @@
       return {
         label: R.t('grade_excellent'),
         sub: R.t('readiness_subtext_ready'),
-        stroke: '#10B981',
+        stroke: 'var(--color-emerald-bright)',
+        glow: 'rgba(16, 185, 129, 0.28)',
         badgeClass: 'badge-emerald'
       };
     }
@@ -19,7 +20,8 @@
       return {
         label: R.t('grade_ready'),
         sub: R.t('readiness_subtext_ready'),
-        stroke: '#10B981',
+        stroke: 'var(--color-emerald-bright)',
+        glow: 'rgba(16, 185, 129, 0.24)',
         badgeClass: 'badge-emerald'
       };
     }
@@ -27,7 +29,8 @@
       return {
         label: R.t('grade_progress'),
         sub: R.t('readiness_subtext_progress'),
-        stroke: '#F59E0B',
+        stroke: 'var(--color-amber-bright)',
+        glow: 'rgba(245, 158, 11, 0.24)',
         badgeClass: 'badge-amber'
       };
     }
@@ -35,8 +38,30 @@
       label: R.t('grade_not_ready'),
       sub: R.t('readiness_subtext_start'),
       stroke: 'var(--color-primary)',
+      glow: 'rgba(0, 102, 255, 0.24)',
       badgeClass: 'badge-primary'
     };
+  }
+
+  function buildCockpitTicks(clampedScore) {
+    const cx = 90;
+    const cy = 90;
+    let out = '';
+    for (let i = 0; i <= 20; i++) {
+      const pctStep = i * 5;
+      const degScreen = -210 + (i / 20) * 240;
+      const rad = (degScreen * Math.PI) / 180;
+      const isMajor = i % 2 === 0;
+      const rOuter = 60;
+      const rInner = isMajor ? 52.5 : 55.5;
+      const x1 = (cx + rInner * Math.cos(rad)).toFixed(2);
+      const y1 = (cy + rInner * Math.sin(rad)).toFixed(2);
+      const x2 = (cx + rOuter * Math.cos(rad)).toFixed(2);
+      const y2 = (cy + rOuter * Math.sin(rad)).toFixed(2);
+      const cls = 'cockpit-tick' + (isMajor ? ' major' : ' minor') + (clampedScore > 0 && pctStep <= clampedScore ? ' lit' : '');
+      out += '<line class="' + cls + '" x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" />';
+    }
+    return out;
   }
 
   R.openReadinessModal = function () {
@@ -148,9 +173,11 @@
     const pillars = stats.readiness_pillars || {};
     const meta = gradeMeta(stats.readiness_grade, score);
 
-    // Semi-circle circumference r=54 -> pi * r ~= 169.6
-    const arcLen = 169.65;
-    const dashOffset = arcLen - (Math.max(0, Math.min(100, score)) / 100) * arcLen;
+    const clampedScore = Math.max(0, Math.min(100, score));
+    // 240-degree precision cockpit arc: radius = 66 => (240/360) * 2 * pi * 66 = 276.46
+    const arcLen = 276.46;
+    const dashOffset = arcLen - (clampedScore / 100) * arcLen;
+    const needleDeg = -120 + (clampedScore / 100) * 240;
 
     const todayDone = Number(streak.today_questions_count || 0);
     const goalTarget = Math.max(5, Number(streak.daily_goal_questions || 20));
@@ -172,28 +199,43 @@
     }
 
     const freeExamsChip = sub.is_pro
-      ? '<span class="badge-pill" style="background:rgba(255,255,255,0.2);color:#fff;">PRO</span>'
-      : '<span class="badge-pill" style="background:rgba(255,255,255,0.2);color:#fff;">' + R.escHtml((ft.remaining_exams || 0) + ' / ' + (ft.allowed_exams || 2) + ' bepul') + '</span>';
+      ? '<span class="cockpit-quota-pill pro">PRO</span>'
+      : '<span class="cockpit-quota-pill">' + R.escHtml(R.t('cockpit_free_quota', { left: ft.remaining_exams || 0, total: ft.allowed_exams || 2 })) + '</span>';
 
     const mistakesBadge = (stats.unresolved_mistakes || 0) > 0
       ? '<span class="badge-pill badge-rose font-mono">' + stats.unresolved_mistakes + '</span>'
-      : '<span class="badge-pill badge-emerald">0</span>';
+      : '<span class="badge-pill badge-emerald font-mono">0</span>';
+
+    const pillarItems = [
+      { key: 'pillar_exam', val: pillars.exam_mastery || 0 },
+      { key: 'pillar_acc', val: pillars.accuracy || 0 },
+      { key: 'pillar_cov', val: pillars.coverage || 0 },
+      { key: 'pillar_err', val: pillars.mistake_hygiene || 0 },
+      { key: 'pillar_streak', val: pillars.pace_and_streak || 0 }
+    ];
 
     root.innerHTML =
       '<div class="home-bento-top">' +
-      '  <section class="surface-card readiness-hero">' +
+      '  <section class="surface-card readiness-hero" style="--gauge-accent:' + meta.stroke + ';--gauge-glow:' + meta.glow + ';">' +
       '    <div class="readiness-top-row">' +
       '      <span class="badge-pill ' + meta.badgeClass + '">' + R.icon('gauge', 'xs') + ' ' + R.escHtml(R.t('cluster_heading')) + '</span>' +
-      '      <button type="button" class="btn btn-sm btn-secondary" id="home-diag-btn">' + R.escHtml(R.t('readiness_diagnostic_btn')) + '</button>' +
+      '      <button type="button" class="btn btn-sm btn-secondary cockpit-diag-btn" id="home-diag-btn">' + R.escHtml(R.t('readiness_diagnostic_btn')) + '</button>' +
       '    </div>' +
       '    <div class="readiness-gauge-row">' +
-      '      <div class="gauge-box">' +
-      '        <svg class="gauge-svg" viewBox="0 0 132 82" aria-hidden="true">' +
-      '          <path class="gauge-track" d="M 12 72 A 54 54 0 0 1 120 72" />' +
-      '          <path class="gauge-arc" d="M 12 72 A 54 54 0 0 1 120 72" style="stroke:' + meta.stroke + ';stroke-dasharray:' + arcLen + ';stroke-dashoffset:' + dashOffset.toFixed(1) + ';" />' +
+      '      <div class="gauge-box cockpit-gauge-box">' +
+      '        <svg class="gauge-svg" viewBox="0 0 180 156" aria-hidden="true">' +
+      '          <circle class="cockpit-bezel-ring" cx="90" cy="90" r="76" />' +
+      '          <path class="gauge-track" d="M 32.84 123 A 66 66 0 1 1 147.16 123" />' +
+      buildCockpitTicks(clampedScore) +
+      '          <path class="gauge-arc" d="M 32.84 123 A 66 66 0 1 1 147.16 123" style="stroke:' + meta.stroke + ';stroke-dasharray:' + arcLen + ';stroke-dashoffset:' + dashOffset.toFixed(2) + ';" />' +
+      '          <g class="cockpit-needle" style="transform:rotate(' + needleDeg.toFixed(1) + 'deg);">' +
+      '            <polygon class="cockpit-needle-blade" points="88.1,90 90,34 91.9,90" />' +
+      '          </g>' +
+      '          <circle class="cockpit-hub-outer" cx="90" cy="90" r="7.5" />' +
+      '          <circle class="cockpit-hub-inner" cx="90" cy="90" r="3.4" />' +
       '        </svg>' +
       '        <div class="gauge-center-val">' +
-      '          <div class="gauge-pct font-mono">' + Math.round(score) + '%</div>' +
+      '          <div class="gauge-pct font-mono">' + Math.round(score) + '<span class="gauge-pct-sym">%</span></div>' +
       '          <div class="gauge-lbl">' + R.escHtml(R.t('speedometer_lbl')) + '</div>' +
       '        </div>' +
       '      </div>' +
@@ -203,11 +245,15 @@
       '      </div>' +
       '    </div>' +
       '    <div class="pillars-mini-grid">' +
-      '      <div class="pillar-mini-cell"><div class="pillar-mini-val">' + Math.round(pillars.exam_mastery || 0) + '%</div><div class="pillar-mini-name">' + R.escHtml(R.t('pillar_exam')) + '</div></div>' +
-      '      <div class="pillar-mini-cell"><div class="pillar-mini-val">' + Math.round(pillars.accuracy || 0) + '%</div><div class="pillar-mini-name">' + R.escHtml(R.t('pillar_acc')) + '</div></div>' +
-      '      <div class="pillar-mini-cell"><div class="pillar-mini-val">' + Math.round(pillars.coverage || 0) + '%</div><div class="pillar-mini-name">' + R.escHtml(R.t('pillar_cov')) + '</div></div>' +
-      '      <div class="pillar-mini-cell"><div class="pillar-mini-val">' + Math.round(pillars.mistake_hygiene || 0) + '%</div><div class="pillar-mini-name">' + R.escHtml(R.t('pillar_err')) + '</div></div>' +
-      '      <div class="pillar-mini-cell"><div class="pillar-mini-val">' + Math.round(pillars.pace_and_streak || 0) + '%</div><div class="pillar-mini-name">' + R.escHtml(R.t('pillar_streak')) + '</div></div>' +
+      pillarItems.map(function (p) {
+        const pv = Math.max(0, Math.min(100, Math.round(p.val)));
+        const barTone = pv >= 75 ? 'emerald' : (pv >= 45 ? 'amber' : '');
+        return '<div class="pillar-mini-cell">' +
+          '  <div class="pillar-mini-val">' + pv + '%</div>' +
+          '  <div class="pillar-mini-bar"><span class="' + barTone + '" style="width:' + pv + '%"></span></div>' +
+          '  <div class="pillar-mini-name">' + R.escHtml(R.t(p.key)) + '</div>' +
+          '</div>';
+      }).join('') +
       '    </div>' +
       '  </section>' +
 
@@ -215,12 +261,17 @@
       '    <section class="exam-launch-card">' +
       '      <div class="exam-launch-top">' +
       '        <div>' +
+      '          <div class="exam-launch-eyebrow"><span class="cockpit-pulse-dot" aria-hidden="true"></span><span>' + R.escHtml(R.t('cockpit_live_badge')) + '</span></div>' +
       '          <div class="exam-launch-title">' + R.escHtml(R.t('hero_title')) + '</div>' +
-      '          <div class="exam-launch-desc">' + R.escHtml(R.t('hero_desc')) + '</div>' +
       '        </div>' +
       freeExamsChip +
       '      </div>' +
-      '      <button type="button" class="btn btn-exam-light btn-block" id="home-start-exam-btn">' +
+      '      <div class="exam-spec-strip font-mono">' +
+      '        <span class="exam-spec-pill">' + R.escHtml(R.t('cockpit_spec_questions')) + '</span>' +
+      '        <span class="exam-spec-pill">' + R.escHtml(R.t('cockpit_spec_time')) + '</span>' +
+      '        <span class="exam-spec-pill accent">' + R.escHtml(R.t('cockpit_spec_limit')) + '</span>' +
+      '      </div>' +
+      '      <button type="button" class="btn btn-exam-ignition btn-block" id="home-start-exam-btn">' +
       R.icon('zap', 'sm') + '<span>' + R.escHtml(R.t('btn_start_exam')) + '</span>' +
       '      </button>' +
       '    </section>' +
@@ -281,6 +332,14 @@
       '    <div class="tile-icon-box badge-amber">' + R.icon('steeringWheel', 'lg') + '</div>' +
       '    <div class="tile-body"><div class="tile-title">' + R.escHtml(R.t('card_amaliy_title')) + '</div><div class="tile-desc">' + R.escHtml(R.t('card_amaliy_desc')) + '</div></div>' +
       '  </button>' +
+      '  <button type="button" class="surface-card card-interactive action-tile" id="tile-signs">' +
+      '    <div class="tile-icon-box badge-primary">' + R.icon('compass', 'lg') + '</div>' +
+      '    <div class="tile-body"><div class="tile-title">' + R.escHtml(R.t('tab_signs')) + '</div><div class="tile-desc">' + R.escHtml(R.t('home_signs_desc')) + '</div></div>' +
+      '  </button>' +
+      '  <button type="button" class="surface-card card-interactive action-tile" id="tile-rules">' +
+      '    <div class="tile-icon-box badge-emerald">' + R.icon('bookOpen', 'lg') + '</div>' +
+      '    <div class="tile-body"><div class="tile-title">' + R.escHtml(R.t('ref_law_title')) + '</div><div class="tile-desc">' + R.escHtml(R.t('home_rules_desc')) + '</div></div>' +
+      '  </button>' +
       '  <button type="button" class="surface-card card-interactive action-tile" id="tile-cheatsheet">' +
       '    <div class="tile-icon-box badge-neutral">' + R.icon('lightbulb', 'lg') + '</div>' +
       '    <div class="tile-body"><div class="tile-title">' + R.escHtml(R.t('card_cheatsheet_title')) + (!sub.is_pro ? ' <span class="badge-pill badge-amber">PRO</span>' : '') + '</div><div class="tile-desc">' + R.escHtml(R.t('card_cheatsheet_desc')) + '</div></div>' +
@@ -338,6 +397,14 @@
     });
     document.getElementById('tile-amaliy')?.addEventListener('click', function () {
       R.navigateTo('amaliy');
+    });
+    document.getElementById('tile-signs')?.addEventListener('click', function () {
+      R.state.prepareSubtab = 'signs';
+      R.navigateTo('tests');
+    });
+    document.getElementById('tile-rules')?.addEventListener('click', function () {
+      R.state.prepareSubtab = 'rules';
+      R.navigateTo('tests');
     });
     document.getElementById('tile-cheatsheet')?.addEventListener('click', function () {
       R.openCheatsheetModal();

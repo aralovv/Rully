@@ -25,7 +25,7 @@ def _get_connection():
 
 
 @router.get("")
-async def list_orders(
+def list_orders(
     tab: str = Query("all", description="active, expired, paid, review_required, cancelled, all"),
     q: Optional[str] = Query(None, description="Search by Telegram ID, Order ID, Username, Amount, or Card suffix"),
     page: int = Query(1, ge=1),
@@ -129,7 +129,7 @@ async def list_orders(
 
 
 @router.get("/{order_id}")
-async def get_order_details(order_id: str, current_admin: dict = Depends(get_current_admin)):
+def get_order_details(order_id: str, current_admin: dict = Depends(get_current_admin)):
     """Returns the full order snapshot, associated user, payment transaction, and raw payment event."""
     with _get_connection() as conn:
         c = conn.cursor()

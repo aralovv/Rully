@@ -4,10 +4,13 @@ Answers, Mistake Tracking, and Admin Analytics.
 """
 import sqlite3
 import json
+import logging
 import time
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Any, Tuple, Union, Set
 from src.db_adapter import get_db_connection, is_turso_enabled, execute_batch
+
+logger = logging.getLogger(__name__)
 
 # --- Subscription Plans Specification ---
 SUBSCRIPTION_PLANS = {
@@ -301,7 +304,13 @@ class BotDatabase:
         if BotDatabase._ticket_schema_ready:
             return
         try:
-            execute_batch(conn, [
+            cur = conn.cursor()
+            cur.execute("PRAGMA table_info(session_answers)")
+            sa_cols = {
+                r["name"] if hasattr(r, "keys") and "name" in r.keys() else r[1]
+                for r in cur.fetchall()
+            }
+            stmts = [
                 """
                 CREATE TABLE IF NOT EXISTS user_ticket_progress (
                     user_id INTEGER NOT NULL,
@@ -318,11 +327,14 @@ class BotDatabase:
                 )
                 """,
                 "CREATE INDEX IF NOT EXISTS idx_ticket_progress_user ON user_ticket_progress(user_id)",
-                "CREATE INDEX IF NOT EXISTS idx_session_answers_user_canon ON session_answers(user_id, canonical_id, is_correct)",
-            ])
+            ]
+            if "user_id" not in sa_cols:
+                stmts.append("ALTER TABLE session_answers ADD COLUMN user_id INTEGER DEFAULT NULL")
+            stmts.append("CREATE INDEX IF NOT EXISTS idx_session_answers_user_canon ON session_answers(user_id, canonical_id, is_correct)")
+            execute_batch(conn, stmts)
             BotDatabase._ticket_schema_ready = True
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Ticket progress lazy schema sync failed cleanly: %s", exc)
 
     def _get_connection(self):
         return get_db_connection(self.db_path)

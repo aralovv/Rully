@@ -35,7 +35,7 @@ class BroadcastMessageRequest(BaseModel):
 
 
 @router.get("/audience")
-async def get_broadcast_audience(current_admin: dict = Depends(get_current_admin)):
+def get_broadcast_audience(current_admin: dict = Depends(get_current_admin)):
     """Returns recipient counts for different target segments."""
     with _get_connection() as conn:
         c = conn.cursor()
@@ -56,6 +56,16 @@ async def get_broadcast_audience(current_admin: dict = Depends(get_current_admin
                 "free": row["free_users"] or 0
             }
         }
+
+
+def _log_broadcast_audit_sync(admin_id: int, audit_details: str, now_str: str):
+    with _get_connection() as conn:
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
+            VALUES (?, 'BROADCAST_SENT', ?, ?)
+        """, (admin_id, audit_details, now_str))
+        conn.commit()
 
 
 async def _execute_broadcast_task(users: List[Dict[str, Any]], clean_text: str, target: str, admin_id: int, admin_username: str):
@@ -81,7 +91,7 @@ async def _execute_broadcast_task(users: List[Dict[str, Any]], clean_text: str, 
         # Rate-limiting pause (Telegram ceiling: 30 msgs/sec -> 0.04s ≈ 25 msgs/sec)
         await asyncio.sleep(0.04)
 
-    # Create administrative audit record
+    # Create administrative audit record off the event loop
     now_str = datetime.utcnow().isoformat()
     audit_details = json.dumps({
         "target_group": target,
@@ -93,19 +103,13 @@ async def _execute_broadcast_task(users: List[Dict[str, Any]], clean_text: str, 
     }, ensure_ascii=False)
 
     try:
-        with _get_connection() as conn:
-            c = conn.cursor()
-            c.execute("""
-                INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
-                VALUES (?, 'BROADCAST_SENT', ?, ?)
-            """, (admin_id, audit_details, now_str))
-            conn.commit()
+        await asyncio.to_thread(_log_broadcast_audit_sync, admin_id, audit_details, now_str)
     except Exception:
         pass
 
 
 @router.post("")
-async def send_broadcast_message(
+def send_broadcast_message(
     req: BroadcastMessageRequest,
     background_tasks: BackgroundTasks,
     current_admin: dict = Depends(get_current_admin)
@@ -169,7 +173,7 @@ async def send_broadcast_message(
 
 
 @router.get("/history")
-async def get_broadcast_history(
+def get_broadcast_history(
     limit: int = 10,
     current_admin: dict = Depends(get_current_admin)
 ):

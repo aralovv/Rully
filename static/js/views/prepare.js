@@ -364,9 +364,11 @@
 
     const sub = R.state.prepareSubtab || 'topics';
     root.innerHTML =
-      '<div class="subtab-bar">' +
+      '<div class="subtab-bar subtab-bar-scroll" role="tablist">' +
       '  <button type="button" class="subtab-btn ' + (sub === 'topics' ? 'active' : '') + '" data-prep-tab="topics">' + R.escHtml(R.t('tab_categories')) + '</button>' +
       '  <button type="button" class="subtab-btn ' + (sub === 'tickets' ? 'active' : '') + '" data-prep-tab="tickets">' + R.escHtml(R.t('tab_tickets')) + '</button>' +
+      '  <button type="button" class="subtab-btn ' + (sub === 'signs' ? 'active' : '') + '" data-prep-tab="signs">' + R.escHtml(R.t('tab_signs')) + '</button>' +
+      '  <button type="button" class="subtab-btn ' + (sub === 'rules' ? 'active' : '') + '" data-prep-tab="rules">' + R.escHtml(R.t('tab_rules')) + '</button>' +
       '  <button type="button" class="subtab-btn ' + (sub === 'adaptive' ? 'active' : '') + '" data-prep-tab="adaptive">' + R.escHtml(R.t('tab_adaptive')) + '</button>' +
       '  <button type="button" class="subtab-btn ' + (sub === 'saved' ? 'active' : '') + '" data-prep-tab="saved">' + R.escHtml(R.t('tab_saved')) + '</button>' +
       '</div>' +
@@ -383,6 +385,8 @@
     const body = document.getElementById('prepare-subtab-body');
     if (sub === 'topics') renderTopicsTab(body);
     else if (sub === 'tickets') renderTicketsTab(body);
+    else if (sub === 'signs') { if (typeof R.renderSignsExplorer === 'function') R.renderSignsExplorer(body); }
+    else if (sub === 'rules') { if (typeof R.renderLawExplorer === 'function') R.renderLawExplorer(body); }
     else if (sub === 'adaptive') renderAdaptiveTab(body);
     else if (sub === 'saved') renderSavedTab(body);
   };

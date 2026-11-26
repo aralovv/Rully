@@ -3,11 +3,11 @@ Telegram Delivery & Notification Service for Admin OTP, Order/Payment Alerts, an
 """
 
 import os
-import sqlite3
 import logging
 import httpx
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
+from src.db_adapter import get_db_connection
 
 load_dotenv()
 
@@ -22,17 +22,19 @@ DB_PATH = os.getenv("DB_PATH", "master_database.sqlite")
 
 
 def get_user_mention(user_id: int) -> str:
-    """Helper to fetch username or first name from database for rich Telegram mentions."""
+    """Helper to fetch username or first name from active DB (Turso or SQLite) for rich Telegram mentions."""
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with get_db_connection(DB_PATH) as conn:
             c = conn.cursor()
             c.execute("SELECT username, first_name FROM telegram_users WHERE user_id = ?", (user_id,))
             row = c.fetchone()
             if row:
-                if row[0]:
-                    return f"@{row[0]} (ID: <code>{user_id}</code>)"
-                elif row[1]:
-                    return f"<b>{row[1]}</b> (ID: <code>{user_id}</code>)"
+                uname = row[0] if not hasattr(row, "get") else row.get("username")
+                fname = row[1] if not hasattr(row, "get") else row.get("first_name")
+                if uname:
+                    return f"@{uname} (ID: <code>{user_id}</code>)"
+                elif fname:
+                    return f"<b>{fname}</b> (ID: <code>{user_id}</code>)"
     except Exception:
         pass
     return f"<code>{user_id}</code>"

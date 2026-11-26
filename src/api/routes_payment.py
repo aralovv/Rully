@@ -54,8 +54,8 @@ async def api_create_payment_order(
 
     if _user_order_locks.get(user_id):
         # Rapid double-click within 2.5 seconds:
-        # Idempotently return the user's active pending order
-        existing = get_user_active_order(user_id)
+        # Idempotently return the user's active pending order without blocking event loop
+        existing = await asyncio.to_thread(get_user_active_order, user_id)
         if existing:
             return {
                 "ok": True,

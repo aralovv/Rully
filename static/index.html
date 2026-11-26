@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#F1F2F4">
   <title>RULLY — O‘zbekiston Haydovchilik Imtihoni 2.0</title>
-  <link rel="stylesheet" href="/static/css/rully.css?v=2.0.0">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="/static/css/rully.css?v=4.0.0">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -16,7 +19,10 @@
       <div class="sidebar-brand">
         <div class="brand-mark">R</div>
         <div class="brand-text-wrap">
-          <span class="brand-name">RULLY</span>
+          <div class="brand-name-row">
+            <span class="brand-name">RULLY</span>
+            <span class="cockpit-live-chip"><span class="cockpit-pulse-dot" aria-hidden="true"></span><span data-i18n="cockpit_live_badge">VMQ 408</span></span>
+          </div>
           <span class="brand-sub" data-i18n="rully_tagline">O‘zbekiston Avtotest 2.0</span>
         </div>
       </div>
@@ -104,7 +110,7 @@
       <section class="view-container" id="view-results"></section>
     </main>
 
-    <!-- Mobile Bottom Navigation Dock (< 1024px) -->
+    <!-- Mobile Floating Bottom Dock (< 1024px) -->
     <nav class="mobile-dock" aria-label="Mobile Navigation">
       <button type="button" class="dock-item active" data-tab="home">
         <span class="r-icon sm" id="nav-icon-home"></span>
@@ -114,13 +120,13 @@
         <span class="r-icon sm" id="nav-icon-tests"></span>
         <span class="dock-label" data-i18n="nav_tests">Nazariya</span>
       </button>
-      <button type="button" class="dock-item" data-tab="ai">
-        <span class="r-icon sm" id="nav-icon-ai"></span>
-        <span class="dock-label" data-i18n="nav_ai">AI Ustoz</span>
-      </button>
       <button type="button" class="dock-item" data-tab="amaliy">
         <span class="r-icon sm" id="nav-icon-amaliy"></span>
         <span class="dock-label" data-i18n="nav_amaliy">Avtodrom</span>
+      </button>
+      <button type="button" class="dock-item" data-tab="ai">
+        <span class="r-icon sm" id="nav-icon-ai"></span>
+        <span class="dock-label" data-i18n="nav_ai">AI Ustoz</span>
       </button>
       <button type="button" class="dock-item" data-tab="profile">
         <span class="r-icon sm" id="nav-icon-profile"></span>
@@ -299,20 +305,21 @@
 
   <div class="hud-toast" id="hud-toast" role="status" aria-live="polite"></div>
 
-  <!-- Modular Application Scripts (with required defer attributes & ?v=2.0.0 cache-busting) -->
-  <script defer src="/static/js/icons.js?v=2.0.0"></script>
-  <script defer src="/static/js/translations.js?v=2.0.0"></script>
-  <script defer src="/static/js/cheatsheet_data.js?v=2.0.0"></script>
-  <script defer src="/static/js/core/state.js?v=2.0.0"></script>
-  <script defer src="/static/js/core/theme.js?v=2.0.0"></script>
-  <script defer src="/static/js/core/hud.js?v=2.0.0"></script>
-  <script defer src="/static/js/core/api.js?v=2.0.0"></script>
-  <script defer src="/static/js/views/home.js?v=2.0.0"></script>
-  <script defer src="/static/js/views/prepare.js?v=2.0.0"></script>
-  <script defer src="/static/js/views/quiz.js?v=2.0.0"></script>
-  <script defer src="/static/js/views/amaliy.js?v=2.0.0"></script>
-  <script defer src="/static/js/views/ai.js?v=2.0.0"></script>
-  <script defer src="/static/js/views/profile.js?v=2.0.0"></script>
-  <script defer src="/static/js/app.js?v=2.0.0"></script>
+  <!-- Modular Application Scripts (with required defer attributes & ?v=4.0.0 cache-busting) -->
+  <script defer src="/static/js/icons.js?v=4.0.0"></script>
+  <script defer src="/static/js/translations.js?v=4.0.0"></script>
+  <script defer src="/static/js/cheatsheet_data.js?v=4.0.0"></script>
+  <script defer src="/static/js/core/state.js?v=4.0.0"></script>
+  <script defer src="/static/js/core/theme.js?v=4.0.0"></script>
+  <script defer src="/static/js/core/hud.js?v=4.0.0"></script>
+  <script defer src="/static/js/core/api.js?v=4.0.0"></script>
+  <script defer src="/static/js/views/reference.js?v=4.0.0"></script>
+  <script defer src="/static/js/views/home.js?v=4.0.0"></script>
+  <script defer src="/static/js/views/prepare.js?v=4.0.0"></script>
+  <script defer src="/static/js/views/quiz.js?v=4.0.0"></script>
+  <script defer src="/static/js/views/amaliy.js?v=4.0.0"></script>
+  <script defer src="/static/js/views/ai.js?v=4.0.0"></script>
+  <script defer src="/static/js/views/profile.js?v=4.0.0"></script>
+  <script defer src="/static/js/app.js?v=4.0.0"></script>
 </body>
 </html>

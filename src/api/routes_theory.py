@@ -6,7 +6,7 @@ import os
 import json
 import time
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from src.api.deps import get_current_user, get_db
@@ -14,10 +14,20 @@ from src.api.routes_auth import invalidate_auth_cache
 from src.bot.database import BotDatabase
 from src.avtotest_product import AvtotestProductEngine, QuestionItem
 from src.bot.category_localization import localize_category
+from src.db.reference_catalog import get_law_reference, get_road_signs_reference
 from src.security.rate_limiter import rate_limiter, BoundedTTLCache
 
 router = APIRouter(prefix="/api", tags=["Theory & Exam"])
 engine = AvtotestProductEngine("master_database.sqlite")
+
+# 1. Categories cache (clears cleanly when engine or admin updates catalog_version)
+_categories_cache = BoundedTTLCache[str, Any](maxsize=16, ttl_seconds=300.0)
+
+
+def invalidate_theory_caches(reload_engine: bool = True):
+    """Evicts API category cache and reloads AvtotestProductEngine catalog cache."""
+    _categories_cache.clear()
+    engine.invalidate_cache(reload=reload_engine)
 
 def serialize_question(q: QuestionItem, is_bookmarked: bool = False, include_correct: bool = False) -> Dict[str, Any]:
     image_url = None
@@ -49,24 +59,29 @@ def serialize_question(q: QuestionItem, is_bookmarked: bool = False, include_cor
         "has_image": q.has_image,
         "image_url": image_url,
         "legal_reference": q.legal_reference,
+        "legal_verification_status": getattr(q, "legal_verification_status", None),
+        "legal_chapter": getattr(q, "legal_chapter", None),
+        "legal_clause": getattr(q, "legal_clause", None),
+        "legal_doc_title": getattr(q, "legal_doc_title", None),
         "explanation": q.explanation if include_correct else None,
         "correct_option_key": q.correct_option_key if include_correct else None,
         "correct_answer_text": correct_answer_text,
         "is_bookmarked": is_bookmarked
     }
 
-# 1. Categories
-_categories_cache = BoundedTTLCache[str, Any](maxsize=16, ttl_seconds=600.0)
-
 @router.get("/categories")
 def list_categories(
+    response: Response,
     lang: Optional[str] = Query(None),
     user: Dict[str, Any] = Depends(get_current_user)
 ):
     selected_lang = lang or user.get("language", "uz_latn")
     if selected_lang not in ["uz_latn", "uz_cyrl", "ru"]:
         selected_lang = "uz_latn"
-    
+
+    if engine.ensure_fresh_cache():
+        _categories_cache.clear()
+
     cached = _categories_cache.get(selected_lang)
     if cached is not None:
         categories = cached
@@ -74,8 +89,13 @@ def list_categories(
         categories = engine.get_categories(selected_lang)
         _categories_cache.set(selected_lang, categories)
 
+    rev = engine._cache_revision if engine._cache_revision is not None else 0
+    response.headers["ETag"] = f'"rully-cat-{selected_lang}-r{rev}"'
+    response.headers["Cache-Control"] = "public, max-age=300, s-maxage=3600, stale-while-revalidate=3600"
+
     return {
         "language": selected_lang,
+        "catalog_revision": rev,
         "count": len(categories),
         "categories": categories
     }
@@ -291,6 +311,10 @@ def submit_answer(
         "is_correct": feedback.is_correct,
         "explanation": feedback.explanation,
         "legal_reference": feedback.legal_reference,
+        "legal_verification_status": getattr(feedback, "legal_verification_status", None),
+        "legal_chapter": getattr(feedback, "legal_chapter", None),
+        "legal_clause": getattr(feedback, "legal_clause", None),
+        "legal_doc_title": getattr(feedback, "legal_doc_title", None),
         "streak": res["streak"],
         "is_exam_terminated": res["is_exam_terminated"]
     }
@@ -573,3 +597,25 @@ def get_session_review_endpoint(
         "incorrect_count": session.get("incorrect_count"),
         "items": items
     }
+
+
+# 12. RULLY 2.0 Statutory Road Signs Explorer & VMQ 172 Law Reader
+@router.get("/reference/signs")
+def get_reference_signs_endpoint(
+    response: Response,
+    lang: Optional[str] = Query("uz_latn"),
+):
+    selected_lang = lang if lang in ("uz_latn", "uz_cyrl", "ru") else "uz_latn"
+    response.headers["Cache-Control"] = "public, max-age=300, s-maxage=3600, stale-while-revalidate=3600"
+    return get_road_signs_reference(selected_lang)
+
+
+@router.get("/reference/law")
+def get_reference_law_endpoint(
+    response: Response,
+    lang: Optional[str] = Query("uz_latn"),
+):
+    selected_lang = lang if lang in ("uz_latn", "uz_cyrl", "ru") else "uz_latn"
+    response.headers["Cache-Control"] = "public, max-age=300, s-maxage=3600, stale-while-revalidate=3600"
+    return get_law_reference(selected_lang)
+

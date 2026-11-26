@@ -7,6 +7,7 @@ Supports:
 - Financial reconciliation discrepancy reporting
 """
 
+import asyncio
 import os
 import sqlite3
 from datetime import datetime, timedelta
@@ -15,13 +16,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.admin.deps import get_current_admin
+from src.db_adapter import execute_batch, get_db_connection
 from src.security.telegram_notifier import send_user_payment_success_notification, send_late_payment_approved_alert
 
 router = APIRouter(prefix="/api/admin/payments", tags=["Admin Payments & Reconciliation"])
 DB_PATH = os.getenv("DB_PATH", "master_database.sqlite")
-
-
-from src.db_adapter import get_db_connection
 
 def _get_connection():
     return get_db_connection(DB_PATH)
@@ -37,7 +36,7 @@ class ResolveUnmatchedRequest(BaseModel):
 
 
 @router.get("/transactions")
-async def list_payment_transactions(
+def list_payment_transactions(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     q: Optional[str] = Query(None, description="Search by Order ID, User ID, or Plan ID"),
@@ -81,7 +80,7 @@ async def list_payment_transactions(
 
 
 @router.get("/unmatched")
-async def list_unmatched_payments(
+def list_unmatched_payments(
     status: Optional[str] = Query(None, description="UNRESOLVED, RESOLVED_LINKED, RESOLVED_REFUNDED, IGNORED"),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
@@ -123,36 +122,42 @@ async def list_unmatched_payments(
 
 
 @router.post("/unmatched/{unmatched_id}/resolve")
-async def resolve_unmatched_payment(
+def resolve_unmatched_payment(
     unmatched_id: int,
     req: ResolveUnmatchedRequest,
     current_admin: dict = Depends(get_current_admin)
 ):
-    """Resolves an unmatched payment case with administrative audit notes."""
+    """Resolves an unmatched payment case with administrative audit notes atomically."""
     now_str = datetime.utcnow().isoformat()
     with _get_connection() as conn:
         c = conn.cursor()
-        c.execute("""
-            UPDATE unmatched_payments
-            SET status = ?, resolution_notes = ?, resolved_by_admin = ?, resolved_at = ?
-            WHERE id = ?
-        """, (req.status, req.notes, current_admin["username"], now_str, unmatched_id))
-
-        if c.rowcount == 0:
+        c.execute("SELECT id FROM unmatched_payments WHERE id = ?", (unmatched_id,))
+        if not c.fetchone():
             raise HTTPException(status_code=404, detail="Unmatched payment record not found")
 
-        c.execute("""
-            INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
-            VALUES (?, 'UNMATCHED_PAYMENT_RESOLVED', ?, ?)
-        """, (current_admin["id"], f"ID: {unmatched_id}, Status: {req.status}, Notes: {req.notes}", now_str))
-
-        conn.commit()
+        execute_batch(conn, [
+            (
+                """
+                UPDATE unmatched_payments
+                SET status = ?, resolution_notes = ?, resolved_by_admin = ?, resolved_at = ?
+                WHERE id = ?
+                """,
+                [req.status, req.notes, current_admin["username"], now_str, unmatched_id],
+            ),
+            (
+                """
+                INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
+                VALUES (?, 'UNMATCHED_PAYMENT_RESOLVED', ?, ?)
+                """,
+                [current_admin["id"], f"ID: {unmatched_id}, Status: {req.status}, Notes: {req.notes}", now_str],
+            ),
+        ])
 
     return {"ok": True, "message": "Holat muvaffaqiyatli hal qilindi."}
 
 
 @router.get("/review-cases")
-async def list_payment_review_cases(
+def list_payment_review_cases(
     status: Optional[str] = Query("PENDING", description="PENDING, APPROVED, REJECTED, ALL"),
     current_admin: dict = Depends(get_current_admin)
 ):
@@ -181,19 +186,14 @@ async def list_payment_review_cases(
     return {"ok": True, "cases": cases}
 
 
-@router.post("/review/{case_id}/approve")
-async def approve_late_payment(
+def _approve_late_payment_sync(
     case_id: int,
-    req: ResolveReviewRequest,
-    current_admin: dict = Depends(get_current_admin)
-):
-    """
-    Manually approves a late payment:
-    Atomically marks order PAID, activates user subscription, records ledger transaction.
-    """
+    notes: str,
+    admin_id: int,
+    admin_name: str,
+) -> Dict[str, Any]:
     now_dt = datetime.utcnow()
     now_str = now_dt.isoformat()
-    admin_name = current_admin["username"]
 
     with _get_connection() as conn:
         c = conn.cursor()
@@ -216,27 +216,6 @@ async def approve_late_payment(
         card_suffix = case["card_suffix"]
         event_id = case["event_id"]
 
-        # 1. Update review case
-        c.execute("""
-            UPDATE payment_review_cases
-            SET status = 'APPROVED', admin_notes = ?, resolved_by_admin = ?, resolved_at = ?
-            WHERE id = ?
-        """, (req.notes, admin_name, now_str, case_id))
-
-        # 2. Update order to PAID
-        c.execute("UPDATE payment_orders SET status = 'PAID', paid_at = ? WHERE order_id = ?", (now_str, order_id))
-
-        # 3. Update payment event to MATCHED
-        c.execute("UPDATE payment_events SET status = 'MATCHED', matched_order_id = ? WHERE id = ?", (order_id, event_id))
-
-        # 4. Insert into payment_transactions financial ledger
-        c.execute("""
-            INSERT INTO payment_transactions (
-                order_id, user_id, event_id, amount_uzs, plan_id, card_suffix, payment_timestamp, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (order_id, user_id, event_id, amount_uzs, plan_id, card_suffix, now_str, now_str))
-
-        # 5. Activate user subscription
         c.execute("SELECT is_pro, subscription_expires_at FROM telegram_users WHERE user_id = ?", (user_id,))
         u_row = c.fetchone()
 
@@ -252,71 +231,145 @@ async def approve_late_payment(
         new_expires_dt = base_dt + timedelta(days=duration_days)
         new_expires_str = new_expires_dt.isoformat()
 
-        c.execute("""
-            UPDATE telegram_users 
-            SET is_pro = 1, subscription_tier = ?, subscription_expires_at = ?
-            WHERE user_id = ?
-        """, (plan_id, new_expires_str, user_id))
+        execute_batch(conn, [
+            (
+                """
+                UPDATE payment_review_cases
+                SET status = 'APPROVED', admin_notes = ?, resolved_by_admin = ?, resolved_at = ?
+                WHERE id = ?
+                """,
+                [notes, admin_name, now_str, case_id],
+            ),
+            (
+                "UPDATE payment_orders SET status = 'PAID', paid_at = ? WHERE order_id = ?",
+                [now_str, order_id],
+            ),
+            (
+                "UPDATE payment_events SET status = 'MATCHED', matched_order_id = ? WHERE id = ?",
+                [order_id, event_id],
+            ),
+            (
+                """
+                INSERT INTO payment_transactions (
+                    order_id, user_id, event_id, amount_uzs, plan_id, card_suffix, payment_timestamp, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [order_id, user_id, event_id, amount_uzs, plan_id, card_suffix, now_str, now_str],
+            ),
+            (
+                """
+                UPDATE telegram_users
+                SET is_pro = 1, subscription_tier = ?, subscription_expires_at = ?
+                WHERE user_id = ?
+                """,
+                [plan_id, new_expires_str, user_id],
+            ),
+            (
+                """
+                INSERT INTO user_subscriptions (
+                    user_id, plan_id, plan_name, duration_days, price_uzs, status, created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
+                """,
+                [user_id, plan_id, plan_name, duration_days, amount_uzs, now_str, new_expires_str],
+            ),
+            (
+                """
+                INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
+                VALUES (?, 'LATE_PAYMENT_APPROVED', ?, ?)
+                """,
+                [admin_id, f"Case: {case_id}, Order: {order_id}, User: {user_id}, Notes: {notes}", now_str],
+            ),
+        ])
 
-        c.execute("""
-            INSERT INTO user_subscriptions (
-                user_id, plan_id, plan_name, duration_days, price_uzs, status, created_at, expires_at
-            ) VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
-        """, (user_id, plan_id, plan_name, duration_days, amount_uzs, now_str, new_expires_str))
-
-        # 6. Audit log
-        c.execute("""
-            INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
-            VALUES (?, 'LATE_PAYMENT_APPROVED', ?, ?)
-        """, (current_admin["id"], f"Case: {case_id}, Order: {order_id}, User: {user_id}, Notes: {req.notes}", now_str))
-
-        conn.commit()
-
-    # Notify user and orders group
     try:
-        await send_user_payment_success_notification(user_id, plan_name, new_expires_str, duration_days=duration_days)
-        await send_late_payment_approved_alert(order_id, amount_uzs, user_id, plan_name, admin_name)
+        from src.api.deps import invalidate_user_cache
+        invalidate_user_cache(user_id)
+    except Exception:
+        pass
+
+    return {
+        "order_id": order_id,
+        "user_id": user_id,
+        "amount_uzs": amount_uzs,
+        "plan_name": plan_name,
+        "duration_days": duration_days,
+        "expires_at": new_expires_str,
+    }
+
+
+@router.post("/review/{case_id}/approve")
+async def approve_late_payment(
+    case_id: int,
+    req: ResolveReviewRequest,
+    current_admin: dict = Depends(get_current_admin)
+):
+    """
+    Manually approves a late payment atomically via execute_batch():
+    Marks order PAID, activates user subscription, records ledger transaction.
+    """
+    admin_name = current_admin["username"]
+    res = await asyncio.to_thread(
+        _approve_late_payment_sync,
+        case_id,
+        req.notes or "",
+        current_admin["id"],
+        admin_name,
+    )
+
+    try:
+        await send_user_payment_success_notification(
+            res["user_id"], res["plan_name"], res["expires_at"], duration_days=res["duration_days"]
+        )
+        await send_late_payment_approved_alert(
+            res["order_id"], res["amount_uzs"], res["user_id"], res["plan_name"], admin_name
+        )
     except Exception:
         pass
 
     return {
         "ok": True,
-        "message": f"Kechiktirilgan to‘lov tasdiqlandi. Foydalanuvchiga ({user_id}) PRO obuna faollashtirildi.",
-        "expires_at": new_expires_str
+        "message": f"Kechiktirilgan to‘lov tasdiqlandi. Foydalanuvchiga ({res['user_id']}) PRO obuna faollashtirildi.",
+        "expires_at": res["expires_at"]
     }
 
 
 @router.post("/review/{case_id}/reject")
-async def reject_late_payment(
+def reject_late_payment(
     case_id: int,
     req: ResolveReviewRequest,
     current_admin: dict = Depends(get_current_admin)
 ):
-    """Rejects a review case with administrative explanation."""
+    """Rejects a review case atomically with administrative explanation."""
     now_str = datetime.utcnow().isoformat()
     with _get_connection() as conn:
         c = conn.cursor()
-        c.execute("""
-            UPDATE payment_review_cases
-            SET status = 'REJECTED', admin_notes = ?, resolved_by_admin = ?, resolved_at = ?
-            WHERE id = ? AND status = 'PENDING'
-        """, (req.notes, current_admin["username"], now_str, case_id))
-
-        if c.rowcount == 0:
+        c.execute("SELECT id FROM payment_review_cases WHERE id = ? AND status = 'PENDING'", (case_id,))
+        if not c.fetchone():
             raise HTTPException(status_code=404, detail="Pending review case not found")
 
-        c.execute("""
-            INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
-            VALUES (?, 'LATE_PAYMENT_REJECTED', ?, ?)
-        """, (current_admin["id"], f"Case: {case_id}, Notes: {req.notes}", now_str))
-
-        conn.commit()
+        execute_batch(conn, [
+            (
+                """
+                UPDATE payment_review_cases
+                SET status = 'REJECTED', admin_notes = ?, resolved_by_admin = ?, resolved_at = ?
+                WHERE id = ? AND status = 'PENDING'
+                """,
+                [req.notes, current_admin["username"], now_str, case_id],
+            ),
+            (
+                """
+                INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
+                VALUES (?, 'LATE_PAYMENT_REJECTED', ?, ?)
+                """,
+                [current_admin["id"], f"Case: {case_id}, Notes: {req.notes}", now_str],
+            ),
+        ])
 
     return {"ok": True, "message": "Holat bekor qilindi (rad etildi)."}
 
 
 @router.get("/reconciliation")
-async def get_reconciliation_report(current_admin: dict = Depends(get_current_admin)):
+def get_reconciliation_report(current_admin: dict = Depends(get_current_admin)):
     """
     Computes financial reconciliation discrepancy report:
     1. Incoming bank notification events

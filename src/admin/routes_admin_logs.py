@@ -26,7 +26,7 @@ def _get_connection():
 
 
 @router.get("/audit-logs")
-async def list_audit_logs(
+def list_audit_logs(
     action: Optional[str] = Query(None, description="Filter by action name"),
     page: int = Query(1, ge=1),
     limit: int = Query(25, ge=1, le=100),
@@ -66,7 +66,7 @@ async def list_audit_logs(
 
 
 @router.get("/health")
-async def get_system_health(current_admin: dict = Depends(get_current_admin)):
+def get_system_health(current_admin: dict = Depends(get_current_admin)):
     """Performs deep database integrity checks and collects system health diagnostics."""
     t0 = time.time()
     with _get_connection() as conn:

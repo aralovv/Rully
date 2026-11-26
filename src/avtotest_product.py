@@ -9,10 +9,19 @@ import sys
 import sqlite3
 import random
 import time
+import logging
+import threading
 from typing import Dict, List, Optional, Any, Tuple, Set
 from dataclasses import dataclass, asdict, field
 from src.bot.category_localization import localize_category, localize_legal_reference
 from src.db_adapter import get_db_connection, is_turso_enabled
+from src.db.catalog_bundle import (
+    DEFAULT_BUNDLE_PATH,
+    get_db_catalog_revision,
+    verify_and_load_canonical_bundle,
+)
+
+logger = logging.getLogger(__name__)
 
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
@@ -50,6 +59,10 @@ class QuestionItem:
     explanation: Optional[str] = None
     legal_reference: Optional[str] = None
     correct_option_key: Optional[str] = None
+    legal_verification_status: Optional[str] = None
+    legal_chapter: Optional[str] = None
+    legal_clause: Optional[str] = None
+    legal_doc_title: Optional[str] = None
 
 @dataclass
 class QuestionFeedback:
@@ -59,6 +72,10 @@ class QuestionFeedback:
     is_correct: bool
     explanation: Optional[str]
     legal_reference: Optional[str]
+    legal_verification_status: Optional[str] = None
+    legal_chapter: Optional[str] = None
+    legal_clause: Optional[str] = None
+    legal_doc_title: Optional[str] = None
 
 @dataclass
 class ExamSessionResult:
@@ -74,71 +91,193 @@ class ExamSessionResult:
     incorrect_question_ids: List[str]
 
 class AvtotestProductEngine:
-    def __init__(self, db_path: str = "master_database.sqlite"):
+    REVISION_CHECK_TTL_SECONDS = 300.0
+
+    def __init__(self, db_path: str = "master_database.sqlite", bundle_path: Optional[str] = None):
         self.db_path = db_path
-        if not is_turso_enabled() and not os.path.exists(self.db_path):
+        if bundle_path is not None:
+            self.bundle_path: Optional[str] = bundle_path
+        elif os.path.normpath(self.db_path) == os.path.normpath("master_database.sqlite"):
+            self.bundle_path = os.getenv("CANONICAL_BUNDLE_PATH", DEFAULT_BUNDLE_PATH)
+        else:
+            # Explicit custom SQLite paths (e.g., isolated test DBs) bypass global bundle unless passed explicitly.
+            self.bundle_path = None
+
+        if not is_turso_enabled() and not os.path.exists(self.db_path) and not (
+            self.bundle_path and os.path.exists(self.bundle_path)
+        ):
             raise FileNotFoundError(f"Database not found at {self.db_path}")
 
+        self._cache_lock = threading.RLock()
         self._cache_questions: Dict[str, Dict[str, Any]] = {}
         self._cache_categories: List[Dict[str, Any]] = []
         self._by_category: Dict[int, List[str]] = {}
         self._all_canonical_ids: List[str] = []
+        self._cache_source: str = "unloaded"
+        self._cache_revision: Optional[int] = None
+        self._last_revision_check_at: float = 0.0
         self._preload_cache()
 
     def _get_connection(self):
-        if os.path.exists(self.db_path):
+        if os.path.exists(self.db_path) and not (is_turso_enabled() and os.path.normpath(self.db_path) == os.path.normpath("master_database.sqlite")):
             conn = sqlite3.connect(self.db_path, timeout=15.0, check_same_thread=False)
             conn.row_factory = sqlite3.Row
             return conn
         return get_db_connection(self.db_path)
 
+    def _populate_from_bundle(self, bundle: Dict[str, Any], source_label: str = "bundle"):
+        new_questions: Dict[str, Dict[str, Any]] = {}
+        new_by_category: Dict[int, List[str]] = {}
+        new_all_ids: List[str] = []
+
+        for item in bundle.get("questions", []):
+            cid = item["canonical_id"]
+            cat = item.get("category") or {}
+            cat_id_raw = cat.get("id")
+            cat_id = cat_id_raw if cat_id_raw is not None else 0
+            legal = item.get("legal") or {}
+            img = item.get("image") or {}
+
+            translations: Dict[str, Dict[str, Any]] = {}
+            for lang_code, tr in (item.get("translations") or {}).items():
+                translations[lang_code] = {
+                    "question_text": tr.get("question_text", ""),
+                    "explanation": tr.get("explanation"),
+                }
+
+            answers: List[Dict[str, Any]] = []
+            for opt in (item.get("options") or []):
+                text_map = opt.get("text") or {}
+                answers.append({
+                    "option_key": opt["key"],
+                    "text_uz_latn": text_map.get("uz_latn", ""),
+                    "text_uz_cyrl": text_map.get("uz_cyrl", ""),
+                    "text_ru": text_map.get("ru", ""),
+                    "sort_order": opt.get("sort_order", 0),
+                })
+
+            new_questions[cid] = {
+                "canonical_id": cid,
+                "category_id": cat_id_raw,
+                "category_name": cat.get("name") or "",
+                "has_image": bool(item.get("has_image")),
+                "correct_option_key": item.get("correct_option_key"),
+                "legal_reference": legal.get("reference"),
+                "legal_verification_status": legal.get("legal_verification_status"),
+                "legal_doc_title": legal.get("doc_title"),
+                "legal_chapter": legal.get("chapter"),
+                "legal_clause": legal.get("clause"),
+                "image_local_path": img.get("path") if item.get("has_image") else None,
+                "translations": translations,
+                "answers": answers,
+            }
+            new_by_category.setdefault(cat_id, []).append(cid)
+            new_all_ids.append(cid)
+
+        new_categories = [
+            {
+                "category_id": c_item.get("category_id", 0),
+                "category_name": c_item.get("category_name") or "",
+                "question_count": c_item.get("question_count", 0),
+            }
+            for c_item in bundle.get("categories", [])
+        ]
+
+        self._cache_questions = new_questions
+        self._cache_categories = new_categories
+        self._by_category = new_by_category
+        self._all_canonical_ids = new_all_ids
+        self._cache_source = source_label
+        self._cache_revision = int(bundle.get("db_catalog_revision", 0))
+        self._last_revision_check_at = time.monotonic()
+
     def _preload_cache(self):
-        """Loads all static questions, translations, and answers into RAM for zero-latency lookups."""
-        try:
-            with self._get_connection() as conn:
+        """
+        Loads canonical questions using SHA-256 verified bundle first when aligned with
+        DB catalog_version, falling back cleanly to live SQL preload on bundle absence/drift.
+        """
+        with self._cache_lock:
+            bundle = None
+            bundle_err = None
+            if self.bundle_path:
+                bundle, bundle_err = verify_and_load_canonical_bundle(self.bundle_path)
+
+            db_rev: Optional[int] = None
+            conn = None
+            try:
+                conn = self._get_connection()
+                db_rev = get_db_catalog_revision(conn)
+
+                # Case A: Cryptographically verified bundle matches live catalog_version (0 heavy SQL transfer!)
+                if bundle is not None and db_rev is not None and int(bundle.get("db_catalog_revision", -1)) == db_rev:
+                    self._populate_from_bundle(bundle, source_label="bundle")
+                    return
+
+                # Case B: Missing, tampered, or stale bundle -> structured warning & automatic live SQL fallback
+                if self.bundle_path:
+                    reason = bundle_err or f"REVISION_DRIFT(bundle={bundle.get('db_catalog_revision')},db={db_rev})"
+                    logger.warning("CATALOG_BUNDLE_STALE_FALLBACK: %s", reason)
+
+                new_questions: Dict[str, Dict[str, Any]] = {}
+                new_by_category: Dict[int, List[str]] = {}
+                new_all_ids: List[str] = []
+
                 c = conn.cursor()
-                # 1. Base canonical questions
-                c.execute("""
-                SELECT cq.canonical_id, cq.category_id, cq.category_name, cq.primary_image_id, cq.has_image,
-                       cq.correct_option_key, cq.legal_reference,
-                       im.local_path as image_local_path
-                FROM canonical_questions cq
-                LEFT JOIN images im ON cq.primary_image_id = im.id
-                ORDER BY cq.canonical_id
-                """)
+                try:
+                    c.execute("""
+                    SELECT cq.canonical_id, cq.category_id, cq.category_name, cq.primary_image_id, cq.has_image,
+                           cq.correct_option_key, cq.legal_reference,
+                           cq.legal_verification_status, cq.legal_chapter, cq.legal_clause, cq.legal_doc_title,
+                           im.local_path as image_local_path
+                    FROM canonical_questions cq
+                    LEFT JOIN images im ON cq.primary_image_id = im.id
+                    ORDER BY cq.canonical_id
+                    """)
+                except Exception:
+                    c.execute("""
+                    SELECT cq.canonical_id, cq.category_id, cq.category_name, cq.primary_image_id, cq.has_image,
+                           cq.correct_option_key, cq.legal_reference,
+                           im.local_path as image_local_path
+                    FROM canonical_questions cq
+                    LEFT JOIN images im ON cq.primary_image_id = im.id
+                    ORDER BY cq.canonical_id
+                    """)
                 for r in c.fetchall():
+                    r_keys = r.keys() if hasattr(r, "keys") else ()
                     cid = r["canonical_id"]
                     cat_id = r["category_id"] if r["category_id"] is not None else 0
-                    self._cache_questions[cid] = {
+                    new_questions[cid] = {
                         "canonical_id": cid,
                         "category_id": r["category_id"],
                         "category_name": r["category_name"] or "",
                         "has_image": bool(r["has_image"]),
                         "correct_option_key": r["correct_option_key"],
                         "legal_reference": r["legal_reference"],
+                        "legal_verification_status": r["legal_verification_status"] if "legal_verification_status" in r_keys else None,
+                        "legal_chapter": r["legal_chapter"] if "legal_chapter" in r_keys else None,
+                        "legal_clause": r["legal_clause"] if "legal_clause" in r_keys else None,
+                        "legal_doc_title": r["legal_doc_title"] if "legal_doc_title" in r_keys else None,
                         "image_local_path": r["image_local_path"] if r["has_image"] else None,
                         "translations": {},
                         "answers": []
                     }
-                    self._by_category.setdefault(cat_id, []).append(cid)
-                    self._all_canonical_ids.append(cid)
+                    new_by_category.setdefault(cat_id, []).append(cid)
+                    new_all_ids.append(cid)
 
-                # 2. Translations
                 c.execute("SELECT canonical_id, language, question_text, explanation FROM canonical_translations")
                 for r in c.fetchall():
                     cid = r["canonical_id"]
-                    if cid in self._cache_questions:
-                        self._cache_questions[cid]["translations"][r["language"]] = {
+                    if cid in new_questions:
+                        new_questions[cid]["translations"][r["language"]] = {
                             "question_text": r["question_text"],
                             "explanation": r["explanation"]
                         }
 
-                # 3. Answers
                 c.execute("SELECT canonical_id, option_key, text_uz_latn, text_uz_cyrl, text_ru, sort_order FROM canonical_answers ORDER BY sort_order")
                 for r in c.fetchall():
                     cid = r["canonical_id"]
-                    if cid in self._cache_questions:
-                        self._cache_questions[cid]["answers"].append({
+                    if cid in new_questions:
+                        new_questions[cid]["answers"].append({
                             "option_key": r["option_key"],
                             "text_uz_latn": r["text_uz_latn"],
                             "text_uz_cyrl": r["text_uz_cyrl"],
@@ -146,17 +285,66 @@ class AvtotestProductEngine:
                             "sort_order": r["sort_order"]
                         })
 
-                # 4. Categories list
                 c.execute("""
                 SELECT COALESCE(cq.category_id, 0) as category_id, cq.category_name, COUNT(*) as question_count
                 FROM canonical_questions cq
                 GROUP BY cq.category_id, cq.category_name
                 ORDER BY COALESCE(cq.category_id, 0)
                 """)
-                self._cache_categories = [dict(r) for r in c.fetchall()]
-        except Exception as e:
-            # If preload fails, fallback to direct DB queries
-            pass
+                new_categories = [dict(r) for r in c.fetchall()]
+
+                self._cache_questions = new_questions
+                self._cache_categories = new_categories
+                self._by_category = new_by_category
+                self._all_canonical_ids = new_all_ids
+                self._cache_source = "sql"
+                self._cache_revision = db_rev if db_rev is not None else 0
+                self._last_revision_check_at = time.monotonic()
+            except Exception as e:
+                if bundle is not None:
+                    logger.warning("CATALOG_BUNDLE_DEGRADED_SQL_UNAVAILABLE: %s", e)
+                    self._populate_from_bundle(bundle, source_label="bundle_degraded_sql_unavailable")
+                else:
+                    logger.debug("Catalog preload fallback (%s); direct queries will be used.", e)
+            finally:
+                if conn is not None:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+
+    def ensure_fresh_cache(self, force: bool = False) -> bool:
+        """
+        Periodically (every 300s TTL or when forced) checks lightweight system_settings['catalog_version'].
+        Reloads in-memory caches transparently if DB catalog revision has advanced.
+        """
+        now = time.monotonic()
+        if not force and (now - self._last_revision_check_at) < self.REVISION_CHECK_TTL_SECONDS:
+            return False
+        try:
+            with self._get_connection() as conn:
+                db_rev = get_db_catalog_revision(conn)
+        except Exception:
+            return False
+
+        self._last_revision_check_at = now
+        if db_rev is not None and self._cache_revision is not None and db_rev != self._cache_revision:
+            logger.info("Catalog drift detected (cached=%s, db=%s); reloading cache.", self._cache_revision, db_rev)
+            self.invalidate_cache(reload=True)
+            return True
+        return False
+
+    def invalidate_cache(self, reload: bool = True):
+        """Evicts in-memory catalog caches and optionally reloads from bundle/DB."""
+        with self._cache_lock:
+            self._cache_questions = {}
+            self._cache_categories = []
+            self._by_category = {}
+            self._all_canonical_ids = []
+            self._cache_revision = None
+            self._last_revision_check_at = 0.0
+            if reload:
+                self._preload_cache()
 
     # 1. Language Support
     @staticmethod
@@ -165,6 +353,7 @@ class AvtotestProductEngine:
 
     # 2. Categories
     def get_categories(self, language: str = "uz_latn") -> List[Dict[str, Any]]:
+        self.ensure_fresh_cache()
         if self._cache_categories:
             return [
                 {
@@ -222,25 +411,43 @@ class AvtotestProductEngine:
                 image_path=q["image_local_path"],
                 explanation=tr.get("explanation"),
                 legal_reference=localize_legal_reference(q["legal_reference"], language),
-                correct_option_key=q["correct_option_key"] if include_answer_key else None
+                correct_option_key=q["correct_option_key"] if include_answer_key else None,
+                legal_verification_status=q.get("legal_verification_status"),
+                legal_chapter=q.get("legal_chapter"),
+                legal_clause=q.get("legal_clause"),
+                legal_doc_title=q.get("legal_doc_title"),
             )
 
         with self._get_connection() as conn:
             c = conn.cursor()
-            c.execute("""
-            SELECT cq.canonical_id, cq.category_id, cq.category_name, cq.primary_image_id, cq.has_image,
-                   cq.correct_option_key, cq.legal_reference,
-                   ct.question_text, ct.explanation,
-                   im.local_path as image_local_path
-            FROM canonical_questions cq
-            JOIN canonical_translations ct ON cq.canonical_id = ct.canonical_id AND ct.language = ?
-            LEFT JOIN images im ON cq.primary_image_id = im.id
-            WHERE cq.canonical_id = ?
-            """, (language, canonical_id))
+            try:
+                c.execute("""
+                SELECT cq.canonical_id, cq.category_id, cq.category_name, cq.primary_image_id, cq.has_image,
+                       cq.correct_option_key, cq.legal_reference,
+                       cq.legal_verification_status, cq.legal_chapter, cq.legal_clause, cq.legal_doc_title,
+                       ct.question_text, ct.explanation,
+                       im.local_path as image_local_path
+                FROM canonical_questions cq
+                JOIN canonical_translations ct ON cq.canonical_id = ct.canonical_id AND ct.language = ?
+                LEFT JOIN images im ON cq.primary_image_id = im.id
+                WHERE cq.canonical_id = ?
+                """, (language, canonical_id))
+            except Exception:
+                c.execute("""
+                SELECT cq.canonical_id, cq.category_id, cq.category_name, cq.primary_image_id, cq.has_image,
+                       cq.correct_option_key, cq.legal_reference,
+                       ct.question_text, ct.explanation,
+                       im.local_path as image_local_path
+                FROM canonical_questions cq
+                JOIN canonical_translations ct ON cq.canonical_id = ct.canonical_id AND ct.language = ?
+                LEFT JOIN images im ON cq.primary_image_id = im.id
+                WHERE cq.canonical_id = ?
+                """, (language, canonical_id))
             q_row = c.fetchone()
             if not q_row:
                 return None
 
+            row_keys = q_row.keys() if hasattr(q_row, "keys") else ()
             # Get answer options in this language
             lang_col = f"text_{language}"
             c.execute(f"""
@@ -269,7 +476,11 @@ class AvtotestProductEngine:
                 image_path=q_row["image_local_path"] if q_row["has_image"] else None,
                 explanation=q_row["explanation"],
                 legal_reference=localize_legal_reference(q_row["legal_reference"], language),
-                correct_option_key=q_row["correct_option_key"] if include_answer_key else None
+                correct_option_key=q_row["correct_option_key"] if include_answer_key else None,
+                legal_verification_status=q_row["legal_verification_status"] if "legal_verification_status" in row_keys else None,
+                legal_chapter=q_row["legal_chapter"] if "legal_chapter" in row_keys else None,
+                legal_clause=q_row["legal_clause"] if "legal_clause" in row_keys else None,
+                legal_doc_title=q_row["legal_doc_title"] if "legal_doc_title" in row_keys else None,
             )
 
     # 3. Practice by Category
@@ -354,21 +565,36 @@ class AvtotestProductEngine:
                 correct_key=correct_key,
                 is_correct=is_correct,
                 explanation=tr.get("explanation"),
-                legal_reference=localize_legal_reference(q["legal_reference"], language)
+                legal_reference=localize_legal_reference(q["legal_reference"], language),
+                legal_verification_status=q.get("legal_verification_status"),
+                legal_chapter=q.get("legal_chapter"),
+                legal_clause=q.get("legal_clause"),
+                legal_doc_title=q.get("legal_doc_title"),
             )
 
         with self._get_connection() as conn:
             c = conn.cursor()
-            c.execute("""
-            SELECT cq.correct_option_key, cq.legal_reference, ct.explanation
-            FROM canonical_questions cq
-            LEFT JOIN canonical_translations ct ON cq.canonical_id = ct.canonical_id AND ct.language = ?
-            WHERE cq.canonical_id = ?
-            """, (language, canonical_id))
+            try:
+                c.execute("""
+                SELECT cq.correct_option_key, cq.legal_reference,
+                       cq.legal_verification_status, cq.legal_chapter, cq.legal_clause, cq.legal_doc_title,
+                       ct.explanation
+                FROM canonical_questions cq
+                LEFT JOIN canonical_translations ct ON cq.canonical_id = ct.canonical_id AND ct.language = ?
+                WHERE cq.canonical_id = ?
+                """, (language, canonical_id))
+            except Exception:
+                c.execute("""
+                SELECT cq.correct_option_key, cq.legal_reference, ct.explanation
+                FROM canonical_questions cq
+                LEFT JOIN canonical_translations ct ON cq.canonical_id = ct.canonical_id AND ct.language = ?
+                WHERE cq.canonical_id = ?
+                """, (language, canonical_id))
             row = c.fetchone()
             if not row:
                 raise ValueError(f"Question {canonical_id} not found")
 
+            row_keys = row.keys() if hasattr(row, "keys") else ()
             correct_key = row["correct_option_key"]
             is_correct = (submitted_key == correct_key)
 
@@ -378,7 +604,11 @@ class AvtotestProductEngine:
                 correct_key=correct_key,
                 is_correct=is_correct,
                 explanation=row["explanation"],
-                legal_reference=row["legal_reference"]
+                legal_reference=localize_legal_reference(row["legal_reference"], language),
+                legal_verification_status=row["legal_verification_status"] if "legal_verification_status" in row_keys else None,
+                legal_chapter=row["legal_chapter"] if "legal_chapter" in row_keys else None,
+                legal_clause=row["legal_clause"] if "legal_clause" in row_keys else None,
+                legal_doc_title=row["legal_doc_title"] if "legal_doc_title" in row_keys else None,
             )
 
     # 7. Complete Test Evaluation & Error Analysis

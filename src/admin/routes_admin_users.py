@@ -8,6 +8,7 @@ Implements:
 - Manual subscription revocations with immediate access cutoff
 """
 
+import asyncio
 import os
 import sqlite3
 import json
@@ -18,13 +19,11 @@ from pydantic import BaseModel, Field
 
 from src.admin.deps import get_current_admin
 from src.analytics.tracker import classify_user_activity
+from src.db_adapter import execute_batch, get_db_connection
 from src.security.telegram_notifier import send_user_subscription_granted_notification
 
 router = APIRouter(prefix="/api/admin/users", tags=["Admin Users"])
 DB_PATH = os.getenv("DB_PATH", "master_database.sqlite")
-
-
-from src.db_adapter import get_db_connection
 
 def _get_connection():
     return get_db_connection(DB_PATH)
@@ -44,7 +43,7 @@ class RevokeSubscriptionRequest(BaseModel):
 
 
 @router.get("")
-async def list_users(
+def list_users(
     q: Optional[str] = Query(None, description="Search by Telegram ID, username, or name"),
     subscription_status: Optional[str] = Query("all", description="all, pro, free"),
     is_blocked: Optional[int] = Query(None, description="0 (active) or 1 (blocked)"),
@@ -124,7 +123,7 @@ async def list_users(
 
 
 @router.get("/{user_id}")
-async def get_user_profile(user_id: int, current_admin: dict = Depends(get_current_admin)):
+def get_user_profile(user_id: int, current_admin: dict = Depends(get_current_admin)):
     """Returns complete user dossier including subscriptions, payments, orders, and activity telemetry."""
     with _get_connection() as conn:
         c = conn.cursor()
@@ -192,85 +191,106 @@ async def get_user_profile(user_id: int, current_admin: dict = Depends(get_curre
 
 
 @router.post("/{user_id}/block")
-async def block_user(user_id: int, req: BlockUserRequest, current_admin: dict = Depends(get_current_admin)):
-    """Blocks a user and records administrative audit details."""
+def block_user(user_id: int, req: BlockUserRequest, current_admin: dict = Depends(get_current_admin)):
+    """Blocks a user and records administrative audit details atomically."""
     now_str = datetime.utcnow().isoformat()
     admin_name = current_admin["username"]
 
     with _get_connection() as conn:
         c = conn.cursor()
-        c.execute("""
-            UPDATE telegram_users 
-            SET is_blocked = 1, block_reason = ?, blocked_at = ?, blocked_by = ?
-            WHERE user_id = ?
-        """, (req.reason.strip(), now_str, admin_name, user_id))
-
-        if c.rowcount == 0:
+        c.execute("SELECT user_id FROM telegram_users WHERE user_id = ?", (user_id,))
+        if not c.fetchone():
             raise HTTPException(status_code=404, detail="User not found")
 
-        c.execute("""
-            INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
-            VALUES (?, 'USER_BLOCKED', ?, ?)
-        """, (current_admin["id"], f"User: {user_id}, Reason: {req.reason}", now_str))
+        execute_batch(conn, [
+            (
+                """
+                UPDATE telegram_users
+                SET is_blocked = 1, block_reason = ?, blocked_at = ?, blocked_by = ?
+                WHERE user_id = ?
+                """,
+                [req.reason.strip(), now_str, admin_name, user_id],
+            ),
+            (
+                """
+                INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
+                VALUES (?, 'USER_BLOCKED', ?, ?)
+                """,
+                [current_admin["id"], f"User: {user_id}, Reason: {req.reason}", now_str],
+            ),
+            (
+                """
+                INSERT INTO user_activity_events (user_id, event_name, event_data, created_at)
+                VALUES (?, 'USER_BLOCKED', ?, ?)
+                """,
+                [user_id, json.dumps({"blocked_by": admin_name, "reason": req.reason}), now_str],
+            ),
+        ])
 
-        c.execute("""
-            INSERT INTO user_activity_events (user_id, event_name, event_data, created_at)
-            VALUES (?, 'USER_BLOCKED', ?, ?)
-        """, (user_id, f'{{"blocked_by": "{admin_name}", "reason": "{req.reason}"}}', now_str))
-
-        conn.commit()
+    try:
+        from src.api.deps import invalidate_user_cache
+        invalidate_user_cache(user_id)
+    except Exception:
+        pass
 
     return {"ok": True, "message": f"Foydalanuvchi ({user_id}) muvaffaqiyatli bloklandi."}
 
 
 @router.post("/{user_id}/unblock")
-async def unblock_user(user_id: int, current_admin: dict = Depends(get_current_admin)):
-    """Unblocks a user and restores their service access."""
+def unblock_user(user_id: int, current_admin: dict = Depends(get_current_admin)):
+    """Unblocks a user and restores their service access atomically."""
     now_str = datetime.utcnow().isoformat()
 
     with _get_connection() as conn:
         c = conn.cursor()
-        c.execute("""
-            UPDATE telegram_users 
-            SET is_blocked = 0, block_reason = NULL, blocked_at = NULL, blocked_by = NULL
-            WHERE user_id = ?
-        """, (user_id,))
-
-        if c.rowcount == 0:
+        c.execute("SELECT user_id FROM telegram_users WHERE user_id = ?", (user_id,))
+        if not c.fetchone():
             raise HTTPException(status_code=404, detail="User not found")
 
-        c.execute("""
-            INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
-            VALUES (?, 'USER_UNBLOCKED', ?, ?)
-        """, (current_admin["id"], f"User: {user_id}", now_str))
+        execute_batch(conn, [
+            (
+                """
+                UPDATE telegram_users
+                SET is_blocked = 0, block_reason = NULL, blocked_at = NULL, blocked_by = NULL
+                WHERE user_id = ?
+                """,
+                [user_id],
+            ),
+            (
+                """
+                INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
+                VALUES (?, 'USER_UNBLOCKED', ?, ?)
+                """,
+                [current_admin["id"], f"User: {user_id}", now_str],
+            ),
+            (
+                """
+                INSERT INTO user_activity_events (user_id, event_name, created_at)
+                VALUES (?, 'USER_UNBLOCKED', ?)
+                """,
+                [user_id, now_str],
+            ),
+        ])
 
-        c.execute("""
-            INSERT INTO user_activity_events (user_id, event_name, created_at)
-            VALUES (?, 'USER_UNBLOCKED', ?)
-        """, (user_id, now_str))
-
-        conn.commit()
+    try:
+        from src.api.deps import invalidate_user_cache
+        invalidate_user_cache(user_id)
+    except Exception:
+        pass
 
     return {"ok": True, "message": f"Foydalanuvchi ({user_id}) blokdan chiqarildi."}
 
 
-@router.post("/{user_id}/grant-subscription")
-async def grant_subscription(
+def _grant_subscription_sync(
     user_id: int,
-    req: GrantSubscriptionRequest,
-    current_admin: dict = Depends(get_current_admin)
-):
-    """
-    Manually grants or extends a subscription (14 or 30 days).
-    CRITICAL: Does NOT create fake payment transactions or fake revenue.
-    """
-    if req.duration_days not in [14, 30]:
-        raise HTTPException(status_code=400, detail="Duration must be 14 or 30 days.")
-
+    duration_days: int,
+    reason: str,
+    admin_id: int,
+) -> str:
     now_dt = datetime.utcnow()
     now_str = now_dt.isoformat()
-    plan_id = "pro_14" if req.duration_days == 14 else "pro_30"
-    plan_name = f"{req.duration_days} kunlik PRO (Admin sovg‘asi)"
+    plan_id = "pro_14" if duration_days == 14 else "pro_30"
+    plan_name = f"{duration_days} kunlik PRO (Admin sovg‘asi)"
 
     with _get_connection() as conn:
         c = conn.cursor()
@@ -288,32 +308,65 @@ async def grant_subscription(
             except Exception:
                 pass
 
-        new_expires_dt = base_dt + timedelta(days=req.duration_days)
+        new_expires_dt = base_dt + timedelta(days=duration_days)
         new_expires_str = new_expires_dt.isoformat()
 
-        # Update telegram_users
-        c.execute("""
-            UPDATE telegram_users 
-            SET is_pro = 1, subscription_tier = ?, subscription_expires_at = ?
-            WHERE user_id = ?
-        """, (plan_id, new_expires_str, user_id))
+        execute_batch(conn, [
+            (
+                """
+                UPDATE telegram_users
+                SET is_pro = 1, subscription_tier = ?, subscription_expires_at = ?
+                WHERE user_id = ?
+                """,
+                [plan_id, new_expires_str, user_id],
+            ),
+            (
+                """
+                INSERT INTO user_subscriptions (
+                    user_id, plan_id, plan_name, duration_days, price_uzs, status, created_at, expires_at
+                ) VALUES (?, ?, ?, ?, 0, 'MANUAL_GRANT', ?, ?)
+                """,
+                [user_id, plan_id, plan_name, duration_days, now_str, new_expires_str],
+            ),
+            (
+                """
+                INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
+                VALUES (?, 'MANUAL_SUBSCRIPTION_GRANTED', ?, ?)
+                """,
+                [admin_id, f"User: {user_id}, Days: {duration_days}, Reason: {reason}", now_str],
+            ),
+        ])
 
-        # Record in user_subscriptions with status 'MANUAL_GRANT' and price 0 to preserve financial reconciliation
-        c.execute("""
-            INSERT INTO user_subscriptions (
-                user_id, plan_id, plan_name, duration_days, price_uzs, status, created_at, expires_at
-            ) VALUES (?, ?, ?, ?, 0, 'MANUAL_GRANT', ?, ?)
-        """, (user_id, plan_id, plan_name, req.duration_days, now_str, new_expires_str))
+    try:
+        from src.api.deps import invalidate_user_cache
+        invalidate_user_cache(user_id)
+    except Exception:
+        pass
 
-        # Record audit log
-        c.execute("""
-            INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
-            VALUES (?, 'MANUAL_SUBSCRIPTION_GRANTED', ?, ?)
-        """, (current_admin["id"], f"User: {user_id}, Days: {req.duration_days}, Reason: {req.reason}", now_str))
+    return new_expires_str
 
-        conn.commit()
 
-    # Deliver in-bot notification to user
+@router.post("/{user_id}/grant-subscription")
+async def grant_subscription(
+    user_id: int,
+    req: GrantSubscriptionRequest,
+    current_admin: dict = Depends(get_current_admin)
+):
+    """
+    Manually grants or extends a subscription (14 or 30 days) atomically via execute_batch().
+    CRITICAL: Does NOT create fake payment transactions or fake revenue.
+    """
+    if req.duration_days not in [14, 30]:
+        raise HTTPException(status_code=400, detail="Duration must be 14 or 30 days.")
+
+    new_expires_str = await asyncio.to_thread(
+        _grant_subscription_sync,
+        user_id,
+        req.duration_days,
+        req.reason,
+        current_admin["id"],
+    )
+
     try:
         await send_user_subscription_granted_notification(
             user_id=user_id,
@@ -331,13 +384,13 @@ async def grant_subscription(
 
 
 @router.post("/{user_id}/revoke-subscription")
-async def revoke_subscription(
+def revoke_subscription(
     user_id: int,
     req: RevokeSubscriptionRequest,
     current_admin: dict = Depends(get_current_admin)
 ):
     """
-    Manually revokes an active subscription immediately.
+    Manually revokes an active subscription immediately and atomically.
     Preserves historical records and logs audit reason.
     """
     now_str = datetime.utcnow().isoformat()
@@ -349,26 +402,36 @@ async def revoke_subscription(
         if not row:
             raise HTTPException(status_code=404, detail="User not found")
 
-        # Set user back to free tier
-        c.execute("""
-            UPDATE telegram_users 
-            SET is_pro = 0, subscription_tier = 'free'
-            WHERE user_id = ?
-        """, (user_id,))
+        execute_batch(conn, [
+            (
+                """
+                UPDATE telegram_users
+                SET is_pro = 0, subscription_tier = 'free'
+                WHERE user_id = ?
+                """,
+                [user_id],
+            ),
+            (
+                """
+                UPDATE user_subscriptions
+                SET status = 'REVOKED'
+                WHERE user_id = ? AND status = 'ACTIVE'
+                """,
+                [user_id],
+            ),
+            (
+                """
+                INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
+                VALUES (?, 'MANUAL_SUBSCRIPTION_REVOKED', ?, ?)
+                """,
+                [current_admin["id"], f"User: {user_id}, Reason: {req.reason}", now_str],
+            ),
+        ])
 
-        # Update active subscriptions to REVOKED
-        c.execute("""
-            UPDATE user_subscriptions 
-            SET status = 'REVOKED' 
-            WHERE user_id = ? AND status = 'ACTIVE'
-        """, (user_id,))
-
-        # Audit log
-        c.execute("""
-            INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
-            VALUES (?, 'MANUAL_SUBSCRIPTION_REVOKED', ?, ?)
-        """, (current_admin["id"], f"User: {user_id}, Reason: {req.reason}", now_str))
-
-        conn.commit()
+    try:
+        from src.api.deps import invalidate_user_cache
+        invalidate_user_cache(user_id)
+    except Exception:
+        pass
 
     return {"ok": True, "message": f"Foydalanuvchining ({user_id}) obunasi muvaffaqiyatli bekor qilindi."}

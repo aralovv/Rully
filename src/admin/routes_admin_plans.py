@@ -14,12 +14,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from src.admin.deps import get_current_admin
+from src.db_adapter import execute_batch, get_db_connection
+from src.payments.order_manager import invalidate_payment_cache
 
 router = APIRouter(prefix="/api/admin/plans", tags=["Admin Plans"])
 DB_PATH = os.getenv("DB_PATH", "master_database.sqlite")
-
-
-from src.db_adapter import get_db_connection
 
 def _get_connection():
     return get_db_connection(DB_PATH)
@@ -48,7 +47,7 @@ class PlanUpdateRequest(BaseModel):
 
 
 @router.get("")
-async def list_subscription_plans(current_admin: dict = Depends(get_current_admin)):
+def list_subscription_plans(current_admin: dict = Depends(get_current_admin)):
     """Returns all subscription plans from the database."""
     with _get_connection() as conn:
         c = conn.cursor()
@@ -58,34 +57,42 @@ async def list_subscription_plans(current_admin: dict = Depends(get_current_admi
 
 
 @router.post("")
-async def create_subscription_plan(req: PlanCreateRequest, current_admin: dict = Depends(get_current_admin)):
-    """Creates a new subscription plan."""
+def create_subscription_plan(req: PlanCreateRequest, current_admin: dict = Depends(get_current_admin)):
+    """Creates a new subscription plan atomically."""
     now_str = datetime.utcnow().isoformat()
     with _get_connection() as conn:
-        c = conn.cursor()
         try:
-            c.execute("""
-                INSERT INTO subscription_plans (
-                    id, name, duration_days, base_price_uzs, description, is_active, display_order, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                req.id.strip().lower(), req.name.strip(), req.duration_days,
-                req.base_price_uzs, req.description, 1 if req.is_active else 0,
-                req.display_order, now_str, now_str
-            ))
-            c.execute("""
-                INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
-                VALUES (?, 'SUBSCRIPTION_PLAN_CREATED', ?, ?)
-            """, (current_admin["id"], f"Plan: {req.id}, Name: {req.name}, Price: {req.base_price_uzs} UZS", now_str))
-            conn.commit()
-        except sqlite3.IntegrityError:
-            raise HTTPException(status_code=400, detail="Plan ID already exists")
-
+            execute_batch(conn, [
+                (
+                    """
+                    INSERT INTO subscription_plans (
+                        id, name, duration_days, base_price_uzs, description, is_active, display_order, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        req.id.strip().lower(), req.name.strip(), req.duration_days,
+                        req.base_price_uzs, req.description, 1 if req.is_active else 0,
+                        req.display_order, now_str, now_str,
+                    ],
+                ),
+                (
+                    """
+                    INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
+                    VALUES (?, 'SUBSCRIPTION_PLAN_CREATED', ?, ?)
+                    """,
+                    [current_admin["id"], f"Plan: {req.id}, Name: {req.name}, Price: {req.base_price_uzs} UZS", now_str],
+                ),
+            ])
+        except Exception as exc:
+            if isinstance(exc, sqlite3.IntegrityError) or "UNIQUE constraint failed" in str(exc):
+                raise HTTPException(status_code=400, detail="Plan ID already exists")
+            raise
+    invalidate_payment_cache()
     return {"ok": True, "message": "Yangi tarif muvaffaqiyatli yaratildi."}
 
 
 @router.put("/{plan_id}")
-async def update_subscription_plan(
+def update_subscription_plan(
     plan_id: str,
     req: PlanUpdateRequest,
     current_admin: dict = Depends(get_current_admin)
@@ -120,18 +127,19 @@ async def update_subscription_plan(
             params.append(plan_id)
             c.execute(f"UPDATE subscription_plans SET {', '.join(updates)} WHERE id = ?", params)
             conn.commit()
+            invalidate_payment_cache()
 
     return {"ok": True, "message": "Tarif ma’lumotlari yangilandi."}
 
 
 @router.post("/{plan_id}/price")
-async def update_plan_price(
+def update_plan_price(
     plan_id: str,
     req: UpdatePriceRequest,
     current_admin: dict = Depends(get_current_admin)
 ):
     """
-    Modifies subscription plan price.
+    Modifies subscription plan price atomically via execute_batch().
     CRITICAL: Applies exclusively to new orders; preserves existing order snapshots.
     Records change history in subscription_price_history.
     """
@@ -148,27 +156,32 @@ async def update_plan_price(
         old_price = plan["base_price_uzs"]
         new_price = req.new_price_uzs
 
-        # 1. Update base price
-        c.execute("""
-            UPDATE subscription_plans 
-            SET base_price_uzs = ?, updated_at = ?
-            WHERE id = ?
-        """, (new_price, now_str, plan_id))
-
-        # 2. Record immutable price history
-        c.execute("""
-            INSERT INTO subscription_price_history (
-                plan_id, old_price_uzs, new_price_uzs, changed_by_admin, reason, changed_at
-            ) VALUES (?, ?, ?, ?, ?, ?)
-        """, (plan_id, old_price, new_price, admin_name, req.reason.strip(), now_str))
-
-        # 3. Log audit event
-        c.execute("""
-            INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
-            VALUES (?, 'PLAN_PRICE_CHANGED', ?, ?)
-        """, (current_admin["id"], f"Plan: {plan_id}, Old: {old_price} UZS, New: {new_price} UZS, Reason: {req.reason}", now_str))
-
-        conn.commit()
+        execute_batch(conn, [
+            (
+                """
+                UPDATE subscription_plans
+                SET base_price_uzs = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                [new_price, now_str, plan_id],
+            ),
+            (
+                """
+                INSERT INTO subscription_price_history (
+                    plan_id, old_price_uzs, new_price_uzs, changed_by_admin, reason, changed_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [plan_id, old_price, new_price, admin_name, req.reason.strip(), now_str],
+            ),
+            (
+                """
+                INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
+                VALUES (?, 'PLAN_PRICE_CHANGED', ?, ?)
+                """,
+                [current_admin["id"], f"Plan: {plan_id}, Old: {old_price} UZS, New: {new_price} UZS, Reason: {req.reason}", now_str],
+            ),
+        ])
+    invalidate_payment_cache()
 
     return {
         "ok": True,
@@ -177,7 +190,7 @@ async def update_plan_price(
 
 
 @router.get("/{plan_id}/price-history")
-async def get_price_history(plan_id: str, current_admin: dict = Depends(get_current_admin)):
+def get_price_history(plan_id: str, current_admin: dict = Depends(get_current_admin)):
     """Returns the immutable price change audit log for a plan."""
     with _get_connection() as conn:
         c = conn.cursor()

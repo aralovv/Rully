@@ -107,6 +107,8 @@ def test_staging_lifecycle_and_moderation(admin_token):
     # 1. Insert mock staged question
     with sqlite3.connect("master_database.sqlite") as conn:
         cur = conn.cursor()
+        prev_cat_ver_row = cur.execute("SELECT value FROM system_settings WHERE key = 'catalog_version'").fetchone()
+        prev_cat_ver = prev_cat_ver_row[0] if prev_cat_ver_row else None
         cur.execute("""
             INSERT INTO staged_questions (
                 source_code, source_ticket, source_position, change_type,
@@ -182,7 +184,13 @@ def test_staging_lifecycle_and_moderation(admin_token):
                 cur.execute("DELETE FROM canonical_questions WHERE canonical_id = ?", (cid,))
                 cur.execute("DELETE FROM questions WHERE id = ?", (cid,))
             cur.execute("DELETE FROM staged_questions WHERE id = ?", (staged_id,))
+            if prev_cat_ver is None:
+                cur.execute("DELETE FROM system_settings WHERE key = 'catalog_version'")
+            else:
+                cur.execute("UPDATE system_settings SET value = ? WHERE key = 'catalog_version'", (prev_cat_ver,))
             conn.commit()
+        from src.api.routes_theory import invalidate_theory_caches
+        invalidate_theory_caches(reload_engine=True)
 
 def test_staging_rejection(admin_token):
     """

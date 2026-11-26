@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/admin/admin.css?v=2.5.1">
+  <link rel="stylesheet" href="/static/admin/admin.css?v=2.6.0">
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans antialiased min-h-screen">
 
@@ -604,6 +604,73 @@
               </div>
             </div>
 
+            <!-- ACCORDION BAR 5: Huquqiy Asos & Tahririyat Navbati (U-02 / U-04) -->
+            <div class="accordion-bar" id="acc-editorial">
+              <div class="accordion-header" onclick="toggleAccordion('acc-editorial')">
+                <div class="flex items-center gap-2.5">
+                  <span class="acc-icon">⚖️</span>
+                  <div>
+                    <h3 class="font-bold text-sm text-slate-200">Huquqiy Asos & Tahririyat Navbati</h3>
+                    <p class="text-xs text-muted">YHQ bandlari, 3 tilli tushuntirishlar va AI qoralama nazorati</p>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="badge badge-amber" id="editorial-overall-badge">Tekshirilmoqda...</span>
+                  <span class="acc-chevron">▼</span>
+                </div>
+              </div>
+
+              <div class="accordion-content">
+                <div class="editorial-status-pills mb-3" id="ed-status-pills">
+                  <button type="button" class="subtab-btn active" data-ed-status="PENDING_EDITORIAL_REVIEW" onclick="setEditorialStatusFilter('PENDING_EDITORIAL_REVIEW')">
+                    Kutilmoqda <span class="badge badge-amber ml-1" id="ed-count-pending">0</span>
+                  </button>
+                  <button type="button" class="subtab-btn" data-ed-status="AI_DRAFT_PENDING_REVIEW" onclick="setEditorialStatusFilter('AI_DRAFT_PENDING_REVIEW')">
+                    AI Qoralamalar <span class="badge badge-indigo ml-1" id="ed-count-ai">0</span>
+                  </button>
+                  <button type="button" class="subtab-btn" data-ed-status="APPROVED" onclick="setEditorialStatusFilter('APPROVED')">
+                    Tasdiqlangan <span class="badge badge-emerald ml-1" id="ed-count-approved">0</span>
+                  </button>
+                  <button type="button" class="subtab-btn" data-ed-status="REJECTED" onclick="setEditorialStatusFilter('REJECTED')">
+                    Rad etilgan <span class="badge badge-red ml-1" id="ed-count-rejected">0</span>
+                  </button>
+                </div>
+
+                <div class="editorial-filters-bar mb-3">
+                  <input type="text" id="ed-filter-q" class="form-input text-xs" placeholder="CANON-YHQ-... yoki savol matni bo‘yicha qidirish">
+                  <select id="ed-filter-flag" class="form-input text-xs" onchange="loadEditorialQueue(1)">
+                    <option value="">Barcha sifat belgilari</option>
+                    <option value="LANGUAGE_BLEED_UZ_IN_RU">Rus tilida o‘zbekcha matn (LANGUAGE_BLEED_UZ_IN_RU)</option>
+                    <option value="SUSPECT_CATEGORY_LEGAL_MISMATCH">Kategoriya/band ziddiyati (SUSPECT_CATEGORY_LEGAL_MISMATCH)</option>
+                    <option value="GENERIC_PLACEHOLDER_REF">Umumiy havola (GENERIC_PLACEHOLDER_REF)</option>
+                    <option value="MISSING_LEGAL_REFERENCE">Huquqiy havola yo‘q (MISSING_LEGAL_REFERENCE)</option>
+                    <option value="MISSING_EXPLANATION_RU">RU izoh yo‘q (MISSING_EXPLANATION_RU)</option>
+                    <option value="MISSING_EXPLANATION_UZ_CYRL">UZ Kirill izoh yo‘q (MISSING_EXPLANATION_UZ_CYRL)</option>
+                    <option value="MISSING_EXPLANATION_UZ_LATN">UZ Lotin izoh yo‘q (MISSING_EXPLANATION_UZ_LATN)</option>
+                    <option value="UNVERIFIED_SOURCE_HINT">Tasdiqlanmagan manba (UNVERIFIED_SOURCE_HINT)</option>
+                    <option value="AI_GENERATED_REQUIRES_HUMAN_REVIEW">AI qoralama (AI_GENERATED_REQUIRES_HUMAN_REVIEW)</option>
+                  </select>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="loadEditorialQueue(1)">🔍 Izlash</button>
+                  <button type="button" id="btn-editorial-audit-seed" class="btn btn-ghost btn-sm" onclick="runEditorialAuditSeed()">🛡️ Auditni Yangilash</button>
+                </div>
+
+                <div id="editorial-queue-list" class="space-y-3">
+                  <div class="text-xs text-muted text-center py-4 bg-slate-900/40 rounded border border-slate-800">
+                    Tahririyat navbati yuklanmoqda...
+                  </div>
+                </div>
+
+                <div class="flex items-center justify-between mt-3 pt-2 border-t border-slate-800 text-xs text-muted" id="ed-pagination-bar">
+                  <span id="ed-pagination-summary">Jami: 0 ta</span>
+                  <div class="flex items-center gap-2">
+                    <button type="button" id="ed-btn-prev" class="btn btn-ghost btn-sm" onclick="changeEditorialPage(-1)">← Oldingi</button>
+                    <span id="ed-page-label" class="font-mono">1</span>
+                    <button type="button" id="ed-btn-next" class="btn btn-ghost btn-sm" onclick="changeEditorialPage(1)">Keyingi →</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
           </div>
         </section>
 
@@ -740,8 +807,49 @@
         </div>
 
         <div class="form-group">
-          <label class="form-label text-xs">Izoh / Tushuntirish (Ixtiyoriy):</label>
-          <textarea id="inp-edit-staged-explanation" class="form-input text-xs" rows="2" placeholder="YHQ bandi yoki tushuntirish"></textarea>
+          <label class="form-label text-xs">Izoh / Tushuntirish (Lotin / Umumiy):</label>
+          <textarea id="inp-edit-staged-explanation" class="form-input text-xs" rows="2" placeholder="UZ Lotin tushuntirish yoki umumiy izoh"></textarea>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div class="form-group">
+            <label class="form-label text-xs">🇺🇿 Kirillcha Izoh (Ixtiyoriy):</label>
+            <textarea id="inp-edit-staged-expl-cyrl" class="form-input text-xs" rows="2" placeholder="Кириллча изоҳ"></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label text-xs">🇷🇺 Ruscha Izoh (Ixtiyoriy):</label>
+            <textarea id="inp-edit-staged-expl-ru" class="form-input text-xs" rows="2" placeholder="Пояснение на русском"></textarea>
+          </div>
+        </div>
+
+        <div class="editorial-legal-box">
+          <div class="text-[11px] font-bold text-slate-300 mb-2">⚖️ Huquqiy Asos Tasnifi (U-02)</div>
+          <div class="form-group mb-2">
+            <label class="form-label text-xs">Huquqiy tekshiruv maqomi:</label>
+            <select id="inp-edit-staged-legal-status" class="form-input text-xs">
+              <option value="UNRESOLVED_LEGAL_REVIEW">UNRESOLVED_LEGAL_REVIEW (Tekshiruv talab etiladi)</option>
+              <option value="VERIFIED_PRIMARY_LAW">VERIFIED_PRIMARY_LAW (Tasdiqlangan YHQ / Qonun hujjati)</option>
+              <option value="VERIFIED_FIRST_AID_OR_TECH">VERIFIED_FIRST_AID_OR_TECH (Tibbiy / Texnik reglament)</option>
+            </select>
+          </div>
+          <div class="form-group mb-2">
+            <label class="form-label text-xs">Hujjat nomi (VERIFIED_PRIMARY_LAW uchun majburiy):</label>
+            <input type="text" id="inp-edit-staged-legal-doc-title" class="form-input text-xs" placeholder="Masalan: Vazirlar Mahkamasining 2022-yil 12-apreldagi 172-son qarori (YHQ)">
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div class="form-group">
+              <label class="form-label text-xs">Bob (Chapter):</label>
+              <input type="text" id="inp-edit-staged-legal-chapter" class="form-input text-xs" placeholder="Masalan: 3-bob">
+            </div>
+            <div class="form-group">
+              <label class="form-label text-xs">Band (Clause):</label>
+              <input type="text" id="inp-edit-staged-legal-clause" class="form-input text-xs" placeholder="Masalan: 19-band">
+            </div>
+          </div>
+          <div class="form-group mt-2">
+            <label class="form-label text-xs">Rasmiy hujjat havolasi (lex.uz URL):</label>
+            <input type="url" id="inp-edit-staged-legal-doc-url" class="form-input text-xs" placeholder="https://lex.uz/docs/5963102">
+          </div>
         </div>
 
         <div class="flex items-center gap-2 pt-2">
@@ -756,9 +864,104 @@
     </div>
   </div>
 
+  <!-- ================= EDITORIAL LEGAL PROVENANCE & TRANSLATION MODAL ================= -->
+  <div id="modal-edit-editorial" class="modal-overlay" style="display:none;">
+    <div class="modal-card" style="max-width: 680px; max-height: 92vh; overflow-y: auto;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="ed-modal-title">Huquqiy Asos & 3 Tilli Izoh Moderatsiyasi</h3>
+        <button class="modal-close" onclick="closeModal('modal-edit-editorial')">&times;</button>
+      </div>
+      <form id="form-edit-editorial" class="space-y-3 p-4">
+        <input type="hidden" id="ed-modal-queue-id">
+
+        <div class="editorial-hint-box" id="ed-modal-meta-box">
+          Yuklanmoqda...
+        </div>
+
+        <div class="editorial-lang-grid">
+          <div class="form-group">
+            <label class="form-label text-xs">🇺🇿 Savol (Lotin) — Tahrirlash (Ixtiyoriy):</label>
+            <textarea id="ed-modal-q-latn" class="form-input text-xs" rows="2"></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label text-xs">🇺🇿 Savol (Kirill) — Tahrirlash (Ixtiyoriy):</label>
+            <textarea id="ed-modal-q-cyrl" class="form-input text-xs" rows="2"></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label text-xs">🇷🇺 Savol (Ruscha) — Til aralashuvini tuzatish:</label>
+            <textarea id="ed-modal-q-ru" class="form-input text-xs" rows="2"></textarea>
+          </div>
+        </div>
+
+        <div class="editorial-lang-grid">
+          <div class="form-group">
+            <label class="form-label text-xs">🇺🇿 Izoh (UZ Lotin):</label>
+            <textarea id="ed-modal-expl-latn" class="form-input text-xs" rows="2" placeholder="O‘zbekcha (lotin) tushuntirish"></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label text-xs">🇺🇿 Izoh (UZ Kirill):</label>
+            <textarea id="ed-modal-expl-cyrl" class="form-input text-xs" rows="2" placeholder="Ўзбекча (кирилл) тушунтириш"></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label text-xs">🇷🇺 Izoh (RU):</label>
+            <textarea id="ed-modal-expl-ru" class="form-input text-xs" rows="2" placeholder="Объяснение на русском"></textarea>
+          </div>
+        </div>
+
+        <div class="editorial-legal-box">
+          <div class="form-group mb-2">
+            <label class="form-label text-xs">Huquqiy Tasnif (U-02):</label>
+            <select id="ed-modal-legal-status" class="form-input text-xs" required>
+              <option value="VERIFIED_PRIMARY_LAW">VERIFIED_PRIMARY_LAW (Tasdiqlangan YHQ / Qonun)</option>
+              <option value="VERIFIED_FIRST_AID_OR_TECH">VERIFIED_FIRST_AID_OR_TECH (Birinchi yordam / Texnik me’yor)</option>
+              <option value="UNRESOLVED_LEGAL_REVIEW">UNRESOLVED_LEGAL_REVIEW (Hali tekshiruvda qoldirish)</option>
+            </select>
+          </div>
+          <div class="form-group mb-2">
+            <label class="form-label text-xs">Normativ hujjat nomi (`legal_doc_title`):</label>
+            <input type="text" id="ed-modal-legal-doc-title" class="form-input text-xs" placeholder="Vazirlar Mahkamasining 2022-yil 12-apreldagi 172-son qarori (YHQ)">
+          </div>
+          <div class="grid grid-cols-3 gap-2">
+            <div class="form-group">
+              <label class="form-label text-xs">Bob (`legal_chapter`):</label>
+              <input type="text" id="ed-modal-legal-chapter" class="form-input text-xs" placeholder="3-bob">
+            </div>
+            <div class="form-group">
+              <label class="form-label text-xs">Band (`legal_clause`):</label>
+              <input type="text" id="ed-modal-legal-clause" class="form-input text-xs" placeholder="19-band">
+            </div>
+            <div class="form-group">
+              <label class="form-label text-xs">Kuchga kirish sanasi:</label>
+              <input type="text" id="ed-modal-legal-effective-date" class="form-input text-xs" placeholder="2022-05-01">
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-2 mt-2">
+            <div class="form-group">
+              <label class="form-label text-xs">Rasmiy manba URL (`legal_doc_url`):</label>
+              <input type="url" id="ed-modal-legal-doc-url" class="form-input text-xs" placeholder="https://lex.uz/docs/5963102">
+            </div>
+            <div class="form-group">
+              <label class="form-label text-xs">Tekshiruvchi izohi:</label>
+              <input type="text" id="ed-modal-reviewer-notes" class="form-input text-xs" value="Human verified">
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 pt-2">
+          <button type="submit" class="btn btn-primary btn-block">
+            ✅ Tasdiqlash va Kanonik Bazani Yangilash
+          </button>
+          <button type="button" class="btn btn-ghost" onclick="closeModal('modal-edit-editorial')">
+            Bekor qilish
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- TOAST NOTIFICATION CONTAINER -->
   <div id="toast-container" class="toast-container"></div>
 
-  <script src="/static/admin/admin.js?v=2.5.2"></script>
+  <script src="/static/admin/admin.js?v=2.6.0"></script>
 </body>
 </html>

@@ -1,3 +1,4 @@
+import asyncio
 import os
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, Depends, Query
@@ -22,26 +23,21 @@ class ChatRequest(BaseModel):
 class ClearHistoryRequest(BaseModel):
     session_id: Optional[str] = "default"
 
-@router.get("/status")
-async def get_ai_status(
-    user: Dict[str, Any] = Depends(get_current_user),
-    db: BotDatabase = Depends(get_db)
-):
-    user_id = user["user_id"]
+def _load_ai_status_sync(db: BotDatabase, user_id: int) -> Dict[str, Any]:
     sub = db.get_user_subscription(user_id)
     is_pro = sub.get("is_pro", False)
-
-    # Check today's usage safely with context manager
     with get_db_connection() as conn:
         c = conn.cursor()
-        c.execute("""
-        SELECT request_count FROM ai_usage_limits
-        WHERE user_id = ? AND usage_date = DATE('now')
-        """, (user_id,))
+        c.execute(
+            """
+            SELECT request_count FROM ai_usage_limits
+            WHERE user_id = ? AND usage_date = DATE('now')
+            """,
+            (user_id,),
+        )
         row = c.fetchone()
         current = row["request_count"] if row else 0
         max_limit = 100 if is_pro else 0
-
     return {
         "ok": True,
         "is_pro": is_pro,
@@ -51,9 +47,16 @@ async def get_ai_status(
         "usage": {
             "current": current,
             "max": max_limit,
-            "remaining": max(0, max_limit - current) if is_pro else 0
-        }
+            "remaining": max(0, max_limit - current) if is_pro else 0,
+        },
     }
+
+@router.get("/status")
+async def get_ai_status(
+    user: Dict[str, Any] = Depends(get_current_user),
+    db: BotDatabase = Depends(get_db)
+):
+    return await asyncio.to_thread(_load_ai_status_sync, db, user["user_id"])
 
 @router.post("/chat")
 async def chat_with_ai(
@@ -62,7 +65,7 @@ async def chat_with_ai(
     db: BotDatabase = Depends(get_db)
 ):
     user_id = user["user_id"]
-    sub = db.get_user_subscription(user_id)
+    sub = await asyncio.to_thread(db.get_user_subscription, user_id)
     is_pro = sub.get("is_pro", False)
     lang = req.language or user.get("language") or "uz_latn"
 
@@ -109,7 +112,7 @@ async def chat_with_ai(
         return {"ok": False, "reply": empty_reply}
 
     session_id = req.session_id or "default"
-    student_snapshot = db.get_ai_student_snapshot(user_id)
+    student_snapshot = await asyncio.to_thread(db.get_ai_student_snapshot, user_id)
     result = await gemini_service.chat(
         user_id=user_id,
         session_id=session_id,
@@ -129,7 +132,9 @@ async def get_chat_history(
     user: Dict[str, Any] = Depends(get_current_user)
 ):
     user_id = user["user_id"]
-    history = gemini_service.get_conversation_history(user_id, session_id or "default", limit=20)
+    history = await asyncio.to_thread(
+        gemini_service.get_conversation_history, user_id, session_id or "default", limit=20
+    )
     
     # Format for client
     formatted = []
@@ -142,17 +147,22 @@ async def get_chat_history(
         })
     return {"ok": True, "messages": formatted}
 
+def _clear_history_sync(user_id: int, session_id: str) -> None:
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute(
+            """
+            DELETE FROM ai_conversations
+            WHERE user_id = ? AND session_id = ?
+            """,
+            (user_id, session_id),
+        )
+        conn.commit()
+
 @router.post("/clear")
 async def clear_chat_history(
     req: ClearHistoryRequest,
     user: Dict[str, Any] = Depends(get_current_user)
 ):
-    user_id = user["user_id"]
-    with get_db_connection() as conn:
-        c = conn.cursor()
-        c.execute("""
-        DELETE FROM ai_conversations
-        WHERE user_id = ? AND session_id = ?
-        """, (user_id, req.session_id or "default"))
-        conn.commit()
+    await asyncio.to_thread(_clear_history_sync, user["user_id"], req.session_id or "default")
     return {"ok": True, "cleared": True}

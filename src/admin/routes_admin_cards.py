@@ -15,13 +15,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from src.admin.deps import get_current_admin
+from src.db_adapter import execute_batch, get_db_connection
+from src.payments.order_manager import invalidate_payment_cache
 from src.security.crypto import encrypt_data, mask_card_number
 
 router = APIRouter(prefix="/api/admin/cards", tags=["Admin Payment Cards"])
 DB_PATH = os.getenv("DB_PATH", "master_database.sqlite")
-
-
-from src.db_adapter import get_db_connection
 
 def _get_connection():
     return get_db_connection(DB_PATH)
@@ -45,7 +44,7 @@ class CardUpdateRequest(BaseModel):
 
 
 @router.get("")
-async def list_payment_cards(current_admin: dict = Depends(get_current_admin)):
+def list_payment_cards(current_admin: dict = Depends(get_current_admin)):
     """Lists payment cards with masked numbers (never exposing unencrypted card numbers)."""
     with _get_connection() as conn:
         c = conn.cursor()
@@ -60,7 +59,7 @@ async def list_payment_cards(current_admin: dict = Depends(get_current_admin)):
 
 
 @router.post("")
-async def create_payment_card(req: CardCreateRequest, current_admin: dict = Depends(get_current_admin)):
+def create_payment_card(req: CardCreateRequest, current_admin: dict = Depends(get_current_admin)):
     """Adds a new payment card, encrypting full number and extracting 4-digit suffix."""
     clean_num = req.card_number.strip().replace(" ", "")
     masked, suffix = mask_card_number(clean_num)
@@ -93,13 +92,14 @@ async def create_payment_card(req: CardCreateRequest, current_admin: dict = Depe
         """, (current_admin["id"], f"Card ID: {card_id}, Masked: {masked}, Suffix: {suffix}", now_str))
 
         conn.commit()
+    invalidate_payment_cache()
 
     return {"ok": True, "message": "Yangi bank kartasi muvaffaqiyatli saqlandi.", "card_id": card_id}
 
 
 @router.put("/active")
 @router.put("/{card_id}")
-async def update_payment_card(
+def update_payment_card(
     card_id: Optional[str] = "1",
     req: CardUpdateRequest = None,
     current_admin: dict = Depends(get_current_admin)
@@ -183,33 +183,44 @@ async def update_payment_card(
             updates.append("updated_at = ?")
             params.append(now_str)
             params.append(target_id)
-            c.execute(f"UPDATE payment_cards SET {', '.join(updates)} WHERE id = ?", params)
-
-            c.execute("""
-                INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
-                VALUES (?, 'PAYMENT_CARD_UPDATED', ?, ?)
-            """, (current_admin["id"], f"Card ID: {target_id}", now_str))
-
-            conn.commit()
+            execute_batch(conn, [
+                (f"UPDATE payment_cards SET {', '.join(updates)} WHERE id = ?", params),
+                (
+                    """
+                    INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
+                    VALUES (?, 'PAYMENT_CARD_UPDATED', ?, ?)
+                    """,
+                    [current_admin["id"], f"Card ID: {target_id}", now_str],
+                ),
+            ])
+            invalidate_payment_cache()
 
     return {"ok": True, "message": "Karta ma’lumotlari muvaffaqiyatli saqlandi.", "card_id": target_id}
 
 
 @router.delete("/{card_id}")
-async def disable_payment_card(card_id: int, current_admin: dict = Depends(get_current_admin)):
-    """Deactivates a card from future payment availability (preserves historical references)."""
+def disable_payment_card(card_id: int, current_admin: dict = Depends(get_current_admin)):
+    """Deactivates a card atomically (preserving historical references)."""
     now_str = datetime.utcnow().isoformat()
     with _get_connection() as conn:
         c = conn.cursor()
-        c.execute("UPDATE payment_cards SET is_active = 0, is_monitoring = 0, updated_at = ? WHERE id = ?", (now_str, card_id))
-        if c.rowcount == 0:
+        c.execute("SELECT id FROM payment_cards WHERE id = ?", (card_id,))
+        if not c.fetchone():
             raise HTTPException(status_code=404, detail="Card not found")
 
-        c.execute("""
-            INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
-            VALUES (?, 'PAYMENT_CARD_DISABLED', ?, ?)
-        """, (current_admin["id"], f"Card ID: {card_id}", now_str))
-
-        conn.commit()
+        execute_batch(conn, [
+            (
+                "UPDATE payment_cards SET is_active = 0, is_monitoring = 0, updated_at = ? WHERE id = ?",
+                [now_str, card_id],
+            ),
+            (
+                """
+                INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
+                VALUES (?, 'PAYMENT_CARD_DISABLED', ?, ?)
+                """,
+                [current_admin["id"], f"Card ID: {card_id}", now_str],
+            ),
+        ])
+    invalidate_payment_cache()
 
     return {"ok": True, "message": "Karta muvaffaqiyatli o‘chirildi (nofaol qilindi)."}

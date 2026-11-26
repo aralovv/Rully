@@ -83,6 +83,8 @@
     R.state.categories = [];
     R.state.tickets = [];
     R.state.analytics = null;
+    R.state.refSigns = null;
+    R.state.refLaw = null;
     R.syncShellUI();
     R.closeModal('lang-modal');
     R.navigateTo(R.state.activeTab);
