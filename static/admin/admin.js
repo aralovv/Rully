@@ -197,6 +197,44 @@
     }
   }
 
+  function applyAnalyticsAndRetention(a, r, s, pts) {
+    if (a) {
+      setText('bi-dau-wau-mau', `${a.dau ?? 0} / ${a.wau ?? 0} / ${a.mau ?? 0}`);
+      let feat = null;
+      if (Array.isArray(a.feature_breakdown) && a.feature_breakdown.length) {
+        feat = [a.feature_breakdown[0].event, a.feature_breakdown[0].count];
+      } else {
+        feat = Object.entries(a.feature_distribution || {}).sort((x, y) => y[1] - x[1])[0];
+      }
+      setText('bi-top-feature', feat ? `${feat[0]} (${feat[1]})` : 'Ma’lumot yo‘q');
+    }
+    if (r) {
+      const latestCohort = Array.isArray(r.cohorts) && r.cohorts.length ? r.cohorts[0] : {};
+      const d1 = r.d1_pct ?? latestCohort.d1_pct ?? 0;
+      const d7 = r.d7_pct ?? latestCohort.d7_pct ?? 0;
+      const d30 = r.d30_pct ?? latestCohort.d30_pct ?? 0;
+      setText('bi-retention', `${d1}% / ${d7}% / ${d30}%`);
+    }
+    if (s) {
+      setText('bi-conversion', `${s.conversion_rate_pct ?? 0}% • ${formatMoney(s.average_transaction_uzs || 0)}`);
+    }
+    const chartEl = document.getElementById('ov-sales-chart');
+    if (chartEl && Array.isArray(pts)) {
+      const sliced = pts.slice(-14);
+      if (!sliced.length) {
+        chartEl.innerHTML = '<div class="text-[11px] text-muted self-center m-auto">Tanlangan davrda savdo grafik ma’lumoti yo‘q</div>';
+      } else {
+        const maxVal = Math.max(1, ...sliced.map(p => Number(p.revenue_uzs || p.amount_uzs || 0)));
+        chartEl.innerHTML = sliced.map(p => {
+          const val = Number(p.revenue_uzs || p.amount_uzs || 0);
+          const pct = Math.max(6, Math.round((val / maxVal) * 100));
+          const label = escapeHtml(`${p.date || ''}: ${formatMoney(val)}`);
+          return `<div class="bi-bar-col" title="${label}"><div class="bi-bar-fill" style="height:${pct}%"></div></div>`;
+        }).join('');
+      }
+    }
+  }
+
   // ================= 1. OVERVIEW & BI ANALYTICS =================
   async function loadBiAnalytics() {
     const card = document.getElementById('ov-analytics-card');
@@ -214,93 +252,52 @@
       apiFetch(`/api/admin/dashboard/sales-analytics?range_filter=${encodeURIComponent(range)}`)
     ]);
 
-    if (actRes.status === 'fulfilled') {
-      const a = actRes.value.analytics || {};
-      setText('bi-dau-wau-mau', `${a.dau ?? 0} / ${a.wau ?? 0} / ${a.mau ?? 0}`);
-      let feat = null;
-      if (Array.isArray(a.feature_breakdown) && a.feature_breakdown.length) {
-        feat = [a.feature_breakdown[0].event, a.feature_breakdown[0].count];
-      } else {
-        feat = Object.entries(a.feature_distribution || {}).sort((x, y) => y[1] - x[1])[0];
-      }
-      setText('bi-top-feature', feat ? `${feat[0]} (${feat[1]})` : 'Ma’lumot yo‘q');
-    }
-
-    if (retRes.status === 'fulfilled') {
-      const r = retRes.value.retention || {};
-      const latestCohort = Array.isArray(r.cohorts) && r.cohorts.length ? r.cohorts[0] : {};
-      const d1 = r.d1_pct ?? latestCohort.d1_pct ?? 0;
-      const d7 = r.d7_pct ?? latestCohort.d7_pct ?? 0;
-      const d30 = r.d30_pct ?? latestCohort.d30_pct ?? 0;
-      setText('bi-retention', `${d1}% / ${d7}% / ${d30}%`);
-    }
-
-    if (salesRes.status === 'fulfilled') {
-      const s = salesRes.value.summary || {};
-      setText('bi-conversion', `${s.conversion_rate_pct ?? 0}% • ${formatMoney(s.average_transaction_uzs || 0)}`);
-      const chartEl = document.getElementById('ov-sales-chart');
-      if (chartEl) {
-        const pts = (salesRes.value.daily_chart || []).slice(-14);
-        if (!pts.length) {
-          chartEl.innerHTML = '<div class="text-[11px] text-muted self-center m-auto">Tanlangan davrda savdo grafik ma’lumoti yo‘q</div>';
-        } else {
-          const maxVal = Math.max(1, ...pts.map(p => Number(p.revenue_uzs || p.amount_uzs || 0)));
-          chartEl.innerHTML = pts.map(p => {
-            const val = Number(p.revenue_uzs || p.amount_uzs || 0);
-            const pct = Math.max(6, Math.round((val / maxVal) * 100));
-            const label = escapeHtml(`${p.date || ''}: ${formatMoney(val)}`);
-            return `<div class="bi-bar-col" title="${label}"><div class="bi-bar-fill" style="height:${pct}%"></div></div>`;
-          }).join('');
-        }
-      }
-    }
+    applyAnalyticsAndRetention(
+      actRes.status === 'fulfilled' ? (actRes.value.analytics || {}) : null,
+      retRes.status === 'fulfilled' ? (retRes.value.retention || {}) : null,
+      salesRes.status === 'fulfilled' ? (salesRes.value.summary || {}) : null,
+      salesRes.status === 'fulfilled' ? (salesRes.value.daily_chart || []) : null
+    );
   }
 
   async function loadOverview() {
     try {
-      const [kpiRes, mtRes, ordRes] = await Promise.allSettled([
-        apiFetch('/api/admin/dashboard/kpi'),
-        apiFetch('/api/admin/mtproto/status'),
-        apiFetch('/api/admin/orders?limit=5')
-      ]);
+      const range = document.getElementById('ov-sales-range')?.value || '30d';
+      const bootRes = await apiFetch(`/api/admin/overview/boot?range_filter=${encodeURIComponent(range)}`);
 
-      if (kpiRes.status === 'fulfilled') {
-        const k = kpiRes.value.kpis || {};
-        setText('kpi-total-users', Number(k.total_users || 0).toLocaleString());
-        setText('kpi-new-today', `${k.new_users_today || 0} yangi`);
-        setText('kpi-active-subs', Number(k.active_subscribers || 0).toLocaleString());
-        setText('kpi-subs-today', String(k.subscriptions_today || 0));
-        setText('kpi-today-rev', formatMoney(k.today_revenue_uzs || 0));
-        setText('kpi-total-rev', formatMoney(k.total_revenue_uzs || 0));
-        setText('kpi-month-rev', formatMoney(k.month_revenue_uzs || 0));
-        setText('kpi-unmatched-badge', `${k.pending_orders || 0} / ${k.unmatched_payments || 0}`);
+      const k = bootRes.kpis || {};
+      setText('kpi-total-users', Number(k.total_users || 0).toLocaleString());
+      setText('kpi-new-today', `${k.new_users_today || 0} yangi`);
+      setText('kpi-active-subs', Number(k.active_subscribers || 0).toLocaleString());
+      setText('kpi-subs-today', String(k.subscriptions_today || 0));
+      setText('kpi-today-rev', formatMoney(k.today_revenue_uzs || 0));
+      setText('kpi-total-rev', formatMoney(k.total_revenue_uzs || 0));
+      setText('kpi-month-rev', formatMoney(k.month_revenue_uzs || 0));
+      setText('kpi-unmatched-badge', `${k.pending_orders || 0} / ${k.unmatched_payments || 0}`);
+
+      const st = bootRes.mtproto || {};
+      const isConn = st.connection_status === 'CONNECTED';
+      const badge = document.getElementById('overview-mtproto-badge');
+      const desc = document.getElementById('ov-mtproto-desc');
+      const icon = document.getElementById('ov-mtproto-icon');
+      if (badge) {
+        badge.className = `badge ${isConn ? 'badge-emerald' : 'badge-amber'}`;
+        badge.textContent = isConn ? 'FAOL — TINGLAMOQDA' : escapeHtml(st.connection_status || 'NOFAOL');
       }
-
-      if (mtRes.status === 'fulfilled') {
-        const st = mtRes.value.status || {};
-        const isConn = st.connection_status === 'CONNECTED';
-        const badge = document.getElementById('overview-mtproto-badge');
-        const desc = document.getElementById('ov-mtproto-desc');
-        const icon = document.getElementById('ov-mtproto-icon');
-        if (badge) {
-          badge.className = `badge ${isConn ? 'badge-emerald' : 'badge-amber'}`;
-          badge.textContent = isConn ? 'FAOL — TINGLAMOQDA' : escapeHtml(st.connection_status || 'NOFAOL');
-        }
-        if (desc) {
-          desc.textContent = isConn
-            ? `Ulangan hisob: ${st.account_info?.first_name || ''} (${st.account_info?.phone || ''}). Humocardbot tinglanmoqda.`
-            : 'Humocardbot to‘lov xabarnomalarini avtomatik ushlash holati.';
-        }
-        setText('ov-mtproto-btn-txt', isConn ? 'Holatni Ko‘rish' : 'Akkauntni Ulash');
-        if (icon) {
-          icon.style.background = isConn ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)';
-          icon.style.color = isConn ? '#10b981' : '#f59e0b';
-        }
+      if (desc) {
+        desc.textContent = isConn
+          ? `Ulangan hisob: ${st.account_info?.first_name || ''} (${st.account_info?.phone || ''}). Humocardbot tinglanmoqda.`
+          : 'Humocardbot to‘lov xabarnomalarini avtomatik ushlash holati.';
+      }
+      setText('ov-mtproto-btn-txt', isConn ? 'Holatni Ko‘rish' : 'Akkauntni Ulash');
+      if (icon) {
+        icon.style.background = isConn ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)';
+        icon.style.color = isConn ? '#10b981' : '#f59e0b';
       }
 
       const container = document.getElementById('overview-orders-container');
-      if (container && ordRes.status === 'fulfilled') {
-        const orders = ordRes.value.orders || [];
+      if (container) {
+        const orders = bootRes.recent_orders || [];
         if (!orders.length) {
           container.innerHTML = '<div class="text-center text-muted text-xs py-8">Hozircha buyurtmalar yo‘q</div>';
         } else {
@@ -325,7 +322,20 @@
         }
       }
 
-      await loadBiAnalytics();
+      const card = document.getElementById('ov-analytics-card');
+      if (card) {
+        if (!hasRole('FINANCE')) {
+          card.style.display = 'none';
+        } else {
+          card.style.display = 'block';
+          applyAnalyticsAndRetention(
+            bootRes.analytics || {},
+            bootRes.retention || {},
+            bootRes.sales_analytics?.summary || {},
+            bootRes.sales_analytics?.daily_chart || []
+          );
+        }
+      }
     } catch (e) {
       console.error('Overview load error:', e);
     }

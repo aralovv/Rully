@@ -3,6 +3,7 @@ FastAPI Dependencies for Admin Control Panel.
 Enforces admin authentication and extracts session context.
 """
 
+import asyncio
 import secrets
 from urllib.parse import urlparse
 from fastapi import Request, HTTPException, Depends, Header, Cookie
@@ -59,7 +60,7 @@ async def get_current_admin(
     if using_cookie and request.method.upper() in ("POST", "PUT", "PATCH", "DELETE"):
         _verify_cookie_csrf(request, rully_csrf, x_csrf_token)
 
-    admin = validate_admin_session(token)
+    admin = await asyncio.to_thread(validate_admin_session, token)
     if not admin:
         raise HTTPException(
             status_code=401,

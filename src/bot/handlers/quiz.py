@@ -148,43 +148,31 @@ async def cb_submit_answer(callback: CallbackQuery, bot: Bot,
     correct_key = q_item.correct_option_key
     is_correct = (selected_key == correct_key)
 
-    # 1. Save answer atomically (returns False if already answered)
-    saved = db.save_answer(session_id, canonical_id, selected_key, correct_key, is_correct)
-    if not saved:
+    # 1. Process answer atomically (session_answers, mistakes, streak UTC+5, SM-2, exam 3-mistake gate)
+    proc_res = db.process_session_answer(
+        session_id=session_id,
+        user_id=user_id,
+        canonical_id=canonical_id,
+        selected_key=selected_key,
+        correct_key=correct_key,
+        is_correct=is_correct,
+        session_type=session["session_type"],
+    )
+    if not proc_res.get("is_new"):
         await callback.answer(get_str("already_answered", lang), show_alert=False)
         return
 
+    if proc_res.get("is_exam_terminated"):
+        alert_msg = {
+            "uz_latn": "❌ Imtihon to‘xtatildi!\n2 tadan ortiq (3 ta) xatoga yo‘l qo‘yildi (DYHXX VMQ 408 qoidasi).",
+            "uz_cyrl": "❌ Имтиҳон тўхтатилди!\n2 тадан ортиқ (3 та) хатога йўл қўйилди (ДЙҲХХ ВМҚ 408 қоидаси).",
+            "ru": "❌ Экзамен остановлен!\nДопущено более 2 ошибок (правило ГСБДД ПКМ №408)."
+        }.get(lang, "❌ Imtihon to‘xtatildi! 2 tadan ortiq xatoga yo‘l qo‘yildi.")
+        await callback.answer(alert_msg, show_alert=True)
+        await render_session_results(bot, callback.message.chat.id, session_id, product_engine, db)
+        return
+
     await callback.answer()
-
-    # 2. Mistake tracking + SM-2 spaced repetition sync
-    if not is_correct:
-        db.record_mistake(user_id, canonical_id)
-    else:
-        db.resolve_mistake(user_id, canonical_id)
-
-    try:
-        db.record_srs_review(
-            user_id=user_id,
-            canonical_id=canonical_id,
-            quality=(4 if is_correct else 1),
-        )
-    except Exception as srs_err:
-        logger.debug(f"Non-blocking SM-2 sync note for {canonical_id}: {srs_err}")
-
-    # Check auto-termination on 3rd mistake in EXAM mode (Uzbekistan DYHXX VMQ 408: max 2 mistakes)
-    if session["session_type"] == "EXAM":
-        answers = db.get_session_answers(session_id)
-        mistakes_count = sum(1 for a in answers.values() if not a.get("is_correct"))
-        if mistakes_count > 2:
-            db.finish_session(session_id, status="FAILED_MISTAKES")
-            alert_msg = {
-                "uz_latn": "❌ Imtihon to‘xtatildi!\n2 tadan ortiq (3 ta) xatoga yo‘l qo‘yildi (DYHXX VMQ 408 qoidasi).",
-                "uz_cyrl": "❌ Имтиҳон тўхтатилди!\n2 тадан ортиқ (3 та) хатога йўл қўйилди (ДЙҲХХ ВМҚ 408 қоидаси).",
-                "ru": "❌ Экзамен остановлен!\nДопущено более 2 ошибок (правило ГСБДД ПКМ №408)."
-            }.get(lang, "❌ Imtihon to‘xtatildi! 2 tadan ortiq xatoga yo‘l qo‘yildi.")
-            await callback.answer(alert_msg, show_alert=True)
-            await render_session_results(bot, callback.message.chat.id, session_id, product_engine, db)
-            return
 
     # 3. Check whether immediate feedback is enabled for this test mode
     if not session.get("show_answer", True):
@@ -325,9 +313,12 @@ async def render_session_results(bot: Bot, chat_id: int, session_id: str,
 
     unanswered = max(0, total - (correct + incorrect))
 
-    # Save exam result if it was an exam
-    if session["session_type"] == "EXAM":
-        db.save_exam_result(
+    # Persist EXAM result and BILET ticket progress atomically in 1 batch
+    is_exam = (session["session_type"] == "EXAM")
+    ticket_num = int(session["category_id"]) if (session.get("session_type") in ("BILET", "TICKET") and session.get("category_id")) else None
+    finish_status = "FAILED_MISTAKES" if (is_exam and incorrect > 2) else session.get("status", "COMPLETED")
+    if is_exam or ticket_num:
+        db.finalize_exam_session(
             session_id=session_id,
             user_id=session["user_id"],
             total_q=total,
@@ -337,7 +328,10 @@ async def render_session_results(bot: Bot, chat_id: int, session_id: str,
             passed=passed,
             time_spent=time_spent,
             category_breakdown=category_breakdown,
-            unanswered=unanswered
+            unanswered=unanswered,
+            status=finish_status,
+            record_exam_result=is_exam,
+            ticket_number=ticket_num,
         )
 
     # Format Rich Result Message

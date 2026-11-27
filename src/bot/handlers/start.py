@@ -22,19 +22,19 @@ _DEEP_LINK_CARDS: Dict[str, Dict[str, Any]] = {
     "amaliy": {
         "route": "amaliy",
         "title": {
-            "uz_latn": "🚗 <b>RULLY Amaliy Imtihon</b>",
-            "uz_cyrl": "🚗 <b>RULLY Амалий Имтиҳон</b>",
-            "ru": "🚗 <b>RULLY Практический Экзамен</b>",
+            "uz_latn": "🚗 <b>RULLY Amaliy Tayyorgarlik</b>",
+            "uz_cyrl": "🚗 <b>RULLY Амалий Тайёргарлик</b>",
+            "ru": "🚗 <b>RULLY Практическая Подготовка</b>",
         },
         "desc": {
-            "uz_latn": "10 ta o‘quv darsligi, avtodrom cheklisti va vaziyatli savollardan foydalanish uchun RULLY'ni oching!",
-            "uz_cyrl": "10 та ўқув дарслиги, автодром чеклисти ва вазиятли саволлардан фойдаланиш учун RULLY'ни очинг!",
-            "ru": "Для доступа к 10 обучающим модулям, чек-листу автодрома и дорожным ситуациям откройте RULLY!",
+            "uz_latn": "10 ta amaliy haydash darsligi va jarimalar ma'lumotnomasidan foydalanish uchun RULLY'ni oching!",
+            "uz_cyrl": "10 та амалий ҳайдаш дарслиги ва жарималар маълумотномасидан фойдаланиш учун RULLY'ни очинг!",
+            "ru": "Для доступа к 10 обучающим модулям вождения и справочнику штрафов откройте RULLY!",
         },
         "app_btn": {
-            "uz_latn": "🚀 Avtodrom va Amaliyotni ochish",
-            "uz_cyrl": "🚀 Автодром ва Амалиётни очиш",
-            "ru": "🚀 Открыть Автодром и Практику",
+            "uz_latn": "🚀 Amaliy mashqlarni ochish",
+            "uz_cyrl": "🚀 Амалий машқларни очиш",
+            "ru": "🚀 Открыть практику",
         },
     },
     "exam": {
@@ -165,9 +165,9 @@ _DEEP_LINK_CARDS: Dict[str, Dict[str, Any]] = {
             "ru": "📖 <b>Центр Подготовки</b>",
         },
         "desc": {
-            "uz_latn": "43 ta mavzu, 67 ta rasmiy bilet, Aqlli Takrorlash va YHQ ma'lumotnomasi.",
-            "uz_cyrl": "43 та мавзу, 67 та расмий билет, Ақлли Такрорлаш ва ЙҲҚ маълумотномаси.",
-            "ru": "43 темы, 67 официальных билетов, Умное повторение и справочник ПДД.",
+            "uz_latn": "41 ta mavzu, 67 ta rasmiy bilet, Aqlli Takrorlash va YHQ ma'lumotnomasi.",
+            "uz_cyrl": "41 та мавзу, 67 та расмий билет, Ақлли Такрорлаш ва ЙҲҚ маълумотномаси.",
+            "ru": "41 тема, 67 официальных билетов, Умное повторение и справочник ПДД.",
         },
         "app_btn": {
             "uz_latn": "📖 Tayyorlov bo‘limini ochish",
@@ -422,7 +422,7 @@ async def cmd_subscription(message: Message, db: BotDatabase):
             f"<b>PRO imkoniyatlari:</b>\n"
             f"✅ Cheksiz Davlat Imtihoni (20 savol / 25 daqiqa)\n"
             f"✅ AI Ustoz 3.0 (kuniga 100 tagacha tahlil) va 7 kunlik o‘quv reja\n"
-            f"✅ To‘liq Avtodrom 2D va Imtihon Shpargalkasi\n"
+            f"✅ Rasmiy VMQ 172 qonun matni va 10 ta amaliy mashq moduli\n"
             f"✅ Telegram Stars (⭐) orqali 1 soniyada faollashuv"
         )
         btn_webapp = "💳 Karta (HUMO) / Mini App orqali"
@@ -439,7 +439,7 @@ async def cmd_subscription(message: Message, db: BotDatabase):
             f"<b>PRO имкониятлари:</b>\n"
             f"✅ Чексиз Давлат Имтиҳони (20 савол / 25 дақиқа)\n"
             f"✅ AI Устоз 3.0 (кунига 100 тагача таҳлил) ва 7 кунлик ўқув режа\n"
-            f"✅ Тўлиқ Автодром 2D ва Имтиҳон Шпаргалкаси\n"
+            f"✅ Расмий ВМҚ 172 қонун матни ва 10 та амалий машқ модули\n"
             f"✅ Telegram Stars (⭐) орқали бир зумда фаоллашув"
         )
         btn_webapp = "💳 Карта (HUMO) / Mini App орқали"
@@ -456,7 +456,7 @@ async def cmd_subscription(message: Message, db: BotDatabase):
             f"<b>Возможности PRO:</b>\n"
             f"✅ Безлимитный Госэкзамен (20 вопросов / 25 мин)\n"
             f"✅ AI Наставник 3.0 (до 100 разборов в день) и 7-дневный план\n"
-            f"✅ Полный Автодром 2D и Шпаргалка\n"
+            f"✅ Официальный закон ПКМ 172 и 10 практических модулей\n"
             f"✅ Мгновенная оплата через Telegram Stars (⭐)"
         )
         btn_webapp = "💳 Карта (HUMO) / Через Mini App"

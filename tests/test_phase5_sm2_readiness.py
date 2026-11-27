@@ -40,7 +40,6 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 @pytest.fixture
 def isolated_db(tmp_path, monkeypatch):
     monkeypatch.setenv("TURSO_DATABASE_URL", "")
-    BotDatabase._ticket_schema_ready = False
     db_copy = tmp_path / "phase5_unit.sqlite"
     shutil.copy2("master_database.sqlite", db_copy)
     run_migrations(str(db_copy))
@@ -169,7 +168,7 @@ def test_migration_003_idempotency_rollback_and_sanitized_export(tmp_path):
 
 
 def test_bayesian_accuracy_and_sm2_readiness_integration():
-    # Neutral baseline when srs_tracked == 0 preserves backward compatibility
+    # Honest zero baseline when srs_tracked == 0 (no phantom 100% retention before SRS cards exist)
     base_acc = compute_driver_accuracy(
         total_answered=100,
         correct_answers=85,
@@ -182,7 +181,7 @@ def test_bayesian_accuracy_and_sm2_readiness_integration():
         return_details=True,
     )
     assert "bayesian_accuracy" in base_acc
-    assert base_acc["srs_retention_rate"] == 100.0
+    assert base_acc["srs_retention_rate"] == 0.0
 
     # High SM-2 mastery lifts retention-adjusted accuracy cleanly vs large overdue backlog
     mastered_acc = compute_driver_accuracy(

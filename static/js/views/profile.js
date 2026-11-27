@@ -385,7 +385,7 @@
       exam_passer: R.t('milestone_exam_passer'),
       mistake_slayer: R.t('milestone_mistake_slayer'),
       ticket_finisher: R.t('milestone_ticket_finisher'),
-      avtodrom_pro: R.t('milestone_avtodrom_pro'),
+      practical_pro: R.t('milestone_practical_pro'),
       memory_master: R.t('milestone_memory_master')
     };
     const srsSum = analytics.srs_summary || stats.srs_summary || null;
@@ -400,12 +400,15 @@
         '</div>';
     }).join('');
 
-    const weakCatsHtml = (analytics.weak_categories || []).slice(0, 3).map(function (c) {
-      return '<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:6px 0;border-bottom:1px solid var(--border-hairline);">' +
-        '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + R.escHtml(c.name) + '</span>' +
-        '<span class="badge-pill badge-rose font-mono">' + Math.round(c.accuracy_pct || 0) + '%</span>' +
-        '</div>';
-    }).join('');
+    const weakCatsHtml = (analytics.weak_categories || [])
+      .filter(function (c) { return Number(c.attempts != null ? c.attempts : (c.total_attempts || 0)) > 0 && Number(c.accuracy_pct || 0) < 80; })
+      .slice(0, 3)
+      .map(function (c) {
+        return '<button type="button" class="data-row-card card-interactive" data-prof-weak-cat="' + c.category_id + '" style="width:100%;margin-top:4px;padding:8px 10px;">' +
+          '<span style="font-size:12.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + R.escHtml(c.name) + '</span>' +
+          '<span class="badge-pill badge-rose font-mono">' + Math.round(c.accuracy_pct || 0) + '%</span>' +
+          '</button>';
+      }).join('');
 
     root.innerHTML =
       '<section class="surface-card" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;">' +
@@ -434,7 +437,7 @@
           '  <div class="progress-track" style="margin-bottom:10px;"><div class="progress-fill" style="width:' + Math.min(100, analytics.overall_coverage_pct || 0) + '%"></div></div>' +
           (srsSum && srsSum.tracked_count > 0
             ? '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--border-hairline);margin-bottom:6px;">' +
-              '  <div style="font-size:12px;"><b>' + R.escHtml(R.t('srs_mode_title')) + ':</b> ' + (srsSum.mastered_count || 0) + ' ' + R.escHtml(R.t('srs_mastered_lbl')) + ' • ' + Number(srsSum.retention_rate || 100).toFixed(0) + '%</div>' +
+              '  <div style="font-size:12px;"><b>' + R.escHtml(R.t('srs_mode_title')) + ':</b> ' + (srsSum.mastered_count || 0) + ' ' + R.escHtml(R.t('srs_mastered_lbl')) + ' • ' + Number(srsSum.retention_rate || 0).toFixed(0) + '%</div>' +
               ((srsSum.due_now_count || 0) > 0
                 ? '<button type="button" class="btn btn-sm btn-primary" id="prof-start-srs-btn">' + R.escHtml(R.t('srs_due_badge', { n: srsSum.due_now_count })) + '</button>'
                 : '<span class="badge-pill badge-emerald font-mono">' + R.escHtml(R.t('srs_mastered_lbl')) + '</span>') +
@@ -509,10 +512,15 @@
     });
     document.getElementById('prof-cheatsheet-btn')?.addEventListener('click', R.openCheatsheetModal);
     document.getElementById('prof-rules-btn')?.addEventListener('click', function () {
-      if (typeof R.openLawModal === 'function') R.openLawModal();
-      else R.openInfoModal('rules');
+      R.openInfoModal('rules');
     });
     document.getElementById('prof-changelog-btn')?.addEventListener('click', function () { R.openInfoModal('changelog'); });
+
+    root.querySelectorAll('[data-prof-weak-cat]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        R.startSession({ session_type: 'CATEGORY', category_id: Number(btn.dataset.profWeakCat), total_questions: 20 });
+      });
+    });
 
     root.querySelectorAll('[data-theme-opt]').forEach(function (btn) {
       btn.addEventListener('click', function () {

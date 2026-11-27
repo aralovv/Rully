@@ -92,11 +92,29 @@ CREATE TABLE IF NOT EXISTS user_question_srs (
     last_quality INTEGER NOT NULL DEFAULT 0,
     last_reviewed_at TEXT NOT NULL,
     next_review_at TEXT NOT NULL,
+    prev_state_json TEXT DEFAULT NULL,
     PRIMARY KEY (user_id, canonical_id),
     FOREIGN KEY (user_id) REFERENCES telegram_users(user_id) ON DELETE CASCADE,
     FOREIGN KEY (canonical_id) REFERENCES canonical_questions(canonical_id) ON DELETE CASCADE
 )
 """
+
+PHASE4_REMOVED_TABLES: Tuple[str, ...] = (
+    "practical_checklist",
+    "practical_quiz_results",
+)
+
+PHASE4_REMOVED_INDEXES: Tuple[str, ...] = (
+    "idx_checklist_user",
+    "idx_practical_quiz_user",
+)
+
+PHASE4_EXTRA_INDEXES: Dict[str, str] = {
+    "idx_session_answers_user_answered": (
+        "CREATE INDEX IF NOT EXISTS idx_session_answers_user_answered "
+        "ON session_answers(user_id, is_correct, answered_at)"
+    ),
+}
 
 SRS_INDEXES: Dict[str, str] = {
     "idx_srs_user_due": "CREATE INDEX IF NOT EXISTS idx_srs_user_due ON user_question_srs(user_id, next_review_at)",
@@ -334,6 +352,8 @@ def rollback_phase1_migrations_local_test(conn: sqlite3.Connection) -> Dict[str,
 
     sa_cols = get_table_columns(conn, "session_answers")
     if "user_id" in sa_cols:
+        for idx_name in PHASE4_EXTRA_INDEXES.keys():
+            stmts.append(f"DROP INDEX IF EXISTS {idx_name}")
         stmts.append("ALTER TABLE session_answers DROP COLUMN user_id")
 
     stmts.append("DROP TABLE IF EXISTS schema_migrations")
@@ -403,6 +423,75 @@ def apply_phase3_migrations(conn: Any) -> Dict[str, Any]:
     }
 
 
+def apply_phase4_migrations(conn: Any) -> Dict[str, Any]:
+    """
+    Applies Phase 4 Architecture, DB-backed SM-2 undo state (`prev_state_json`),
+    indexed student answer lookups, and Workstream 4C table cleanup (`005_phase4_architecture`).
+    Strictly preserves all live user, payment, exam, session, and SRS data.
+    """
+    _ensure_migrations_table(conn)
+    existing_tables = set(list_user_tables(conn))
+    existing_indexes = get_index_names(conn)
+
+    # 1. DDL additions first
+    ddl_005: List[Any] = []
+    if "user_question_srs" in existing_tables:
+        srs_cols = get_table_columns(conn, "user_question_srs")
+        if "prev_state_json" not in srs_cols:
+            ddl_005.append("ALTER TABLE user_question_srs ADD COLUMN prev_state_json TEXT DEFAULT NULL")
+    if ddl_005:
+        execute_batch(conn, ddl_005)
+
+    # 2. Drop deprecated 4C practical checklist / situational scenario tables & indexes + add 4A indexes
+    batch_005: List[Any] = []
+    for idx_name in PHASE4_REMOVED_INDEXES:
+        if idx_name in existing_indexes:
+            batch_005.append(f"DROP INDEX IF EXISTS {idx_name}")
+    for tbl_name in PHASE4_REMOVED_TABLES:
+        if tbl_name in existing_tables:
+            batch_005.append(f"DROP TABLE IF EXISTS {tbl_name}")
+    if "session_answers" in existing_tables:
+        sa_cols = get_table_columns(conn, "session_answers")
+        if "user_id" in sa_cols:
+            for idx_name, idx_sql in PHASE4_EXTRA_INDEXES.items():
+                if idx_name not in existing_indexes:
+                    batch_005.append(idx_sql)
+    batch_005.append(
+        _record_migration_stmt(
+            "005_phase4_architecture",
+            "Persist prev_state_json in user_question_srs, add Phase 4 analytics index, drop removed checklist/scenario tables",
+            _checksum(list(PHASE4_REMOVED_TABLES) + list(PHASE4_EXTRA_INDEXES.values()) + ["prev_state_json"]),
+        )
+    )
+    execute_batch(conn, batch_005)
+
+    return {
+        "applied_migrations": ["005_phase4_architecture"],
+        "parity": verify_phase4_schema_parity(conn),
+    }
+
+
+def verify_phase4_schema_parity(conn: Any) -> Dict[str, Any]:
+    """Verifies Phase 4 schema changes: prev_state_json present, 4C tables/indexes dropped, extra index present."""
+    tables = set(list_user_tables(conn))
+    indexes = get_index_names(conn)
+    srs_cols = get_table_columns(conn, "user_question_srs") if "user_question_srs" in tables else set()
+
+    missing_cols = sorted({"prev_state_json"} - srs_cols)
+    stray_tables = sorted(set(PHASE4_REMOVED_TABLES) & tables)
+    stray_indexes = sorted(set(PHASE4_REMOVED_INDEXES) & indexes)
+    missing_indexes = sorted(set(PHASE4_EXTRA_INDEXES.keys()) - indexes)
+
+    passed = not missing_cols and not stray_tables and not stray_indexes and not missing_indexes
+    return {
+        "passed": passed,
+        "missing_srs_columns": missing_cols,
+        "stray_removed_tables": stray_tables,
+        "stray_removed_indexes": stray_indexes,
+        "missing_indexes": missing_indexes,
+    }
+
+
 def verify_phase3_schema_parity(conn: Any) -> Dict[str, Any]:
     """Verifies Phase 3 vmq_articles table, required columns, and lookup indexes."""
     tables = set(list_user_tables(conn))
@@ -439,18 +528,30 @@ def verify_phase3_schema_parity(conn: Any) -> Dict[str, Any]:
 
 
 def apply_all_migrations(conn: Any) -> Dict[str, Any]:
-    """Applies Phase 1 (001, 002), Phase 5 (003), and Phase 3 (004) migrations idempotently."""
+    """Applies Phase 1 (001, 002), Phase 5 (003), Phase 3 (004), and Phase 4 (005) migrations idempotently."""
     p1 = apply_phase1_migrations(conn)
     p5 = apply_phase5_migrations(conn)
     p3 = apply_phase3_migrations(conn)
-    combined_passed = bool(p1["parity"]["passed"] and p5["parity"]["passed"] and p3["parity"]["passed"])
+    p4 = apply_phase4_migrations(conn)
+    combined_passed = bool(
+        p1["parity"]["passed"]
+        and p5["parity"]["passed"]
+        and p3["parity"]["passed"]
+        and p4["parity"]["passed"]
+    )
     return {
-        "applied_migrations": p1["applied_migrations"] + p5["applied_migrations"] + p3["applied_migrations"],
+        "applied_migrations": (
+            p1["applied_migrations"]
+            + p5["applied_migrations"]
+            + p3["applied_migrations"]
+            + p4["applied_migrations"]
+        ),
         "parity": {
             "passed": combined_passed,
             "phase1": p1["parity"],
             "phase5": p5["parity"],
             "phase3": p3["parity"],
+            "phase4": p4["parity"],
         },
     }
 

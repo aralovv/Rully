@@ -10,6 +10,7 @@ from src.api.deps import get_current_user, get_db
 from src.bot.database import BotDatabase
 from src.db_adapter import get_db_connection
 from src.ai.gemini_service import GeminiService
+from src.db.tz_utils import tashkent_today_str
 from src.security.rate_limiter import rate_limiter
 
 router = APIRouter(prefix="/api/ai", tags=["AI Assistant"])
@@ -36,7 +37,7 @@ class ClearHistoryRequest(BaseModel):
 def _load_ai_status_sync(db: BotDatabase, user_id: int) -> Dict[str, Any]:
     sub = db.get_user_subscription(user_id)
     is_pro = sub.get("is_pro", False)
-    today = GeminiService._tashkent_today_str()
+    today = tashkent_today_str()
     with get_db_connection() as conn:
         c = conn.cursor()
         c.execute(

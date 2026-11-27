@@ -266,56 +266,10 @@ def test_practical_modules_curriculum():
     assert tog_mod.status_code == 200
     assert "is_completed" in tog_mod.json()
 
-# 9. Practical Checklist Toggle & Reset
-def test_practical_checklist():
-    # Get checklist
-    chk_res = client.get("/api/amaliy/checklist?lang=uz_latn")
-    assert chk_res.status_code == 200
-    data = chk_res.json()
-    assert data["total"] == 10
-    assert len(data["items"]) == 10
-    first_item_id = data["items"][0]["id"]
-
-    # Toggle checklist item
-    tog_res = client.post("/api/amaliy/checklist/toggle", json={
-        "item_id": first_item_id,
-        "is_completed": True
-    })
-    assert tog_res.status_code == 200
-    assert tog_res.json()["is_completed"] is True
-
-    # Check updated readiness
-    chk_res2 = client.get("/api/amaliy/checklist?lang=uz_latn")
-    assert chk_res2.status_code == 200
-    assert chk_res2.json()["completed_count"] >= 1
-    assert chk_res2.json()["readiness_percentage"] >= 10.0
-
-    # Reset checklist
-    reset_res = client.post("/api/amaliy/checklist/reset")
-    assert reset_res.status_code == 200
-    chk_res3 = client.get("/api/amaliy/checklist?lang=uz_latn")
-    assert chk_res3.json()["completed_count"] == 0
-
-# 10. Practical Situational Scenarios
-def test_practical_scenarios():
-    # List scenarios
-    res = client.get("/api/amaliy/scenarios?lang=uz_latn")
-    assert res.status_code == 200
-    data = res.json()
-    assert data["count"] >= 3
-    first_scen = data["scenarios"][0]
-
-    # Submit decision answer
-    ans_res = client.post("/api/amaliy/scenarios/answer", json={
-        "scenario_id": first_scen["id"],
-        "selected_option": 1,
-        "language": "uz_latn"
-    })
-    assert ans_res.status_code == 200
-    ans_data = ans_res.json()
-    assert "is_correct" in ans_data
-    assert "correct_option" in ans_data
-    assert "explanation" in ans_data
+# 9. Deprecated Checklist & Scenarios endpoints cleanly removed (404)
+def test_removed_practical_subfeatures_absent():
+    assert client.get("/api/amaliy/checklist?lang=uz_latn").status_code == 404
+    assert client.get("/api/amaliy/scenarios?lang=uz_latn").status_code == 404
 
 # 12. Static Frontend Single Page Application
 def test_static_frontend_files():

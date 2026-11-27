@@ -24,7 +24,6 @@ from src.ai.gemini_service import GeminiService
 def isolated_db(tmp_path, monkeypatch):
     """Creates a clean isolated SQLite database with all RULLY 2.0 migrations applied."""
     monkeypatch.setenv("TURSO_DATABASE_URL", "")
-    BotDatabase._ticket_schema_ready = False
     db_copy = tmp_path / "rully2_unit.sqlite"
     shutil.copy2("master_database.sqlite", db_copy)
     run_migrations(str(db_copy))
@@ -63,10 +62,12 @@ def test_deterministic_67_tickets_cover_all_questions():
 
 
 def test_streak_consecutive_day_rollover_and_reset(isolated_db):
+    from src.db.tz_utils import tashkent_now, tashkent_yesterday_str
     uid = 990001001
     isolated_db.get_or_create_user(uid, username="streak_tester")
-    # Simulate active yesterday with streak = 4
-    yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+    # Simulate active yesterday (Asia/Tashkent UTC+5) with streak = 4
+    t_now = tashkent_now()
+    yesterday = tashkent_yesterday_str(t_now)
     now_ts = datetime.utcnow().isoformat()
     with isolated_db._get_connection() as conn:
         conn.execute(
@@ -94,7 +95,7 @@ def test_streak_consecutive_day_rollover_and_reset(isolated_db):
     assert res2["streak"]["today_questions_count"] == 2
 
     # Missed 3 days resets streak back to 1
-    old_day = (datetime.utcnow() - timedelta(days=3)).strftime("%Y-%m-%d")
+    old_day = (t_now - timedelta(days=3)).strftime("%Y-%m-%d")
     with isolated_db._get_connection() as conn:
         conn.execute("UPDATE learning_streak SET last_active_date = ?, today_questions_count = 12 WHERE user_id = ?", (old_day, uid))
         conn.commit()

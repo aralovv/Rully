@@ -32,10 +32,10 @@ def test_unified_navigation_order_and_core_ids():
     assert dock_tabs == expected_tabs
 
     # Required defer scripts & active cache-busters preserved
-    assert '/static/css/rully.css?v=9.0.0' in html
+    assert '/static/css/rully.css?v=10.0.0' in html
     for js in ("icons.js", "translations.js", "cheatsheet_data.js", "core/theme.js", "views/reference.js", "views/home.js"):
-        assert f'script defer src="/static/js/{js}?v=9.0.0"' in html
-    assert 'script defer src="/static/js/app.js?v=9.0.0"' in html
+        assert f'script defer src="/static/js/{js}?v=10.0.0"' in html
+    assert 'script defer src="/static/js/app.js?v=10.0.0"' in html
 
     # Required view containers and modals preserved
     for dom_id in (
@@ -81,11 +81,10 @@ def test_cockpit_home_dial_and_translations():
         "tile-tickets",
         "tile-categories",
         "tile-mistakes",
-        "tile-adaptive",
         "tile-amaliy",
-        "tile-cheatsheet",
     ):
         assert dom_id in home_js
+    assert "kpi-strip" not in home_js
 
     trans_js = (ROOT_DIR / "static" / "js" / "translations.js").read_text(encoding="utf-8")
     cockpit_keys = (
@@ -102,10 +101,10 @@ def test_cockpit_home_dial_and_translations():
 def test_cockpit_static_assets_served():
     for path in (
         "/",
-        "/static/css/rully.css?v=9.0.0",
-        "/static/js/views/reference.js?v=9.0.0",
-        "/static/js/views/home.js?v=9.0.0",
-        "/static/js/core/theme.js?v=9.0.0",
+        "/static/css/rully.css?v=10.0.0",
+        "/static/js/views/reference.js?v=10.0.0",
+        "/static/js/views/home.js?v=10.0.0",
+        "/static/js/core/theme.js?v=10.0.0",
     ):
         res = client.get(path)
         assert res.status_code == 200

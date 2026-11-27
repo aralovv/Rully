@@ -37,7 +37,7 @@ def compute_driver_accuracy(
                 "distinct_accuracy": 0.0,
                 "confidence_factor": 0.0,
                 "bayesian_accuracy": 0.0,
-                "srs_retention_rate": 100.0,
+                "srs_retention_rate": 0.0,
             }
         return 0.0
 
@@ -71,8 +71,8 @@ def compute_driver_accuracy(
 
     final_acc = composite * confidence
 
-    # Phase 5 SM-2 Retention Adjustment (strictly bounded [-3.0, +2.5], neutral when srs_tracked == 0)
-    srs_retention = 100.0
+    # Phase 5 SM-2 Retention Adjustment (strictly bounded [-3.0, +2.5], honest 0.0 when srs_tracked == 0)
+    srs_retention = 0.0
     if srs_tracked > 0:
         bounded_due = min(srs_tracked, max(0, srs_due))
         srs_retention = round(((srs_tracked - bounded_due) / srs_tracked) * 100.0, 1)
@@ -158,16 +158,16 @@ def compute_driver_readiness(
     else:
         p_acc = min(100.0, max(0.0, ((accuracy - 35.0) / 57.0) * 100.0))
 
-    # Pillar 3: Curriculum / Syllabus Coverage (25%)
+    # Pillar 3: Curriculum / Syllabus Coverage (25%) — 41 official YHQ categories
     if categories_tested is None or categories_tested <= 0:
-        categories_tested = min(43, max(1, int(unique_questions / 8)))
+        categories_tested = min(41, max(1, int(unique_questions / 8)))
     q_score = min(100.0, (unique_questions / 160.0) * 100.0)
     cat_score = min(100.0, (categories_tested / 20.0) * 100.0)
     p_cov = 0.60 * q_score + 0.40 * cat_score
 
-    # Pillar 4: Mistake Bank Hygiene (10%)
+    # Pillar 4: Mistake Bank Hygiene (10%) — honest 0.0 until >= 5 answered questions
     if total_answered < 5:
-        p_mistakes = 50.0
+        p_mistakes = 0.0
     elif unresolved_mistakes == 0:
         p_mistakes = 100.0
     else:
@@ -176,14 +176,14 @@ def compute_driver_readiness(
         res_bonus = (resolved_mistakes / total_m * 20.0) if total_m > 0 else 0.0
         p_mistakes = max(0.0, min(100.0, 100.0 - penalty + res_bonus))
 
-    # Pillar 5: Exam Pace & Practice Regularity (10%)
+    # Pillar 5: Exam Pace & Practice Regularity (10%) — honest 0.0 baseline without exams/streak
     if current_streak > 0:
         s_score = min(100.0, max(30.0, current_streak * 25.0))
     else:
-        s_score = 100.0 if passed_exams >= 4 else (0.0 if total_exams > 0 and passed_exams == 0 else 50.0)
+        s_score = 100.0 if passed_exams >= 4 else 0.0
 
     if avg_exam_time_seconds <= 0:
-        t_score = 100.0 if passed_exams >= 4 else (0.0 if total_exams > 0 and passed_exams == 0 else 50.0)
+        t_score = 100.0 if passed_exams >= 4 else 0.0
     elif 200 <= avg_exam_time_seconds <= 1100:
         t_score = 100.0
     elif avg_exam_time_seconds < 200:
@@ -220,7 +220,7 @@ def compute_driver_readiness(
     elif unresolved_mistakes >= 15:
         final_score = min(final_score, 55.0)
 
-    srs_retention_pct = 100.0
+    srs_retention_pct = 0.0
     if srs_tracked > 0:
         bounded_due = min(srs_tracked, max(0, srs_due))
         srs_retention_pct = round(((srs_tracked - bounded_due) / srs_tracked) * 100.0, 1)

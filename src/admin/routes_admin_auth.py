@@ -6,6 +6,7 @@ Handles:
 - Session cookie management and logout
 """
 
+import asyncio
 import os
 from fastapi import APIRouter, Request, Response, HTTPException, Depends
 from pydantic import BaseModel, Field
@@ -123,7 +124,7 @@ async def admin_logout(response: Response, current_admin: dict = Depends(get_cur
     """Logs out and revokes the active session token."""
     session_id = current_admin.get("session_id")
     if session_id:
-        revoke_admin_session(session_id)
+        await asyncio.to_thread(revoke_admin_session, session_id)
 
     response.delete_cookie(key="admin_session", path="/")
     response.delete_cookie(key="rully_csrf", path="/")

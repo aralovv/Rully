@@ -16,14 +16,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.admin.deps import get_current_admin, require_admin_role
-from src.db_adapter import execute_batch, get_db_connection
+from src.db_adapter import execute_batch, fetch_batch_dicts, get_db_connection
 try:
     from src.mtproto.service import get_mtproto_manager
 except ImportError:
     get_mtproto_manager = None
 from src.payments.matching_engine import (
     _compute_extended_expiry_iso,
-    _inspect_unmatched_candidates,
+    _match_candidate_from_orders,
     get_payment_reconciliation_health_sync,
     link_unmatched_to_order_sync,
 )
@@ -109,7 +109,7 @@ def list_unmatched_payments(
     limit: int = Query(20, ge=1, le=100),
     current_admin: dict = Depends(get_current_admin)
 ):
-    """Lists incoming payments from Humocardbot that could not be matched against active orders."""
+    """Lists incoming payments from Humocardbot with 1-RT batched candidate near-match hints."""
     offset = (page - 1) * limit
     conditions = []
     params = []
@@ -121,34 +121,51 @@ def list_unmatched_payments(
     where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
 
     with _get_connection() as conn:
-        c = conn.cursor()
-        c.execute(f"SELECT COUNT(*) FROM unmatched_payments u {where_clause}", params)
-        total_items = c.fetchone()[0]
+        batches = fetch_batch_dicts(
+            conn,
+            [
+                (f"SELECT COUNT(*) AS cnt FROM unmatched_payments u {where_clause}", list(params)),
+                (
+                    f"""
+                    SELECT u.*, u.amount_uzs AS incoming_amount_uzs, e.raw_message, e.source_chat
+                    FROM unmatched_payments u
+                    LEFT JOIN payment_events e ON u.event_id = e.id
+                    {where_clause}
+                    ORDER BY u.created_at DESC
+                    LIMIT ? OFFSET ?
+                    """.strip(),
+                    list(params) + [limit, offset],
+                ),
+                (
+                    """
+                    SELECT order_id, user_id, final_amount_uzs, card_suffix, status, created_at, expires_at
+                    FROM payment_orders
+                    WHERE status IN ('PENDING', 'EXPIRED')
+                    ORDER BY created_at DESC
+                    LIMIT 500
+                    """.strip(),
+                    [],
+                ),
+            ],
+        )
 
-        c.execute(f"""
-            SELECT u.*, u.amount_uzs AS incoming_amount_uzs, e.raw_message, e.source_chat
-            FROM unmatched_payments u
-            LEFT JOIN payment_events e ON u.event_id = e.id
-            {where_clause}
-            ORDER BY u.created_at DESC
-            LIMIT ? OFFSET ?
-        """, params + [limit, offset])
-        unmatched = []
-        for r in c.fetchall():
-            item = dict(r)
-            if item.get("status") == "UNRESOLVED":
-                cand = _inspect_unmatched_candidates(
-                    c,
-                    int(item.get("amount_uzs") or 0),
-                    str(item.get("card_suffix") or ""),
-                )
-                item["candidate_order_id"] = cand.get("candidate_order_id")
-                item["candidate_hint"] = cand.get("hint")
-                item["candidate_reason"] = cand.get("reason_code")
-            else:
-                item.setdefault("candidate_order_id", None)
-                item.setdefault("candidate_hint", None)
-            unmatched.append(item)
+    total_items = int(batches[0][0]["cnt"] or 0) if batches[0] else 0
+    cand_orders = batches[2]
+    unmatched = []
+    for item in batches[1]:
+        if item.get("status") == "UNRESOLVED":
+            cand = _match_candidate_from_orders(
+                cand_orders,
+                int(item.get("amount_uzs") or 0),
+                str(item.get("card_suffix") or ""),
+            )
+            item["candidate_order_id"] = cand.get("candidate_order_id")
+            item["candidate_hint"] = cand.get("hint")
+            item["candidate_reason"] = cand.get("reason_code")
+        else:
+            item.setdefault("candidate_order_id", None)
+            item.setdefault("candidate_hint", None)
+        unmatched.append(item)
 
     return {
         "ok": True,
@@ -526,8 +543,6 @@ def get_reconciliation_report(current_admin: dict = Depends(get_current_admin)):
         discrepancy_count = abs(matched_events - ledger_count)
         is_balanced = (discrepancy_count == 0)
 
-        from src.payments.stars_service import _ensure_stars_schema
-        _ensure_stars_schema(conn)
         c.execute("""
             SELECT
                 COUNT(*) as total_stars_orders,
@@ -564,9 +579,7 @@ def list_stars_payments(
         params.append(status.strip().upper())
     where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
 
-    from src.payments.stars_service import _ensure_stars_schema
     with _get_connection() as conn:
-        _ensure_stars_schema(conn)
         c = conn.cursor()
         c.execute(f"SELECT COUNT(*) FROM payment_stars_orders s {where_clause}", params)
         total_items = int(c.fetchone()[0] or 0)

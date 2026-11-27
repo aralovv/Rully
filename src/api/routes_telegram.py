@@ -46,7 +46,8 @@ def get_bot_app():
     global _bot, _dp, _db, _engine
     if _bot is None:
         logger.info("Initializing Bot Webhook Application...")
-        _bot, _dp, _db, _engine = create_bot_app()
+        from src.api.routes_theory import engine as shared_engine
+        _bot, _dp, _db, _engine = create_bot_app(product_engine=shared_engine)
     return _bot, _dp, _db, _engine
 
 

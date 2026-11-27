@@ -24,7 +24,7 @@ STRINGS: Dict[str, Dict[str, str]] = {
         "btn_rully_app": "🚗 RULLY ilovasi",
         "btn_exam": "🏆 Nazariy imtihon (20 ta savol)",
         "btn_custom_test": "⚙️ Aralash test va mavzular",
-        "btn_amaliy": "🏁 Avtodrom va Amaliyot",
+        "btn_amaliy": "🚗 Amaliy mashqlar",
         "btn_categories": "🎯 Kategoriyalar",
         "btn_quick_test": "⚡ Tezkor test (10 ta)",
         "btn_mistakes": "📚 Xatolar banki",
@@ -131,9 +131,9 @@ STRINGS: Dict[str, Dict[str, str]] = {
             "<b>RULLY platformasi bo‘limlari:</b>\n"
             "1. 🏆 <b>Nazariy imtihon:</b> Imtihon zali kompyuter tizimi andozasida.\n"
             "2. ⚙️ <b>Aralash test:</b> Savollar soni, qulay vaqt slayderi va izohlarni o‘zingiz sozlaysiz.\n"
-            "3. 🏁 <b>Avtodrom va Amaliyot:</b> 10 ta amaliy mashq, bosqichma-bosqich cheklist va imtihon vaziyatlari.\n"
+            "3. 🚗 <b>Amaliy mashqlar:</b> 10 ta haydash moduli va jarimalar ma'lumotnomasi.\n"
             "4. 📚 <b>Xatolar banki:</b> Faqat siz mustaqil ishlab adashgan savollaringiz saqlanadi.\n"
-            "5. 📊 <b>Tayyorgarlik indeksi:</b> 4 ta ko‘rsatkich asosida real bilim darajangizni hisoblaydi."
+            "5. 📊 <b>Tayyorgarlik indeksi:</b> 5 ta ko‘rsatkich asosida real bilim darajangizni hisoblaydi."
         ),
 
         # Errors & Notifications
@@ -181,7 +181,7 @@ STRINGS: Dict[str, Dict[str, str]] = {
         "btn_rully_app": "🚗 RULLY иловаси",
         "btn_exam": "🏆 Назарий имтиҳон (20 та савол)",
         "btn_custom_test": "⚙️ Аралаш тест ва мавзулар",
-        "btn_amaliy": "🏁 Автодром ва Амалиёт",
+        "btn_amaliy": "🚗 Амалий машқлар",
         "btn_categories": "🎯 Категориялар",
         "btn_quick_test": "⚡ Тезкор тест (10 та)",
         "btn_mistakes": "📚 Хатолар банки",
@@ -288,9 +288,9 @@ STRINGS: Dict[str, Dict[str, str]] = {
             "<b>RULLY платформаси бўлимлари:</b>\n"
             "1. 🏆 <b>Назарий имтиҳон:</b> Имтиҳон зали компьютер тизими андозасида.\n"
             "2. ⚙️ <b>Аралаш тест:</b> Саволлар сони, қулай вақт слайдери ва изоҳларни ўзингиз созлайсиз.\n"
-            "3. 🏁 <b>Автодром ва Амалиёт:</b> 10 та амалий машқ, босқичма-босқич чек-лист ва имтиҳон вазиятлари.\n"
+            "3. 🚗 <b>Амалий машқлар:</b> 10 та ҳайдаш модули ва жарималар маълумотномаси.\n"
             "4. 📚 <b>Хатолар банки:</b> Фақат сиз мустақил ишлаб адашган саволларингиз сақланади.\n"
-            "5. 📊 <b>Тайёргарлик индекси:</b> 4 та кўрсаткич асосида реал билим даражангизни ҳисоблайди."
+            "5. 📊 <b>Тайёргарлик индекси:</b> 5 та кўрсаткич асосида реал билим даражангизни ҳисоблайди."
         ),
 
         # Errors
@@ -338,7 +338,7 @@ STRINGS: Dict[str, Dict[str, str]] = {
         "btn_rully_app": "🚗 Приложение RULLY",
         "btn_exam": "🏆 Теоретический экзамен (20 вопросов)",
         "btn_custom_test": "⚙️ Настраиваемый тест",
-        "btn_amaliy": "🏁 Автодром и Практика",
+        "btn_amaliy": "🚗 Практические модули",
         "btn_categories": "🎯 Темы и категории",
         "btn_quick_test": "⚡ Быстрый тест (10)",
         "btn_mistakes": "📚 Банк ошибок",
@@ -426,7 +426,7 @@ STRINGS: Dict[str, Dict[str, str]] = {
         # Stats
         "stats_title": "📊 <b>ВАША СТАТИСТИКА</b>",
         "stats_text": (
-            "• Сдано экзаменов: <b>{total_exams}</b>\n"
+            "• Попыток экзамена: <b>{total_exams}</b>\n"
             "• Успешно сданных: <b>{passed_exams}</b>\n"
             "• Процент сдачи: <b>{pass_rate}%</b>\n"
             "• Всего решено вопросов: <b>{total_questions}</b>\n"
@@ -445,9 +445,9 @@ STRINGS: Dict[str, Dict[str, str]] = {
             "<b>Разделы платформы RULLY:</b>\n"
             "1. 🏆 <b>Теоретический экзамен:</b> Повторяет реальный интерфейс экзаменационного зала.\n"
             "2. ⚙️ <b>Настраиваемый тест:</b> Регулировка количества вопросов, слайдер таймера и пояснения ПДД.\n"
-            "3. 🏁 <b>Автодром и Практика:</b> 10 практических модулей, чек-лист готовности и дорожные ситуации.\n"
+            "3. 🚗 <b>Практические модули:</b> 10 обучающих модулей вождения и справочник штрафов.\n"
             "4. 📚 <b>Банк ошибок:</b> Сохраняет только те вопросы, в которых вы допустили реальную ошибку.\n"
-            "5. 📊 <b>Индекс готовности:</b> Комплексная оценка вероятности успешной сдачи по 4 факторам."
+            "5. 📊 <b>Индекс готовности:</b> Комплексная оценка вероятности успешной сдачи по 5 критериям."
         ),
 
         # Errors

@@ -25,9 +25,9 @@ async def show_user_results(event: Message | CallbackQuery, db: BotDatabase):
 
     title = get_str("stats_title", lang)
     readiness_line = (
-        f"🎯 <b>Haqiqiy tayyorgarlik darajasi:</b> <b>{readiness}%</b>\n<i>(4 ta asosiy omil: Davlat imtihoni, aniqlik, qamrov va xatolar banki)</i>\n" if lang == "uz_latn" else (
-            f"🎯 <b>Ҳақиқий тайёргарлик даражаси:</b> <b>{readiness}%</b>\n<i>(4 та асосий омил: Давлат имтиҳони, аниқлик, қамров ва хатолар банки)</i>\n" if lang == "uz_cyrl" else
-            f"🎯 <b>Реальный индекс готовности:</b> <b>{readiness}%</b>\n<i>(4 фактора: гос. экзамен, точность, охват базы и банк ошибок)</i>\n"
+        f"🎯 <b>Haqiqiy tayyorgarlik darajasi:</b> <b>{readiness}%</b>\n<i>(5 ta asosiy mezon: Davlat imtihoni, aniqlik, qamrov, xatolar va takrorlash)</i>\n" if lang == "uz_latn" else (
+            f"🎯 <b>Ҳақиқий тайёргарлик даражаси:</b> <b>{readiness}%</b>\n<i>(5 та асосий мезон: Давлат имтиҳони, аниқлик, қамров, хатолар ва такрорлаш)</i>\n" if lang == "uz_cyrl" else
+            f"🎯 <b>Реальный индекс готовности:</b> <b>{readiness}%</b>\n<i>(5 критериев: гос. экзамен, точность, охват базы, ошибки и повторение)</i>\n"
         )
     )
 

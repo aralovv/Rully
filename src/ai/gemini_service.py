@@ -18,6 +18,7 @@ from src.ai.tools import (
     format_legal_provenance_payload,
 )
 from src.analytics.tracker import log_user_event
+from src.db.tz_utils import tashkent_today_str
 from src.db_adapter import get_db_connection
 from src.security.observability import observability
 
@@ -267,7 +268,7 @@ class GeminiService:
 
     @staticmethod
     def _tashkent_today_str() -> str:
-        return datetime.now(_TASHKENT_TZ).date().isoformat()
+        return tashkent_today_str()
 
     @staticmethod
     def _resolve_trusted_image_filename(image_url: Optional[str], canonical_id: Optional[str] = None) -> Optional[str]:

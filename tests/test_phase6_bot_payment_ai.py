@@ -659,10 +659,11 @@ def test_bot_srs_bilet_handlers_and_quiz_sm2_sync(tmp_path, monkeypatch):
         assert rendered[-1]["session_type"] == "SRS"
         assert sample_cid in rendered[-1]["question_ids"]
 
-        # 3. /bilet 2 launches Ticket #2 directly
+        # 3. /bilet 2 launches Ticket #2 directly (tracked as BILET)
         cmd_obj = SimpleNamespace(args="2")
         asyncio.run(cmd_bilet(msg_obj, cmd_obj, mock_bot, engine, db))
-        assert rendered[-1]["session_type"] == "TICKET"
+        assert rendered[-1]["session_type"] == "BILET"
+        assert rendered[-1]["category_id"] == 2
         assert rendered[-1]["total_questions"] >= 10
 
         # 4. Callback bilet:start:3 launches Ticket #3
@@ -673,7 +674,8 @@ def test_bot_srs_bilet_handlers_and_quiz_sm2_sync(tmp_path, monkeypatch):
             answer=AsyncMock(),
         )
         asyncio.run(start_bilet_callback(cb_bilet, mock_bot, engine, db))
-        assert rendered[-1]["session_type"] == "TICKET"
+        assert rendered[-1]["session_type"] == "BILET"
+        assert rendered[-1]["category_id"] == 3
 
     # 5. Answering a question in Telegram Bot quiz syncs SM-2 user_question_srs
     active_sess = db.get_active_session(uid)
@@ -750,8 +752,8 @@ def test_spa_deep_link_hash_js_syntax_and_routing():
     run = subprocess.run(["node", "-e", node_script], capture_output=True, text=True)
     assert run.returncode == 0, run.stderr
     parsed = json.loads(run.stdout.strip())
-    assert {"tab": "tests", "sub": "adaptive"} in parsed["navigated"]
-    assert {"tab": "tests", "sub": "signs"} in parsed["navigated"]
-    assert {"tab": "tests", "sub": "rules"} in parsed["navigated"]
+    assert {"tab": "tests", "sub": "drill"} in parsed["navigated"]
+    assert {"tab": "tests", "sub": "tickets"} in parsed["navigated"]
+    assert {"tab": "tests", "sub": "reference"} in parsed["navigated"]
     assert any(n["tab"] == "amaliy" for n in parsed["navigated"])
     assert {"session_type": "BILET", "ticket_number": 7} in parsed["sessions"]

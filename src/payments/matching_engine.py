@@ -36,78 +36,59 @@ def _get_connection():
     return get_db_connection(DB_PATH)
 
 
-def _inspect_unmatched_candidates(cursor: Any, amount_uzs: int, card_suffix: str) -> Dict[str, Any]:
-    """
-    Finds near-match pending/expired order candidates to speed up admin resolution
-    when a student sent a slightly wrong amount or used a different card.
-    """
+def _match_candidate_from_orders(
+    orders: List[Dict[str, Any]],
+    amount_uzs: int,
+    card_suffix: str,
+) -> Dict[str, Any]:
+    """Evaluates near-match pending/expired candidate orders in memory from preloaded list."""
     # 1. Exact amount on a different card suffix among pending orders
-    cursor.execute(
-        """
-        SELECT order_id, user_id, final_amount_uzs, card_suffix, status
-        FROM payment_orders
-        WHERE final_amount_uzs = ? AND card_suffix != ? AND status = 'PENDING'
-        ORDER BY created_at DESC
-        LIMIT 1
-        """,
-        (amount_uzs, card_suffix),
-    )
-    row = cursor.fetchone()
-    if row:
-        return {
-            "reason_code": "CARD_SUFFIX_MISMATCH",
-            "candidate_order_id": row["order_id"],
-            "candidate_user_id": row["user_id"],
-            "candidate_amount_uzs": row["final_amount_uzs"],
-            "candidate_card_suffix": row["card_suffix"],
-            "hint": f"Exact amount {amount_uzs} UZS found on pending order for card *{row['card_suffix']}",
-        }
+    for row in orders:
+        if row.get("status") == "PENDING" and int(row.get("final_amount_uzs") or 0) == amount_uzs and str(row.get("card_suffix") or "") != card_suffix:
+            return {
+                "reason_code": "CARD_SUFFIX_MISMATCH",
+                "candidate_order_id": row["order_id"],
+                "candidate_user_id": row["user_id"],
+                "candidate_amount_uzs": row["final_amount_uzs"],
+                "candidate_card_suffix": row["card_suffix"],
+                "hint": f"Exact amount {amount_uzs} UZS found on pending order for card *{row['card_suffix']}",
+            }
 
-    # 2. Same card suffix with close amount (+/- 1000 UZS, e.g. user omitted unique suffix)
-    cursor.execute(
-        """
-        SELECT order_id, user_id, final_amount_uzs, card_suffix, status
-        FROM payment_orders
-        WHERE card_suffix = ? AND status = 'PENDING'
-          AND ABS(final_amount_uzs - ?) <= 1000
-        ORDER BY ABS(final_amount_uzs - ?) ASC, created_at DESC
-        LIMIT 1
-        """,
-        (card_suffix, amount_uzs, amount_uzs),
-    )
-    row = cursor.fetchone()
-    if row:
-        diff = amount_uzs - int(row["final_amount_uzs"])
+    # 2. Same card suffix with close pending amount (+/- 1000 UZS)
+    near_pending = [
+        row for row in orders
+        if row.get("status") == "PENDING"
+        and str(row.get("card_suffix") or "") == card_suffix
+        and abs(int(row.get("final_amount_uzs") or 0) - amount_uzs) <= 1000
+    ]
+    if near_pending:
+        best = min(near_pending, key=lambda r: abs(int(r.get("final_amount_uzs") or 0) - amount_uzs))
+        diff = amount_uzs - int(best["final_amount_uzs"])
         return {
             "reason_code": "NEAR_AMOUNT_PENDING",
-            "candidate_order_id": row["order_id"],
-            "candidate_user_id": row["user_id"],
-            "candidate_amount_uzs": row["final_amount_uzs"],
-            "candidate_card_suffix": row["card_suffix"],
-            "hint": f"Pending order expects {row['final_amount_uzs']} UZS on *{card_suffix} (delta {diff:+d} UZS)",
+            "candidate_order_id": best["order_id"],
+            "candidate_user_id": best["user_id"],
+            "candidate_amount_uzs": best["final_amount_uzs"],
+            "candidate_card_suffix": best["card_suffix"],
+            "hint": f"Pending order expects {best['final_amount_uzs']} UZS on *{card_suffix} (delta {diff:+d} UZS)",
         }
 
     # 3. Expired order with near amount on same card suffix
-    cursor.execute(
-        """
-        SELECT order_id, user_id, final_amount_uzs, card_suffix, status
-        FROM payment_orders
-        WHERE card_suffix = ? AND status = 'EXPIRED'
-          AND ABS(final_amount_uzs - ?) <= 1000
-        ORDER BY ABS(final_amount_uzs - ?) ASC, expires_at DESC
-        LIMIT 1
-        """,
-        (card_suffix, amount_uzs, amount_uzs),
-    )
-    row = cursor.fetchone()
-    if row:
+    near_expired = [
+        row for row in orders
+        if row.get("status") == "EXPIRED"
+        and str(row.get("card_suffix") or "") == card_suffix
+        and abs(int(row.get("final_amount_uzs") or 0) - amount_uzs) <= 1000
+    ]
+    if near_expired:
+        best = min(near_expired, key=lambda r: abs(int(r.get("final_amount_uzs") or 0) - amount_uzs))
         return {
             "reason_code": "EXPIRED_NEAR_MATCH",
-            "candidate_order_id": row["order_id"],
-            "candidate_user_id": row["user_id"],
-            "candidate_amount_uzs": row["final_amount_uzs"],
-            "candidate_card_suffix": row["card_suffix"],
-            "hint": f"Expired order {row['order_id']} expected {row['final_amount_uzs']} UZS on *{card_suffix}",
+            "candidate_order_id": best["order_id"],
+            "candidate_user_id": best["user_id"],
+            "candidate_amount_uzs": best["final_amount_uzs"],
+            "candidate_card_suffix": best["card_suffix"],
+            "hint": f"Expired order {best['order_id']} expected {best['final_amount_uzs']} UZS on *{card_suffix}",
         }
 
     return {
@@ -118,6 +99,24 @@ def _inspect_unmatched_candidates(cursor: Any, amount_uzs: int, card_suffix: str
         "candidate_card_suffix": None,
         "hint": "No pending or near-amount order found matching payment.",
     }
+
+
+def _inspect_unmatched_candidates(cursor: Any, amount_uzs: int, card_suffix: str) -> Dict[str, Any]:
+    """
+    Finds near-match pending/expired order candidates to speed up admin resolution
+    when a student sent a slightly wrong amount or used a different card.
+    """
+    cursor.execute(
+        """
+        SELECT order_id, user_id, final_amount_uzs, card_suffix, status, created_at, expires_at
+        FROM payment_orders
+        WHERE status IN ('PENDING', 'EXPIRED')
+        ORDER BY created_at DESC
+        LIMIT 500
+        """
+    )
+    orders = [dict(r) for r in cursor.fetchall()]
+    return _match_candidate_from_orders(orders, int(amount_uzs), str(card_suffix or ""))
 
 
 def _compute_extended_expiry_iso(cursor: Any, user_id: int, duration_days: int, now_dt: datetime) -> str:

@@ -31,8 +31,6 @@ def cleanup_bot_test_users():
             conn.execute("DELETE FROM exam_results WHERE user_id NOT IN (?, ?, ?)", real_ids)
             conn.execute("DELETE FROM user_mistakes WHERE user_id NOT IN (?, ?, ?)", real_ids)
             conn.execute("DELETE FROM user_bookmarks WHERE user_id NOT IN (?, ?, ?)", real_ids)
-            conn.execute("DELETE FROM practical_checklist WHERE user_id NOT IN (?, ?, ?)", real_ids)
-            conn.execute("DELETE FROM practical_quiz_results WHERE user_id NOT IN (?, ?, ?)", real_ids)
             conn.execute("DELETE FROM user_completed_modules WHERE user_id NOT IN (?, ?, ?)", real_ids)
             conn.execute("DELETE FROM learning_streak WHERE user_id NOT IN (?, ?, ?)", real_ids)
             conn.execute("DELETE FROM payment_transactions WHERE user_id NOT IN (?, ?, ?)", real_ids)

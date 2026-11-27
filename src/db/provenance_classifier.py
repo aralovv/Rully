@@ -17,7 +17,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.db.catalog_bundle import bump_catalog_version_sql
-from src.db_adapter import execute_batch
+from src.db_adapter import execute_batch, fetch_batch_dicts
 
 ALLOWED_VERIFIED_STATUSES = (
     "VERIFIED_PRIMARY_LAW",
@@ -214,20 +214,7 @@ def list_editorial_queue(
     q: Optional[str] = None,
     source_type: Optional[str] = None,
 ) -> Dict[str, Any]:
-    cur = conn.cursor()
-
-    cur.execute(
-        """
-        SELECT review_status, COUNT(*) AS cnt
-        FROM editorial_review_queue
-        GROUP BY review_status
-        """
-    )
-    status_counts = {st: 0 for st in QUEUE_REVIEW_STATUSES}
-    for r in cur.fetchall():
-        d = _row_dict(r, ["review_status", "cnt"])
-        status_counts[str(d["review_status"])] = int(d["cnt"] or 0)
-
+    """Lists editorial queue with translations and answer options in strictly 2 batched RTs."""
     conditions: List[str] = []
     params: List[Any] = []
     if status and status.upper() != "ALL":
@@ -246,50 +233,97 @@ def list_editorial_queue(
 
     where_sql = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
-    cur.execute(
-        f"""
-        SELECT COUNT(*)
+    page_join_sql = f"""
         FROM editorial_review_queue eq
         JOIN canonical_questions cq ON eq.canonical_id = cq.canonical_id
         LEFT JOIN canonical_translations ct ON eq.canonical_id = ct.canonical_id AND ct.language = 'uz_latn'
         LEFT JOIN canonical_translations ct_cyrl ON eq.canonical_id = ct_cyrl.canonical_id AND ct_cyrl.language = 'uz_cyrl'
         LEFT JOIN canonical_translations ct_ru ON eq.canonical_id = ct_ru.canonical_id AND ct_ru.language = 'ru'
         {where_sql}
-        """,
-        tuple(params),
-    )
-    tot_row = cur.fetchone()
-    total = tot_row[0] if not hasattr(tot_row, "values") else list(tot_row.values())[0]
+    """.strip()
 
-    cur.execute(
-        f"""
-        SELECT eq.*, cq.category_name, cq.has_image, cq.correct_option_key,
-               im.local_path AS image_path,
-               cq.legal_reference AS current_legal_hint,
-               cq.legal_verification_status AS current_legal_status,
-               cq.legal_doc_title AS current_legal_doc_title,
-               cq.legal_doc_url AS current_legal_doc_url,
-               cq.legal_chapter AS current_legal_chapter,
-               cq.legal_clause AS current_legal_clause,
-               cq.legal_effective_date AS current_legal_effective_date,
-               ct.question_text AS preview_text_uz_latn
-        FROM editorial_review_queue eq
-        JOIN canonical_questions cq ON eq.canonical_id = cq.canonical_id
-        LEFT JOIN images im ON cq.primary_image_id = im.id
-        LEFT JOIN canonical_translations ct ON eq.canonical_id = ct.canonical_id AND ct.language = 'uz_latn'
-        LEFT JOIN canonical_translations ct_cyrl ON eq.canonical_id = ct_cyrl.canonical_id AND ct_cyrl.language = 'uz_cyrl'
-        LEFT JOIN canonical_translations ct_ru ON eq.canonical_id = ct_ru.canonical_id AND ct_ru.language = 'ru'
-        {where_sql}
+    page_canon_subq = f"""
+        SELECT eq.canonical_id
+        {page_join_sql}
         ORDER BY eq.id ASC
         LIMIT ? OFFSET ?
-        """,
-        tuple(params) + (limit, offset),
+    """.strip()
+
+    # Single-batch fetch (1 RT): status_counts + filtered total + page items + translations + options
+    b1 = fetch_batch_dicts(
+        conn,
+        [
+            ("SELECT review_status, COUNT(*) AS cnt FROM editorial_review_queue GROUP BY review_status", []),
+            (f"SELECT COUNT(*) AS cnt {page_join_sql}", list(params)),
+            (
+                f"""
+                SELECT eq.*, cq.category_name, cq.has_image, cq.correct_option_key,
+                       im.local_path AS image_path,
+                       cq.legal_reference AS current_legal_hint,
+                       cq.legal_verification_status AS current_legal_status,
+                       cq.legal_doc_title AS current_legal_doc_title,
+                       cq.legal_doc_url AS current_legal_doc_url,
+                       cq.legal_chapter AS current_legal_chapter,
+                       cq.legal_clause AS current_legal_clause,
+                       cq.legal_effective_date AS current_legal_effective_date,
+                       ct.question_text AS preview_text_uz_latn
+                FROM editorial_review_queue eq
+                JOIN canonical_questions cq ON eq.canonical_id = cq.canonical_id
+                LEFT JOIN images im ON cq.primary_image_id = im.id
+                LEFT JOIN canonical_translations ct ON eq.canonical_id = ct.canonical_id AND ct.language = 'uz_latn'
+                LEFT JOIN canonical_translations ct_cyrl ON eq.canonical_id = ct_cyrl.canonical_id AND ct_cyrl.language = 'uz_cyrl'
+                LEFT JOIN canonical_translations ct_ru ON eq.canonical_id = ct_ru.canonical_id AND ct_ru.language = 'ru'
+                {where_sql}
+                ORDER BY eq.id ASC
+                LIMIT ? OFFSET ?
+                """.strip(),
+                list(params) + [limit, offset],
+            ),
+            (
+                f"""
+                SELECT canonical_id, language, question_text, explanation, translation_status
+                FROM canonical_translations
+                WHERE canonical_id IN ({page_canon_subq})
+                """.strip(),
+                list(params) + [limit, offset],
+            ),
+            (
+                f"""
+                SELECT canonical_id, option_key, is_correct, text_uz_latn, text_uz_cyrl, text_ru
+                FROM canonical_answers
+                WHERE canonical_id IN ({page_canon_subq})
+                ORDER BY canonical_id, sort_order
+                """.strip(),
+                list(params) + [limit, offset],
+            ),
+        ],
     )
-    cols = [d[0] for d in cur.description]
+
+    status_counts = {st: 0 for st in QUEUE_REVIEW_STATUSES}
+    for r in b1[0]:
+        status_counts[str(r["review_status"])] = int(r["cnt"] or 0)
+    total = int(b1[1][0]["cnt"] or 0) if b1[1] else 0
+
+    trans_map: Dict[str, Dict[str, Any]] = {}
+    for tr in b1[3]:
+        trans_map.setdefault(tr["canonical_id"], {})[tr["language"]] = {
+            "question_text": tr["question_text"],
+            "explanation": tr["explanation"],
+            "translation_status": tr["translation_status"],
+        }
+
+    ans_map: Dict[str, List[Dict[str, Any]]] = {}
+    for ar in b1[4]:
+        ans_map.setdefault(ar["canonical_id"], []).append({
+            "key": ar["option_key"],
+            "is_correct": bool(ar["is_correct"]),
+            "text_uz_latn": ar["text_uz_latn"],
+            "text_uz_cyrl": ar["text_uz_cyrl"],
+            "text_ru": ar["text_ru"],
+        })
+
     items = []
-    canon_ids: List[str] = []
-    for r in cur.fetchall():
-        d = _row_dict(r, cols)
+    for d in b1[2]:
         try:
             d["issue_flags"] = json.loads(d.get("issue_flags_json") or "[]")
         except Exception:
@@ -300,56 +334,10 @@ def list_editorial_queue(
             d["image_url"] = f"/images/{fname}"
         else:
             d["image_url"] = None
-        d["translations"] = {}
-        d["options"] = []
-        canon_ids.append(d["canonical_id"])
+        cid = d["canonical_id"]
+        d["translations"] = trans_map.get(cid, {})
+        d["options"] = ans_map.get(cid, [])
         items.append(d)
-
-    if canon_ids:
-        unique_ids = sorted(set(canon_ids))
-        placeholders = ",".join("?" for _ in unique_ids)
-        cur.execute(
-            f"""
-            SELECT canonical_id, language, question_text, explanation, translation_status
-            FROM canonical_translations
-            WHERE canonical_id IN ({placeholders})
-            """,
-            tuple(unique_ids),
-        )
-        t_cols = [d[0] for d in cur.description]
-        trans_map: Dict[str, Dict[str, Any]] = {}
-        for tr_row in cur.fetchall():
-            tr = _row_dict(tr_row, t_cols)
-            trans_map.setdefault(tr["canonical_id"], {})[tr["language"]] = {
-                "question_text": tr["question_text"],
-                "explanation": tr["explanation"],
-                "translation_status": tr["translation_status"],
-            }
-
-        cur.execute(
-            f"""
-            SELECT canonical_id, option_key, is_correct, text_uz_latn, text_uz_cyrl, text_ru
-            FROM canonical_answers
-            WHERE canonical_id IN ({placeholders})
-            ORDER BY canonical_id, sort_order
-            """,
-            tuple(unique_ids),
-        )
-        a_cols = [d[0] for d in cur.description]
-        ans_map: Dict[str, List[Dict[str, Any]]] = {}
-        for a_row in cur.fetchall():
-            ar = _row_dict(a_row, a_cols)
-            ans_map.setdefault(ar["canonical_id"], []).append({
-                "key": ar["option_key"],
-                "is_correct": bool(ar["is_correct"]),
-                "text_uz_latn": ar["text_uz_latn"],
-                "text_uz_cyrl": ar["text_uz_cyrl"],
-                "text_ru": ar["text_ru"],
-            })
-
-        for d in items:
-            d["translations"] = trans_map.get(d["canonical_id"], {})
-            d["options"] = ans_map.get(d["canonical_id"], [])
 
     return {
         "total": total,

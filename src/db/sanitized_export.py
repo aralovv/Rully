@@ -35,8 +35,6 @@ WIPED_TABLES: Tuple[str, ...] = (
     "payment_orders",
     "payment_review_cases",
     "payment_transactions",
-    "practical_checklist",
-    "practical_quiz_results",
     "session_answers",
     "subscription_price_history",
     "unmatched_payments",

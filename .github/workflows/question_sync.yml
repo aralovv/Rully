@@ -1,35 +1,42 @@
-name: Scheduled Question Source Sync (Free-Tier Offload)
+name: Offloaded Question Source Sync
 
 on:
   schedule:
-    # Offloads heavy 12h YesPrava/ProPDD HTML diffing from Render free tier (512 MB RAM)
     - cron: '0 */12 * * *'
   workflow_dispatch:
 
 jobs:
-  trigger-question-sync:
-    name: Trigger Authenticated Staging Sync Check
+  sync_questions:
     runs-on: ubuntu-latest
     steps:
-      - name: Invoke Render Sync Webhook
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install minimal sync dependencies
+        run: python -m pip install --upgrade pip && pip install httpx beautifulsoup4 libsql-client python-dotenv
+
+      - name: Run offloaded sync against Turso staging (or webhook fallback)
         env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          ADMIN_TELEGRAM_ID: ${{ secrets.ADMIN_TELEGRAM_ID }}
+          RENDER_APP_URL: ${{ secrets.RENDER_APP_URL }}
           SYNC_WEBHOOK_SECRET: ${{ secrets.SYNC_WEBHOOK_SECRET }}
-          RENDER_APP_URL: ${{ vars.RENDER_APP_URL }}
         run: |
-          if [ -z "$SYNC_WEBHOOK_SECRET" ]; then
-            echo "ℹ️ SYNC_WEBHOOK_SECRET secret is not set yet; skipping external trigger cleanly."
-            exit 0
-          fi
-          BASE_URL="${RENDER_APP_URL:-https://rully-app.onrender.com}"
-          ENDPOINT="${BASE_URL%/}/api/admin/questions/sync/webhook?auto_stage=true"
-          echo "Triggering question sync check on $ENDPOINT ..."
-          HTTP_CODE=$(curl -s -o sync_result.json -w "%{http_code}" -X POST \
-            -H "X-Sync-Secret: ${SYNC_WEBHOOK_SECRET}" \
-            "$ENDPOINT")
-          echo "HTTP Status: $HTTP_CODE"
-          cat sync_result.json || true
-          echo ""
-          if [ "$HTTP_CODE" -ne 200 ]; then
-            echo "❌ Sync webhook returned HTTP $HTTP_CODE"
-            exit 1
+          if [ -n "$TURSO_DATABASE_URL" ] && [ -n "$TURSO_AUTH_TOKEN" ]; then
+            echo "Running direct QuestionSyncService staging sync on GitHub Actions runner..."
+            python scripts/ci_sync_questions.py
+          elif [ -n "$RENDER_APP_URL" ] && [ -n "$SYNC_WEBHOOK_SECRET" ]; then
+            echo "Falling back to scheduled Render sync webhook..."
+            curl -fsS -X POST "${RENDER_APP_URL%/}/api/admin/questions/sync/webhook?auto_stage=true" \
+              -H "X-Sync-Secret: $SYNC_WEBHOOK_SECRET" \
+              -H "Content-Type: application/json"
+          else
+            echo "Turso and Render sync secrets not set; skipping scheduled check safely."
           fi

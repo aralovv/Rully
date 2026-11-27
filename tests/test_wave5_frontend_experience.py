@@ -122,7 +122,11 @@ def test_wave5_frontend_assets_pwa_i18n_and_zero_pii():
     assert "rully_quiz_draft" in quiz_js
 
     amaliy_js = (ROOT_DIR / "static" / "js" / "views" / "amaliy.js").read_text(encoding="utf-8")
-    assert "avtodrom-stage" in amaliy_js
+    assert "avtodrom-stage" not in amaliy_js
+    assert "SIM_MANEUVERS" not in amaliy_js
+    assert "renderChecklistTab" not in amaliy_js
+    assert "renderScenariosTab" not in amaliy_js
+    assert "renderModulesTab" in amaliy_js
     assert "PENALTY_ITEMS" in amaliy_js
 
     css = (ROOT_DIR / "static" / "css" / "rully.css").read_text(encoding="utf-8")

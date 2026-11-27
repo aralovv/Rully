@@ -52,3 +52,4 @@ desktop.ini
 .env*
 scripts/*
 !scripts/generate_deep_scene_annotations.py
+!scripts/ci_sync_questions.py

@@ -70,11 +70,11 @@ async def cb_buy_with_telegram_stars(
     await callback.answer()
     title = f"RULLY PRO — {order['plan_name']}"[:32]
     if lang == "ru":
-        desc = f"{order['duration_days']} дн. полного PRO доступа: безлимитный экзамен, AI Наставник 2.0 и Автодром 2D."
+        desc = f"{order['duration_days']} дн. полного PRO доступа: безлимитный экзамен, AI Наставник 3.0 и справочник ПКМ 172."
     elif lang == "uz_cyrl":
-        desc = f"{order['duration_days']} кунлик тўлиқ PRO кириш: чексиз имтиҳон, AI Устоз 2.0 ва Автодром 2D."
+        desc = f"{order['duration_days']} кунлик тўлиқ PRO кириш: чексиз имтиҳон, AI Устоз 3.0 ва ВМҚ 172 қонун маълумотномаси."
     else:
-        desc = f"{order['duration_days']} kunlik to‘liq PRO kirish: cheksiz imtihon, AI Ustoz 2.0 va Avtodrom 2D."
+        desc = f"{order['duration_days']} kunlik to‘liq PRO kirish: cheksiz imtihon, AI Ustoz 3.0 va VMQ 172 qonun ma'lumotnomasi."
 
     await bot.send_invoice(
         chat_id=callback.message.chat.id,

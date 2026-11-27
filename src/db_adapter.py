@@ -389,3 +389,47 @@ def execute_batch(conn: Union[sqlite3.Connection, TursoConnection], stmts: List[
         conn.rollback()
         raise
 
+
+def _row_to_dict(row: Any, columns: Tuple[str, ...] = ()) -> Dict[str, Any]:
+    if isinstance(row, dict):
+        return dict(row)
+    if hasattr(row, "asdict"):
+        return row.asdict()
+    if hasattr(row, "keys"):
+        return {k: row[k] for k in row.keys()}
+    return dict(zip(columns, row))
+
+
+def fetch_batch_dicts(
+    conn: Union[sqlite3.Connection, TursoConnection],
+    stmts: List[Union[str, Tuple[str, Any]]],
+) -> List[List[Dict[str, Any]]]:
+    """
+    Executes N read-only SQL queries in 1 atomic HTTP round-trip on Turso (or sequential cursor
+    execution on local SQLite) and returns normalized List[List[Dict[str, Any]]] per query.
+    """
+    if not stmts:
+        return []
+    if hasattr(conn, "batch"):
+        raw_results = conn.batch(stmts)
+        out: List[List[Dict[str, Any]]] = []
+        for rs in raw_results:
+            cols = tuple(getattr(rs, "columns", ()) or ())
+            rows = getattr(rs, "rows", None) or []
+            out.append([_row_to_dict(r, cols) for r in rows])
+        return out
+
+    cur = conn.cursor()
+    out = []
+    for s in stmts:
+        if isinstance(s, (tuple, list)):
+            sql = s[0]
+            params = s[1] if len(s) > 1 and s[1] is not None else ()
+            cur.execute(sql, params)
+        else:
+            cur.execute(s)
+        cols = tuple(d[0] for d in (cur.description or ()))
+        rows = cur.fetchall()
+        out.append([_row_to_dict(r, cols) for r in rows])
+    return out
+

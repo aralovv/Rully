@@ -152,10 +152,12 @@ class QuestionSyncService:
             "Tekshirish uchun: Admin Panel → Sozlamalar → <b>Nazariy Savollar & Moderatsiya</b>"
         )
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.create_task(send_telegram_message(MAIN_BOT_TOKEN, ADMIN_TELEGRAM_ID, msg))
-            else:
-                loop.run_until_complete(send_telegram_message(MAIN_BOT_TOKEN, ADMIN_TELEGRAM_ID, msg))
+            loop = asyncio.get_running_loop()
+            loop.create_task(send_telegram_message(MAIN_BOT_TOKEN, ADMIN_TELEGRAM_ID, msg))
+        except RuntimeError:
+            try:
+                asyncio.run(send_telegram_message(MAIN_BOT_TOKEN, ADMIN_TELEGRAM_ID, msg))
+            except Exception:
+                pass
         except Exception:
             pass

@@ -10,6 +10,7 @@ Handles:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -37,8 +38,11 @@ def _get_connection():
 
 
 def _ensure_stars_schema(conn: Any) -> None:
+    """Compatibility helper for local SQLite test fixtures; skipped on cloud Turso."""
+    if is_turso_enabled():
+        return
     db_path = os.getenv("DB_PATH", "master_database.sqlite")
-    cache_key = "__turso__" if is_turso_enabled() else os.path.abspath(db_path)
+    cache_key = os.path.abspath(db_path)
     with _STARS_SCHEMA_LOCK:
         if cache_key in _STARS_SCHEMA_READY:
             return
@@ -129,35 +133,19 @@ async def _request_telegram_invoice_link(
     return str(data["result"])
 
 
-async def create_stars_invoice_order(
+def _insert_stars_pending_order_sync(
+    order_id: str,
     user_id: int,
-    plan_id: str,
-    create_link: bool = True,
-) -> Dict[str, Any]:
-    """
-    Creates a pending Telegram Stars (`XTR`) order and optionally requests an `invoice_url`
-    via `createInvoiceLink` for Telegram Mini App `WebApp.openInvoice(...)`.
-    """
-    clean_plan_id = str(plan_id or "").strip()
-    plan = get_subscription_plan(clean_plan_id)
-    if not plan:
-        raise ValueError(f"Tanlangan tarif ({clean_plan_id}) mavjud emas yoki faol emas.")
-
-    stars_amount = compute_stars_price(plan)
-    uzs_equivalent = int(plan.get("base_price_uzs") or 0)
-    duration_days = int(plan.get("duration_days") or 14)
-    plan_name = str(plan.get("name") or clean_plan_id)
-
-    now_dt = datetime.utcnow()
-    now_str = now_dt.isoformat()
-    expires_dt = now_dt + timedelta(minutes=STARS_ORDER_LIFETIME_MINUTES)
-    expires_str = expires_dt.isoformat()
-
-    order_id = f"XTR-{now_dt.strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(4).upper()}"
-    payload = f"rully_xtr:{order_id}:{int(user_id)}:{clean_plan_id}"
-
+    clean_plan_id: str,
+    plan_name: str,
+    duration_days: int,
+    stars_amount: int,
+    uzs_equivalent: int,
+    payload: str,
+    now_str: str,
+    expires_str: str,
+) -> None:
     with _get_connection() as conn:
-        _ensure_stars_schema(conn)
         execute_batch(
             conn,
             [
@@ -196,12 +184,63 @@ async def create_stars_invoice_order(
             ],
         )
 
+
+def _update_stars_order_after_link_sync(order_id: str, invoice_url: Optional[str] = None, failed: bool = False) -> None:
+    with _get_connection() as conn:
+        if failed:
+            conn.execute("UPDATE payment_stars_orders SET status = 'FAILED' WHERE order_id = ?", (order_id,))
+        else:
+            conn.execute("UPDATE payment_stars_orders SET invoice_url = ? WHERE order_id = ?", (invoice_url, order_id))
+        conn.commit()
+
+
+async def create_stars_invoice_order(
+    user_id: int,
+    plan_id: str,
+    create_link: bool = True,
+) -> Dict[str, Any]:
+    """
+    Creates a pending Telegram Stars (`XTR`) order and optionally requests an `invoice_url`
+    via `createInvoiceLink` for Telegram Mini App `WebApp.openInvoice(...)`.
+    """
+    clean_plan_id = str(plan_id or "").strip()
+    plan = await asyncio.to_thread(get_subscription_plan, clean_plan_id)
+    if not plan:
+        raise ValueError(f"Tanlangan tarif ({clean_plan_id}) mavjud emas yoki faol emas.")
+
+    stars_amount = compute_stars_price(plan)
+    uzs_equivalent = int(plan.get("base_price_uzs") or 0)
+    duration_days = int(plan.get("duration_days") or 14)
+    plan_name = str(plan.get("name") or clean_plan_id)
+
+    now_dt = datetime.utcnow()
+    now_str = now_dt.isoformat()
+    expires_dt = now_dt + timedelta(minutes=STARS_ORDER_LIFETIME_MINUTES)
+    expires_str = expires_dt.isoformat()
+
+    order_id = f"XTR-{now_dt.strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(4).upper()}"
+    payload = f"rully_xtr:{order_id}:{int(user_id)}:{clean_plan_id}"
+
+    await asyncio.to_thread(
+        _insert_stars_pending_order_sync,
+        order_id,
+        user_id,
+        clean_plan_id,
+        plan_name,
+        duration_days,
+        stars_amount,
+        uzs_equivalent,
+        payload,
+        now_str,
+        expires_str,
+    )
+
     invoice_url: Optional[str] = None
     if create_link:
         title = f"RULLY PRO — {plan_name}"
         description = (
             f"{duration_days} kunlik to‘liq PRO kirish: "
-            "Cheksiz DYHXX imtihonlar, AI Ustoz 2.0, Avtodrom 2D va Shpargalka."
+            "Cheksiz DYHXX imtihonlar, AI Ustoz 3.0 va VMQ 172 qonun ma'lumotnomasi."
         )
         try:
             invoice_url = await _request_telegram_invoice_link(
@@ -212,19 +251,9 @@ async def create_stars_invoice_order(
                 stars_amount=stars_amount,
                 label=plan_name,
             )
-            with _get_connection() as conn:
-                conn.execute(
-                    "UPDATE payment_stars_orders SET invoice_url = ? WHERE order_id = ?",
-                    (invoice_url, order_id),
-                )
-                conn.commit()
+            await asyncio.to_thread(_update_stars_order_after_link_sync, order_id, invoice_url, False)
         except Exception:
-            with _get_connection() as conn:
-                conn.execute(
-                    "UPDATE payment_stars_orders SET status = 'FAILED' WHERE order_id = ?",
-                    (order_id,),
-                )
-                conn.commit()
+            await asyncio.to_thread(_update_stars_order_after_link_sync, order_id, None, True)
             raise
 
     return {
@@ -246,7 +275,6 @@ async def create_stars_invoice_order(
 def get_stars_order_status(order_id: str, user_id: int) -> Tuple[int, Dict[str, Any]]:
     """Fetches a Telegram Stars order status after validating ownership."""
     with _get_connection() as conn:
-        _ensure_stars_schema(conn)
         c = conn.cursor()
         c.execute("SELECT * FROM payment_stars_orders WHERE order_id = ?", (order_id,))
         row = c.fetchone()
@@ -303,7 +331,6 @@ def validate_stars_pre_checkout(
         return False, "To‘lov identifikatori topilmadi."
 
     with _get_connection() as conn:
-        _ensure_stars_schema(conn)
         c = conn.cursor()
         c.execute("SELECT * FROM payment_stars_orders WHERE payload = ?", (payload,))
         row = c.fetchone()
@@ -362,7 +389,6 @@ def fulfill_stars_payment(
     now_str = now_dt.isoformat()
 
     with _get_connection() as conn:
-        _ensure_stars_schema(conn)
         c = conn.cursor()
 
         # 1. Charge-ID replay idempotency guard
@@ -561,7 +587,6 @@ def refund_stars_payment(
     now_str = now_dt.isoformat()
 
     with _get_connection() as conn:
-        _ensure_stars_schema(conn)
         c = conn.cursor()
         c.execute(
             "SELECT * FROM payment_stars_orders WHERE telegram_payment_charge_id = ? OR (? != '' AND payload = ?)",

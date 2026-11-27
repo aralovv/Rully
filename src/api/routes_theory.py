@@ -149,36 +149,122 @@ def start_session(
     if lang not in ["uz_latn", "uz_cyrl", "ru"]:
         lang = "uz_latn"
 
-    # Enforce Free Tier (2 free exam sessions) & PRO subscription; Mistakes Bank is free for all users!
-    if req.session_type == "EXAM":
-        ft = db.get_user_free_tier_status(user_id)
-        if not ft["has_access"]:
-            raise HTTPException(
-                status_code=403,
-                detail="SUBSCRIPTION_REQUIRED"
-            )
-    elif req.session_type == "CUSTOM" and req.total_questions and req.total_questions > 20:
-        sub = db.get_user_subscription(user_id)
-        if not sub or not sub.get("is_pro"):
-            raise HTTPException(
-                status_code=403,
-                detail="SUBSCRIPTION_REQUIRED"
-            )
+    # Batch ALL prerequisite DB reads (subscription/free-tier + mode-specific state + bookmarks) into 1 RT!
+    now_ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
+    from src.db_adapter import fetch_batch_dicts
+    from src.db.tz_utils import evaluate_subscription_row, compute_free_tier_from_counts
+    from src.db.sm2_engine import classify_srs_mastery
 
-    # Select questions according to session type
+    read_stmts: List[Any] = [
+        ("SELECT is_pro, subscription_tier, subscription_expires_at FROM telegram_users WHERE user_id = ?", [user_id]),
+        ("SELECT canonical_id FROM user_bookmarks WHERE user_id = ?", [user_id]),
+    ]
+    idx_ft_fin = idx_ft_unfin = idx_solved = idx_mistakes = idx_srs_all = idx_cat_perf = idx_cat_mist = -1
+
+    if req.session_type == "EXAM":
+        idx_ft_fin = len(read_stmts)
+        read_stmts.append(("SELECT COUNT(*) AS cnt FROM exam_results WHERE user_id = ?", [user_id]))
+        idx_ft_unfin = len(read_stmts)
+        read_stmts.append((
+            """
+            SELECT COUNT(*) AS cnt FROM (
+                SELECT us.session_id
+                FROM user_sessions us
+                JOIN session_answers sa ON us.session_id = sa.session_id
+                LEFT JOIN exam_results er ON us.session_id = er.session_id
+                WHERE us.user_id = ? AND us.session_type = 'EXAM' AND er.id IS NULL
+                GROUP BY us.session_id
+                HAVING COUNT(sa.id) >= 3
+            )
+            """.strip(),
+            [user_id],
+        ))
+    elif req.session_type == "CATEGORY":
+        if req.category_id is None:
+            raise HTTPException(status_code=400, detail="category_id required for CATEGORY session")
+        idx_solved = len(read_stmts)
+        read_stmts.append(("SELECT DISTINCT canonical_id FROM session_answers WHERE user_id = ? AND is_correct = 1", [user_id]))
+    elif req.session_type == "MISTAKES":
+        limit = req.total_questions if (req.total_questions and req.total_questions > 0) else 50
+        idx_mistakes = len(read_stmts)
+        read_stmts.append((
+            "SELECT canonical_id FROM user_mistakes WHERE user_id = ? AND is_resolved = 0 ORDER BY last_mistake_at DESC LIMIT ?",
+            [user_id, limit],
+        ))
+    elif req.session_type in ("ADAPTIVE", "SRS"):
+        idx_mistakes = len(read_stmts)
+        read_stmts.append((
+            "SELECT canonical_id FROM user_mistakes WHERE user_id = ? AND is_resolved = 0 ORDER BY last_mistake_at DESC LIMIT 30",
+            [user_id],
+        ))
+        idx_solved = len(read_stmts)
+        read_stmts.append(("SELECT DISTINCT canonical_id FROM session_answers WHERE user_id = ? AND is_correct = 1", [user_id]))
+        idx_srs_all = len(read_stmts)
+        read_stmts.append((
+            """
+            SELECT canonical_id, ease_factor, interval_days, repetitions, lapses, last_quality, next_review_at
+            FROM user_question_srs
+            WHERE user_id = ?
+            ORDER BY CASE WHEN next_review_at <= ? THEN 0 ELSE 1 END ASC, next_review_at ASC, ease_factor ASC, lapses DESC
+            """.strip(),
+            [user_id, now_ts],
+        ))
+        idx_cat_perf = len(read_stmts)
+        read_stmts.append((
+            """
+            SELECT COALESCE(cq.category_id, 0) AS category_id,
+                   COUNT(sa.id) AS total_attempts,
+                   COALESCE(SUM(sa.is_correct), 0) AS correct_attempts,
+                   COUNT(DISTINCT sa.canonical_id) AS unique_answered,
+                   COUNT(DISTINCT CASE WHEN sa.is_correct = 1 THEN sa.canonical_id END) AS unique_correct
+            FROM session_answers sa
+            LEFT JOIN canonical_questions cq ON sa.canonical_id = cq.canonical_id
+            WHERE sa.user_id = ?
+            GROUP BY COALESCE(cq.category_id, 0)
+            """.strip(),
+            [user_id],
+        ))
+        idx_cat_mist = len(read_stmts)
+        read_stmts.append((
+            """
+            SELECT COALESCE(cq.category_id, 0) AS category_id, COUNT(*) AS active_mistakes
+            FROM user_mistakes um
+            LEFT JOIN canonical_questions cq ON um.canonical_id = cq.canonical_id
+            WHERE um.user_id = ? AND um.is_resolved = 0
+            GROUP BY COALESCE(cq.category_id, 0)
+            """.strip(),
+            [user_id],
+        ))
+
+    with db._get_connection() as conn:
+        batches = fetch_batch_dicts(conn, read_stmts)
+
+    user_row = batches[0][0] if batches[0] else None
+    sub, _ = evaluate_subscription_row(user_row)
+    bookmarks = {r["canonical_id"] for r in batches[1]}
+
+    if req.session_type == "EXAM":
+        used = (int(batches[idx_ft_fin][0]["cnt"] or 0) if batches[idx_ft_fin] else 0) + (
+            int(batches[idx_ft_unfin][0]["cnt"] or 0) if batches[idx_ft_unfin] else 0
+        )
+        if not compute_free_tier_from_counts(sub, used)["has_access"]:
+            raise HTTPException(status_code=403, detail="SUBSCRIPTION_REQUIRED")
+    elif req.session_type == "CUSTOM" and req.total_questions and req.total_questions > 20:
+        if not sub.get("is_pro"):
+            raise HTTPException(status_code=403, detail="SUBSCRIPTION_REQUIRED")
+
     question_ids: List[str] = []
     loaded_questions: List[QuestionItem] = []
     queue_breakdown: Optional[Dict[str, int]] = None
+    srs_map: Dict[str, Dict[str, Any]] = {}
+
     if req.session_type == "EXAM":
-        # 20 questions, 25 minutes standard
         session_data = engine.create_exam_session(language=lang)
         loaded_questions = session_data["questions"]
         question_ids = [q.canonical_id for q in loaded_questions]
         time_limit = req.time_limit_seconds if req.time_limit_seconds is not None else (25 * 60)
     elif req.session_type == "CATEGORY":
-        if req.category_id is None:
-            raise HTTPException(status_code=400, detail="category_id required for CATEGORY session")
-        solved_ok = set(db.get_solved_correct_ids(user_id))
+        solved_ok = {r["canonical_id"] for r in batches[idx_solved]}
         loaded_questions = engine.get_questions_by_category(
             req.category_id,
             language=lang,
@@ -189,16 +275,11 @@ def start_session(
         question_ids = [q.canonical_id for q in loaded_questions]
         time_limit = req.time_limit_seconds or 0
     elif req.session_type == "MISTAKES":
-        limit = req.total_questions if (req.total_questions and req.total_questions > 0) else 50
-        mistake_qids = db.get_user_mistakes(user_id, limit=limit)
+        mistake_qids = [r["canonical_id"] for r in batches[idx_mistakes]]
         if not mistake_qids:
-            raise HTTPException(
-                status_code=400,
-                detail="Xatolar banki bo‘sh. Hali xatolar mavjud emas."
-            )
+            raise HTTPException(status_code=400, detail="Xatolar banki bo‘sh. Hali xatolar mavjud emas.")
         question_ids = mistake_qids
-        loaded_questions = [engine.get_question(qid, language=lang) for qid in question_ids]
-        loaded_questions = [q for q in loaded_questions if q]
+        loaded_questions = [q for q in (engine.get_question(qid, language=lang) for qid in question_ids) if q]
         time_limit = 0
     elif req.session_type == "BILET":
         t_num = req.ticket_number if req.ticket_number is not None else req.category_id
@@ -213,11 +294,39 @@ def start_session(
         time_limit = req.time_limit_seconds or 0
     elif req.session_type in ("ADAPTIVE", "SRS"):
         count = max(5, min(40, int(req.total_questions or 20)))
-        srs_queue = db.get_srs_queue_summary(user_id, total_bank_questions=engine.get_total_question_count(), limit=40)
-        due_srs_ids = srs_queue.get("due_question_ids", [])
-        unresolved = db.get_user_mistakes(user_id, limit=30)
-        solved_ok = db.get_solved_correct_ids(user_id)
-        analytics = db.get_learning_analytics(user_id, engine.get_categories(lang), engine.get_total_question_count())
+        unresolved = [r["canonical_id"] for r in batches[idx_mistakes]]
+        solved_ok = {r["canonical_id"] for r in batches[idx_solved]}
+        due_srs_ids: List[str] = []
+        full_srs_map: Dict[str, Dict[str, Any]] = {}
+        for r in batches[idx_srs_all]:
+            cid = r["canonical_id"]
+            nra = str(r["next_review_at"])
+            is_due = nra <= now_ts
+            if is_due:
+                due_srs_ids.append(cid)
+            ef = round(float(r.get("ease_factor") or 2.5), 2)
+            iv = int(r.get("interval_days") or 0)
+            reps = int(r.get("repetitions") or 0)
+            lapses = int(r.get("lapses") or 0)
+            full_srs_map[cid] = {
+                "ease_factor": ef,
+                "interval_days": iv,
+                "repetitions": reps,
+                "lapses": lapses,
+                "last_quality": int(r.get("last_quality") or 0),
+                "next_review_at": nra,
+                "is_due": is_due,
+                "mastery_level": classify_srs_mastery(reps, iv, ef, lapses),
+            }
+        analytics = db.analytics._assemble_analytics_payload(
+            categories=engine.get_categories(lang),
+            cat_perf_rows=batches[idx_cat_perf],
+            cat_mistakes_rows=batches[idx_cat_mist],
+            scalar_row={},
+            srs_agg={"due_now_count": len(due_srs_ids), "mastered_count": 0},
+            streak_val=0,
+            engine_total_questions=engine.get_total_question_count(),
+        )
         weak_cat_ids = [w["category_id"] for w in analytics.get("weak_categories", [])]
         if req.session_type == "SRS":
             question_ids, queue_breakdown = engine.get_srs_session_question_ids(
@@ -236,6 +345,7 @@ def start_session(
                 due_srs_ids=due_srs_ids,
             )
         loaded_questions = [q for q in (engine.get_question(qid, language=lang) for qid in question_ids) if q]
+        srs_map = {qid: full_srs_map[qid] for qid in question_ids if qid in full_srs_map}
         time_limit = req.time_limit_seconds or 0
     else:  # RANDOM / CUSTOM
         count = req.total_questions or 10
@@ -246,7 +356,7 @@ def start_session(
     if not question_ids:
         raise HTTPException(status_code=400, detail="No questions available for this configuration")
 
-    # Create session record
+    # Create session record + log QUIZ_STARTED atomically in 1 write RT (<= 2 RTs total!)
     show_explanation = False if req.session_type == "EXAM" else (req.show_explanation if req.show_explanation is not None else True)
     session_info = db.create_session(
         user_id=user_id,
@@ -256,12 +366,11 @@ def start_session(
         time_limit_seconds=time_limit,
         category_id=req.category_id,
         show_answer=req.show_answer if req.show_answer is not None else True,
-        show_explanation=show_explanation
+        show_explanation=show_explanation,
+        preloaded_bookmarks=bookmarks,
+        log_event_data={"session_type": req.session_type, "count": len(loaded_questions)},
     )
 
-    # Fetch serialized question objects (using bookmarks fetched atomically with session)
-    bookmarks = session_info.get("bookmark_ids") or set()
-    srs_map = db.get_question_srs_map(user_id, question_ids) if req.session_type in ("SRS", "ADAPTIVE") else {}
     reveal_correct_upfront = req.session_type != "EXAM"
     questions_list = []
     for q in loaded_questions:
@@ -284,10 +393,6 @@ def start_session(
     }
     if queue_breakdown is not None:
         payload["queue_breakdown"] = queue_breakdown
-    try:
-        log_user_event(user_id, "QUIZ_STARTED", {"session_type": req.session_type, "count": len(questions_list)})
-    except Exception:
-        pass
     return payload
 
 # 4. Submit Answer
@@ -306,13 +411,27 @@ def submit_answer(
     db: BotDatabase = Depends(get_db)
 ):
     user_id = user["user_id"]
-    session = db.get_session(req.session_id)
-    if not session:
+    try:
+        out = db.submit_session_answer_verified(
+            session_id=req.session_id,
+            user_id=user_id,
+            canonical_id=req.canonical_id,
+            selected_key=req.selected_key,
+            answer_checker=lambda qid, skey, qlang: engine.check_answer(qid, skey, language=qlang),
+            requested_lang=req.language,
+            response_time_ms=req.response_time_ms,
+            quality=req.quality,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    err = out.get("error")
+    if err == "NOT_FOUND":
         raise HTTPException(status_code=404, detail="Session not found")
-    if session.get("user_id") != user_id:
+    if err == "FORBIDDEN":
         raise HTTPException(status_code=403, detail="Forbidden: Session belongs to another user")
 
-    if session.get("session_type") == "EXAM" and (session.get("status") in ("FAILED_MISTAKES", "COMPLETED", "TERMINATED") or (session.get("incorrect_count", 0) >= 3)):
+    if out.get("early_terminated"):
         return {
             "canonical_id": req.canonical_id,
             "selected_key": req.selected_key.upper(),
@@ -325,25 +444,8 @@ def submit_answer(
             "srs": None,
         }
 
-    lang = req.language or session.get("language", "uz_latn")
-    try:
-        feedback = engine.check_answer(req.canonical_id, req.selected_key, language=lang)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-    # Record in session_answers + SM-2 schedule atomically (batch DB operations)
-    res = db.process_session_answer(
-        session_id=req.session_id,
-        user_id=user_id,
-        canonical_id=req.canonical_id,
-        selected_key=req.selected_key.upper(),
-        correct_key=feedback.correct_key,
-        is_correct=feedback.is_correct,
-        session_type=session.get("session_type", "EXAM"),
-        response_time_ms=req.response_time_ms,
-        quality=req.quality,
-    )
-
+    feedback = out["feedback"]
+    res = out["result"]
     return {
         "canonical_id": req.canonical_id,
         "selected_key": req.selected_key.upper(),
@@ -372,13 +474,14 @@ def finish_session(
     db: BotDatabase = Depends(get_db)
 ):
     user_id = user["user_id"]
-    session = db.get_session(req.session_id)
-    if not session:
+    bundle = db.get_session_finish_bundle(req.session_id, user_id)
+    if not bundle:
         raise HTTPException(status_code=404, detail="Session not found")
+    session = bundle["session"]
     if session.get("user_id") != user_id:
         raise HTTPException(status_code=403, detail="Forbidden: Session belongs to another user")
 
-    answers = db.get_session_answers(req.session_id)
+    answers = bundle["answers"]
     total_q = session["total_questions"]
     answered_count = len(answers)
     correct_count = sum(1 for a in answers.values() if a["is_correct"])
@@ -390,7 +493,7 @@ def finish_session(
     # DYHXX VMQ 408 rule: 18+ correct AND at most 2 mistakes (3 mistakes = immediate fail)
     passed = (correct_count >= 18 and incorrect_count <= 2) if is_exam else (percentage >= 80.0)
 
-    # Category breakdown
+    # Category breakdown (in-memory catalog lookup -> 0 DB RTs!)
     lang = session["language"]
     category_breakdown: Dict[str, Dict[str, int]] = {}
     for qid, ans in answers.items():
@@ -404,8 +507,9 @@ def finish_session(
         else:
             category_breakdown[cat_name]["incorrect"] += 1
 
-    # Save exam result record and finish session atomically via single round-trip batch
+    # Save exam result record + ticket progress + finish session atomically in 1 single write batch!
     finish_status = "FAILED_MISTAKES" if (is_exam and incorrect_count > 2) else "COMPLETED"
+    ticket_num = int(session["category_id"]) if (session.get("session_type") == "BILET" and session.get("category_id")) else None
     db.finalize_exam_session(
         session_id=req.session_id,
         user_id=user_id,
@@ -419,18 +523,8 @@ def finish_session(
         unanswered=unanswered_count,
         status=finish_status,
         record_exam_result=is_exam,
+        ticket_number=ticket_num,
     )
-
-    if session.get("session_type") == "BILET" and session.get("category_id"):
-        db.upsert_ticket_progress(
-            user_id=user_id,
-            ticket_number=int(session["category_id"]),
-            total_questions=total_q,
-            correct_count=correct_count,
-            percentage=percentage,
-            passed=passed,
-            session_id=req.session_id,
-        )
 
     invalidate_auth_cache(user_id)
 
@@ -601,18 +695,19 @@ def get_session_review_endpoint(
     user: Dict[str, Any] = Depends(get_current_user),
     db: BotDatabase = Depends(get_db)
 ):
-    session = db.get_session(session_id)
-    if not session:
+    bundle = db.get_session_review(session_id, user["user_id"])
+    if not bundle:
         raise HTTPException(status_code=404, detail="Session not found")
-    if session.get("user_id") != user["user_id"]:
+    if bundle.get("forbidden"):
         raise HTTPException(status_code=403, detail="Forbidden: Session belongs to another user")
 
+    session = bundle["session"]
     selected_lang = lang or session.get("language") or user.get("language", "uz_latn")
     if selected_lang not in ["uz_latn", "uz_cyrl", "ru"]:
         selected_lang = "uz_latn"
 
-    answers = db.get_session_answers(session_id)
-    bookmarks = set(db.get_user_bookmarks(user["user_id"]))
+    answers = bundle["answers"]
+    bookmarks = bundle["bookmarks"]
     items = []
     for idx, qid in enumerate(session["question_ids"], start=1):
         q = engine.get_question(qid, language=selected_lang, include_answer_key=True)

@@ -108,7 +108,7 @@
         ? '<div class="surface-card" style="padding:12px 14px;border-color:var(--color-primary-border);">' +
           '  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;">' +
           '    <strong style="font-size:13.5px;">' + R.escHtml(R.t('srs_mode_title')) + '</strong>' +
-          '    <span class="badge-pill badge-primary font-mono">' + Number(srs.retention_rate || 100).toFixed(0) + '% • EF ' + Number(srs.avg_ease_factor || 2.5).toFixed(2) + '</span>' +
+          '    <span class="badge-pill badge-primary font-mono">' + Number(srs.retention_rate || 0).toFixed(0) + '% • EF ' + Number(srs.avg_ease_factor || 2.5).toFixed(2) + '</span>' +
           '  </div>' +
           '  <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--text-secondary);">' +
           '    <span>' + R.escHtml(R.t('srs_due_now_lbl')) + ': <b>' + (srs.due_now_count || 0) + '</b></span>' +
@@ -314,7 +314,7 @@
       '<div class="bento-action-grid">' +
       '  <button type="button" class="surface-card card-interactive action-tile" id="guest-tile-signs"><div class="tile-icon-box badge-primary">' + R.icon('compass', 'lg') + '</div><div class="tile-body"><div class="tile-title">' + R.escHtml(R.t('tab_signs')) + '</div><div class="tile-desc">' + R.escHtml(R.t('home_signs_desc')) + '</div></div></button>' +
       '  <button type="button" class="surface-card card-interactive action-tile" id="guest-tile-rules"><div class="tile-icon-box badge-emerald">' + R.icon('bookOpen', 'lg') + '</div><div class="tile-body"><div class="tile-title">' + R.escHtml(R.t('ref_law_title')) + '</div><div class="tile-desc">' + R.escHtml(R.t('home_rules_desc')) + '</div></div></button>' +
-      '  <button type="button" class="surface-card card-interactive action-tile" id="guest-tile-amaliy"><div class="tile-icon-box badge-amber">' + R.icon('steeringWheel', 'lg') + '</div><div class="tile-body"><div class="tile-title">' + R.escHtml(R.t('amaliy_sim_tab')) + '</div><div class="tile-desc">' + R.escHtml(R.t('card_amaliy_desc')) + '</div></div></button>' +
+      '  <button type="button" class="surface-card card-interactive action-tile" id="guest-tile-amaliy"><div class="tile-icon-box badge-amber">' + R.icon('steeringWheel', 'lg') + '</div><div class="tile-body"><div class="tile-title">' + R.escHtml(R.t('card_amaliy_title')) + '</div><div class="tile-desc">' + R.escHtml(R.t('card_amaliy_desc')) + '</div></div></button>' +
       '  <button type="button" class="surface-card card-interactive action-tile" id="guest-tile-topics"><div class="tile-icon-box badge-neutral">' + R.icon('layers', 'lg') + '</div><div class="tile-body"><div class="tile-title">' + R.escHtml(R.t('card_categories_title')) + '</div><div class="tile-desc">' + R.escHtml(R.t('card_categories_desc')) + '</div></div></button>' +
       '</div>';
 
@@ -366,10 +366,24 @@
       });
     });
 
-    document.getElementById('guest-tile-signs')?.addEventListener('click', function () { R.state.prepareSubtab = 'signs'; R.navigateTo('tests'); });
-    document.getElementById('guest-tile-rules')?.addEventListener('click', function () { R.state.prepareSubtab = 'rules'; R.navigateTo('tests'); });
-    document.getElementById('guest-tile-amaliy')?.addEventListener('click', function () { R.state.amaliySubtab = 'simulator'; R.navigateTo('amaliy'); });
-    document.getElementById('guest-tile-topics')?.addEventListener('click', function () { R.state.prepareSubtab = 'topics'; R.navigateTo('tests'); });
+    document.getElementById('guest-tile-signs')?.addEventListener('click', function () {
+      R.state.refSubMode = 'signs';
+      R.state.prepareSubtab = 'reference';
+      R.navigateTo('tests');
+    });
+    document.getElementById('guest-tile-rules')?.addEventListener('click', function () {
+      R.state.refSubMode = 'rules';
+      R.state.prepareSubtab = 'reference';
+      R.navigateTo('tests');
+    });
+    document.getElementById('guest-tile-amaliy')?.addEventListener('click', function () {
+      R.state.amaliySubtab = 'modules';
+      R.navigateTo('amaliy');
+    });
+    document.getElementById('guest-tile-topics')?.addEventListener('click', function () {
+      R.state.prepareSubtab = 'topics';
+      R.navigateTo('tests');
+    });
   }
 
   R.renderHome = function () {
@@ -387,11 +401,11 @@
         '  <div class="surface-card skeleton-block" style="height:210px;"></div>' +
         '  <div class="surface-card skeleton-block" style="height:210px;"></div>' +
         '</div>' +
-        '<div class="kpi-strip">' +
-        '  <div class="skeleton-block" style="height:76px;"></div>' +
-        '  <div class="skeleton-block" style="height:76px;"></div>' +
-        '  <div class="skeleton-block" style="height:76px;"></div>' +
-        '  <div class="skeleton-block" style="height:76px;"></div>' +
+        '<div class="pillars-mini-grid" style="margin-top:12px;">' +
+        '  <div class="skeleton-block" style="height:68px;"></div>' +
+        '  <div class="skeleton-block" style="height:68px;"></div>' +
+        '  <div class="skeleton-block" style="height:68px;"></div>' +
+        '  <div class="skeleton-block" style="height:68px;"></div>' +
         '</div>';
       return;
     }
@@ -447,12 +461,42 @@
       ? '<span class="badge-pill badge-rose font-mono">' + stats.unresolved_mistakes + '</span>'
       : '<span class="badge-pill badge-emerald font-mono">0</span>';
 
-    const pillarItems = [
-      { key: 'pillar_exam', val: pillars.exam_mastery || 0 },
-      { key: 'pillar_acc', val: pillars.accuracy || 0 },
-      { key: 'pillar_cov', val: pillars.coverage || 0 },
-      { key: 'pillar_err', val: pillars.mistake_hygiene || 0 },
-      { key: 'pillar_streak', val: pillars.pace_and_streak || 0 }
+    const totalExams = Number(stats.total_exams || 0);
+    const passedExams = Number(stats.passed_exams || 0);
+    const examPassPct = totalExams > 0 ? Math.round(Number(stats.pass_rate || 0)) : 0;
+    const totalAns = Number(stats.total_questions_answered || 0);
+    const accPct = totalAns > 0 ? Math.round(Number(stats.accuracy || 0)) : 0;
+    const uniqTested = Number(stats.unique_questions_tested || 0);
+    const bankTotal = Number(stats.total_bank_questions || 1327);
+    const covPct = Math.round(Number(stats.catalog_coverage_pct || 0));
+    const unresolvedErr = Number(stats.unresolved_mistakes || 0);
+    const errHygienePct = Math.round(Number(pillars.mistake_hygiene || 0));
+
+    const telemetryItems = [
+      {
+        key: 'kpi_exams_lbl',
+        display: totalExams > 0 ? (passedExams + ' / ' + totalExams) : '0',
+        pct: examPassPct,
+        tone: examPassPct >= 75 ? 'emerald' : (examPassPct >= 45 ? 'amber' : '')
+      },
+      {
+        key: 'stat_accuracy',
+        display: accPct + '%',
+        pct: accPct,
+        tone: accPct >= 80 ? 'emerald' : (accPct >= 50 ? 'amber' : '')
+      },
+      {
+        key: 'kpi_coverage_lbl',
+        display: uniqTested + ' / ' + bankTotal,
+        pct: covPct,
+        tone: covPct >= 60 ? 'emerald' : (covPct >= 20 ? 'amber' : '')
+      },
+      {
+        key: 'kpi_mistakes_lbl',
+        display: String(unresolvedErr),
+        pct: unresolvedErr === 0 ? 100 : Math.max(0, Math.min(100, errHygienePct)),
+        tone: unresolvedErr === 0 ? 'emerald' : 'amber'
+      }
     ];
 
     const draft = typeof R.getSavedQuizDraft === 'function' ? R.getSavedQuizDraft() : null;
@@ -498,13 +542,12 @@
       '      </div>' +
       '    </div>' +
       '    <div class="pillars-mini-grid">' +
-      pillarItems.map(function (p) {
-        const pv = Math.max(0, Math.min(100, Math.round(p.val)));
-        const barTone = pv >= 75 ? 'emerald' : (pv >= 45 ? 'amber' : '');
+      telemetryItems.map(function (m) {
+        const pv = Math.max(0, Math.min(100, Math.round(m.pct)));
         return '<div class="pillar-mini-cell">' +
-          '  <div class="pillar-mini-val">' + pv + '%</div>' +
-          '  <div class="pillar-mini-bar"><span class="' + barTone + '" style="width:' + pv + '%"></span></div>' +
-          '  <div class="pillar-mini-name">' + R.escHtml(R.t(p.key)) + '</div>' +
+          '  <div class="pillar-mini-val">' + R.escHtml(m.display) + '</div>' +
+          '  <div class="pillar-mini-bar"><span class="' + m.tone + '" style="width:' + pv + '%"></span></div>' +
+          '  <div class="pillar-mini-name">' + R.escHtml(R.t(m.key)) + '</div>' +
           '</div>';
       }).join('') +
       '    </div>' +
@@ -556,13 +599,6 @@
       '  <button type="button" class="btn btn-primary btn-sm" id="home-smart-rec-btn">' + R.escHtml(R.t('btn_start_category')) + ' ' + R.icon('arrowRight', 'xs') + '</button>' +
       '</div>' +
 
-      '<div class="kpi-strip">' +
-      '  <div class="kpi-tile"><span class="kpi-value font-mono">' + Number(stats.pass_rate || 0).toFixed(0) + '%</span><span class="kpi-label">' + R.escHtml(R.t('stat_pass_rate')) + '</span></div>' +
-      '  <div class="kpi-tile"><span class="kpi-value font-mono">' + Number(stats.total_exams || 0) + '</span><span class="kpi-label">' + R.escHtml(R.t('stat_tests_taken')) + '</span></div>' +
-      '  <div class="kpi-tile"><span class="kpi-value font-mono">' + Number(stats.accuracy || 0).toFixed(0) + '%</span><span class="kpi-label">' + R.escHtml(R.t('stat_accuracy')) + '</span></div>' +
-      '  <div class="kpi-tile"><span class="kpi-value font-mono">' + Number(R.state.bookmarksCount || 0) + '</span><span class="kpi-label">' + R.escHtml(R.t('stat_bookmarks')) + '</span></div>' +
-      '</div>' +
-
       '<div class="section-heading"><span>' + R.escHtml(R.t('section_quick_start')) + '</span></div>' +
       '<div class="bento-action-grid">' +
       '  <button type="button" class="surface-card card-interactive action-tile" id="tile-tickets">' +
@@ -575,27 +611,11 @@
       '  </button>' +
       '  <button type="button" class="surface-card card-interactive action-tile" id="tile-mistakes">' +
       '    <div class="tile-icon-box badge-rose">' + R.icon('alertTriangle', 'lg') + '</div>' +
-      '    <div class="tile-body"><div class="tile-title"><span>' + R.escHtml(R.t('card_mistakes_title')) + '</span> ' + mistakesBadge + '</div><div class="tile-desc">' + R.escHtml(R.t('card_mistakes_desc')) + '</div></div>' +
-      '  </button>' +
-      '  <button type="button" class="surface-card card-interactive action-tile" id="tile-adaptive">' +
-      '    <div class="tile-icon-box" style="background:var(--color-indigo-soft);color:var(--color-indigo);">' + R.icon('sliders', 'lg') + '</div>' +
-      '    <div class="tile-body"><div class="tile-title"><span>' + R.escHtml(R.t('adaptive_title')) + '</span>' + srsBadgeHtml + '</div><div class="tile-desc">' + R.escHtml(R.t('custom_quiz_card_desc')) + '</div></div>' +
+      '    <div class="tile-body"><div class="tile-title"><span>' + R.escHtml(R.t('tab_drill')) + '</span> ' + mistakesBadge + srsBadgeHtml + '</div><div class="tile-desc">' + R.escHtml(R.t('card_mistakes_desc')) + '</div></div>' +
       '  </button>' +
       '  <button type="button" class="surface-card card-interactive action-tile" id="tile-amaliy">' +
       '    <div class="tile-icon-box badge-amber">' + R.icon('steeringWheel', 'lg') + '</div>' +
       '    <div class="tile-body"><div class="tile-title">' + R.escHtml(R.t('card_amaliy_title')) + '</div><div class="tile-desc">' + R.escHtml(R.t('card_amaliy_desc')) + '</div></div>' +
-      '  </button>' +
-      '  <button type="button" class="surface-card card-interactive action-tile" id="tile-signs">' +
-      '    <div class="tile-icon-box badge-primary">' + R.icon('compass', 'lg') + '</div>' +
-      '    <div class="tile-body"><div class="tile-title">' + R.escHtml(R.t('tab_signs')) + '</div><div class="tile-desc">' + R.escHtml(R.t('home_signs_desc')) + '</div></div>' +
-      '  </button>' +
-      '  <button type="button" class="surface-card card-interactive action-tile" id="tile-rules">' +
-      '    <div class="tile-icon-box badge-emerald">' + R.icon('bookOpen', 'lg') + '</div>' +
-      '    <div class="tile-body"><div class="tile-title">' + R.escHtml(R.t('ref_law_title')) + '</div><div class="tile-desc">' + R.escHtml(R.t('home_rules_desc')) + '</div></div>' +
-      '  </button>' +
-      '  <button type="button" class="surface-card card-interactive action-tile" id="tile-cheatsheet">' +
-      '    <div class="tile-icon-box badge-neutral">' + R.icon('lightbulb', 'lg') + '</div>' +
-      '    <div class="tile-body"><div class="tile-title">' + R.escHtml(R.t('card_cheatsheet_title')) + (!sub.is_pro ? ' <span class="badge-pill badge-amber">PRO</span>' : '') + '</div><div class="tile-desc">' + R.escHtml(R.t('card_cheatsheet_desc')) + '</div></div>' +
       '  </button>' +
       '</div>';
 
@@ -642,29 +662,16 @@
       R.navigateTo('tests');
     });
     document.getElementById('tile-mistakes')?.addEventListener('click', function () {
-      if ((stats.unresolved_mistakes || 0) <= 0) {
-        R.showToast(R.t('mistakes_zero_title'));
+      if ((stats.unresolved_mistakes || 0) > 0) {
+        R.startSession({ session_type: 'MISTAKES', total_questions: 30 });
         return;
       }
-      R.startSession({ session_type: 'MISTAKES', total_questions: 30 });
-    });
-    document.getElementById('tile-adaptive')?.addEventListener('click', function () {
-      R.state.prepareSubtab = 'adaptive';
+      R.state.prepareSubtab = 'drill';
       R.navigateTo('tests');
     });
     document.getElementById('tile-amaliy')?.addEventListener('click', function () {
+      R.state.amaliySubtab = 'modules';
       R.navigateTo('amaliy');
-    });
-    document.getElementById('tile-signs')?.addEventListener('click', function () {
-      R.state.prepareSubtab = 'signs';
-      R.navigateTo('tests');
-    });
-    document.getElementById('tile-rules')?.addEventListener('click', function () {
-      R.state.prepareSubtab = 'rules';
-      R.navigateTo('tests');
-    });
-    document.getElementById('tile-cheatsheet')?.addEventListener('click', function () {
-      R.openCheatsheetModal();
     });
   };
 })();

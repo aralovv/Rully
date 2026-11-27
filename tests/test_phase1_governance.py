@@ -116,6 +116,7 @@ def test_migration_001_002_turso_gap_simulation_and_rollback(tmp_path):
         "idx_exam_results_user",
         "idx_session_answers_user_canon",
         "idx_session_answers_user_recent",
+        "idx_session_answers_user_answered",
         "idx_sessions_user_status",
         "idx_ticket_progress_user",
     ):
@@ -165,7 +166,6 @@ def test_migration_001_002_turso_gap_simulation_and_rollback(tmp_path):
     assert conn.execute("PRAGMA foreign_key_check;").fetchall() == []
 
     # Verify BotDatabase session answer submission & ticket progress succeed cleanly after migration
-    BotDatabase._ticket_schema_ready = False
     bot_db = BotDatabase(sim_db)
     ans_res = bot_db.process_session_answer("SIM-SESS-1", uid, "CANON-YHQ-0002", "B", "B", True, "EXAM")
     assert ans_res["is_new"] is True

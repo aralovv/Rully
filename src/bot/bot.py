@@ -2,6 +2,7 @@
 Main Bot Application Factory & Command Configuration.
 """
 import logging
+from typing import Optional
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
@@ -68,7 +69,7 @@ async def setup_bot_commands(bot: Bot):
 
     logger.info("Bot commands successfully registered in multiple languages")
 
-def create_bot_app() -> tuple[Bot, Dispatcher, BotDatabase, AvtotestProductEngine]:
+def create_bot_app(product_engine: Optional[AvtotestProductEngine] = None) -> tuple[Bot, Dispatcher, BotDatabase, AvtotestProductEngine]:
     bot = Bot(
         token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
@@ -77,13 +78,13 @@ def create_bot_app() -> tuple[Bot, Dispatcher, BotDatabase, AvtotestProductEngin
     dp = Dispatcher()
 
     db = BotDatabase(db_path=DB_PATH)
-    product_engine = AvtotestProductEngine(db_path=DB_PATH)
+    engine_inst = product_engine if product_engine is not None else AvtotestProductEngine(db_path=DB_PATH)
 
     # Attach middlewares
-    dp.update.middleware(DependencyInjectionMiddleware(db=db, product_engine=product_engine))
+    dp.update.middleware(DependencyInjectionMiddleware(db=db, product_engine=engine_inst))
     dp.update.middleware(SimpleRateLimitMiddleware(limit_seconds=0.15))
 
     # Register handlers
     dp.include_router(main_router)
 
-    return bot, dp, db, product_engine
+    return bot, dp, db, engine_inst

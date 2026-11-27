@@ -456,8 +456,13 @@
       R.state.tickets = []; // Force fresh ticket mastery badge next load
       R.state.analytics = null;
       R.state.srsQueue = null;
-      await R.refreshProfileSnapshot();
-      R.loadAnalyticsAsync();
+      R.state.bookmarksLoaded = false;
+      if (typeof R.bootRefresh === 'function') {
+        await R.bootRefresh();
+      } else {
+        await R.refreshProfileSnapshot();
+        R.loadAnalyticsAsync();
+      }
       R.renderResults(fin, qz.ticketNumber);
     } catch (err) {
       R.showToast(err.message || R.t('ai_generic_error'));

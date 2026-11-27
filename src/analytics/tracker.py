@@ -249,75 +249,67 @@ def get_real_activity_analytics() -> Dict[str, Any]:
     }
 
 
+def build_retention_query_stmt() -> tuple[str, list]:
+    """SQLite & Turso compatible single SQL cohort retention query (avoids full table loads)."""
+    sql = """
+    SELECT
+        reg_date,
+        COUNT(*) AS users_count,
+        COALESCE(SUM(CASE WHEN EXISTS (
+            SELECT 1 FROM user_activity_events e
+            WHERE e.user_id = u_base.user_id
+              AND substr(e.created_at, 1, 10) = date(u_base.reg_date, '+1 day')
+        ) THEN 1 ELSE 0 END), 0) AS d1_retained,
+        COALESCE(SUM(CASE WHEN EXISTS (
+            SELECT 1 FROM user_activity_events e
+            WHERE e.user_id = u_base.user_id
+              AND substr(e.created_at, 1, 10) = date(u_base.reg_date, '+7 day')
+        ) THEN 1 ELSE 0 END), 0) AS d7_retained,
+        COALESCE(SUM(CASE WHEN EXISTS (
+            SELECT 1 FROM user_activity_events e
+            WHERE e.user_id = u_base.user_id
+              AND substr(e.created_at, 1, 10) = date(u_base.reg_date, '+30 day')
+        ) THEN 1 ELSE 0 END), 0) AS d30_retained
+    FROM (
+        SELECT user_id, substr(created_at, 1, 10) AS reg_date
+        FROM telegram_users
+        WHERE created_at IS NOT NULL AND length(created_at) >= 10
+    ) u_base
+    GROUP BY reg_date
+    ORDER BY reg_date DESC
+    LIMIT 10
+    """.strip()
+    return (sql, [])
+
+
+def parse_retention_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    summary = []
+    for r in rows:
+        count = int(r.get("users_count") or 0)
+        d1 = int(r.get("d1_retained") or 0)
+        d7 = int(r.get("d7_retained") or 0)
+        d30 = int(r.get("d30_retained") or 0)
+        summary.append({
+            "cohort_date": r["reg_date"],
+            "users_count": count,
+            "d1_retained": d1,
+            "d1_pct": round(d1 / count * 100, 1) if count else 0.0,
+            "d7_retained": d7,
+            "d7_pct": round(d7 / count * 100, 1) if count else 0.0,
+            "d30_retained": d30,
+            "d30_pct": round(d30 / count * 100, 1) if count else 0.0,
+        })
+    total_cohort_users = sum(item["users_count"] for item in summary)
+    d1_pct = round(sum(item["d1_retained"] for item in summary) / total_cohort_users * 100, 1) if total_cohort_users else 0.0
+    d7_pct = round(sum(item["d7_retained"] for item in summary) / total_cohort_users * 100, 1) if total_cohort_users else 0.0
+    d30_pct = round(sum(item["d30_retained"] for item in summary) / total_cohort_users * 100, 1) if total_cohort_users else 0.0
+    return {"d1_pct": d1_pct, "d7_pct": d7_pct, "d30_pct": d30_pct, "cohorts": summary}
+
+
 def get_retention_analytics() -> Dict[str, Any]:
-    """Calculates D1, D7, and D30 user retention metrics in O(1) constant SQL queries."""
+    """Calculates D1, D7, and D30 user retention metrics via single SQL GROUP BY cohort query."""
+    sql, params = build_retention_query_stmt()
     with _get_connection() as conn:
-        c = conn.cursor()
-        c.execute("SELECT user_id, substr(created_at, 1, 10) as reg_date FROM telegram_users WHERE created_at IS NOT NULL")
-        users = c.fetchall()
-
-        c.execute(
-            """
-            SELECT DISTINCT user_id, substr(created_at, 1, 10) as act_date
-            FROM user_activity_events
-            WHERE created_at IS NOT NULL
-            """
-        )
-        active_dates_by_uid: Dict[int, set] = {}
-        for r in c.fetchall():
-            active_dates_by_uid.setdefault(int(r[0]), set()).add(r[1])
-
-        cohorts: Dict[str, Dict[str, Any]] = {}
-        for u in users:
-            uid = int(u[0] if not hasattr(u, "keys") else u["user_id"])
-            reg_date = str(u[1] if not hasattr(u, "keys") else u["reg_date"])
-            if len(reg_date) != 10:
-                continue
-            cohort = cohorts.setdefault(reg_date, {"users": [], "d1": 0, "d7": 0, "d30": 0})
-            cohort["users"].append(uid)
-
-        for reg_date, cohort in cohorts.items():
-            try:
-                reg_dt = datetime.strptime(reg_date, "%Y-%m-%d")
-            except ValueError:
-                continue
-            d1_dt = (reg_dt + timedelta(days=1)).strftime("%Y-%m-%d")
-            d7_dt = (reg_dt + timedelta(days=7)).strftime("%Y-%m-%d")
-            d30_dt = (reg_dt + timedelta(days=30)).strftime("%Y-%m-%d")
-
-            for uid in cohort["users"]:
-                dates = active_dates_by_uid.get(uid)
-                if not dates:
-                    continue
-                if d1_dt in dates:
-                    cohort["d1"] += 1
-                if d7_dt in dates:
-                    cohort["d7"] += 1
-                if d30_dt in dates:
-                    cohort["d30"] += 1
-
-        summary = []
-        for reg_date, cohort in sorted(cohorts.items(), reverse=True)[:10]:
-            count = len(cohort["users"])
-            summary.append({
-                "cohort_date": reg_date,
-                "users_count": count,
-                "d1_retained": cohort["d1"],
-                "d1_pct": round(cohort["d1"] / count * 100, 1) if count else 0,
-                "d7_retained": cohort["d7"],
-                "d7_pct": round(cohort["d7"] / count * 100, 1) if count else 0,
-                "d30_retained": cohort["d30"],
-                "d30_pct": round(cohort["d30"] / count * 100, 1) if count else 0
-            })
-
-        total_cohort_users = sum(item["users_count"] for item in summary)
-        d1_pct = round(sum(item["d1_retained"] for item in summary) / total_cohort_users * 100, 1) if total_cohort_users else 0.0
-        d7_pct = round(sum(item["d7_retained"] for item in summary) / total_cohort_users * 100, 1) if total_cohort_users else 0.0
-        d30_pct = round(sum(item["d30_retained"] for item in summary) / total_cohort_users * 100, 1) if total_cohort_users else 0.0
-
-        return {
-            "d1_pct": d1_pct,
-            "d7_pct": d7_pct,
-            "d30_pct": d30_pct,
-            "cohorts": summary,
-        }
+        from src.db_adapter import fetch_batch_dicts
+        rows = fetch_batch_dicts(conn, [(sql, params)])[0]
+    return parse_retention_rows(rows)

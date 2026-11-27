@@ -100,16 +100,19 @@ def get_system_health(current_admin: dict = Depends(get_current_admin)):
         c.execute("PRAGMA foreign_key_check;")
         fk_violations = len(c.fetchall())
 
-        # Table row counts
+        # Table row counts + catalog version in 1 single SQL UNION ALL pass
         tables_to_check = [
             "telegram_users", "user_subscriptions", "payment_orders",
             "payment_events", "payment_transactions", "unmatched_payments",
             "payment_review_cases", "user_activity_events"
         ]
-        counts = {}
-        for tbl in tables_to_check:
-            c.execute(f"SELECT COUNT(*) FROM {tbl}")
-            counts[tbl] = c.fetchone()[0]
+        union_sql = " UNION ALL ".join(
+            f"SELECT '{tbl}' AS tbl, COUNT(*) AS cnt FROM {tbl}" for tbl in tables_to_check
+        )
+        c.execute(union_sql)
+        counts = {tbl: 0 for tbl in tables_to_check}
+        for r in c.fetchall():
+            counts[str(r[0])] = int(r[1] or 0)
 
         catalog_version = None
         try:

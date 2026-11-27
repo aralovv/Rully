@@ -185,10 +185,11 @@ async def _launch_ticket_session(
         return False
     session = db.create_session(
         user_id=user_id,
-        session_type="TICKET",
+        session_type="BILET",
         language=lang,
         question_ids=qids,
         time_limit_seconds=0,
+        category_id=ticket_no,
     )
     await render_session_question(bot, chat_id, session, product_engine, db)
     return True

@@ -29,7 +29,12 @@
       if (window.history && typeof window.history.replaceState === 'function' && window.location.protocol !== 'about:') {
         const curHash = String(window.location.hash || '');
         if (!curHash.includes('tgWebAppData=')) {
-          window.history.replaceState(null, '', '#' + tabName);
+          const sub = R.state.prepareSubtab || 'tickets';
+          const refPart = sub === 'reference' ? '/' + (R.state.refSubMode === 'rules' ? 'rules' : 'signs') : '';
+          const hashTarget = tabName === 'tests'
+            ? '#tests/' + sub + refPart
+            : '#' + tabName;
+          window.history.replaceState(null, '', hashTarget);
         }
       }
     } catch (e) {}
@@ -40,6 +45,7 @@
       R.renderPrepare();
       R.loadPrepareData();
     } else if (tabName === 'amaliy') {
+      R.state.amaliySubtab = R.state.isGuest ? 'penalty' : (R.state.amaliySubtab || 'modules');
       R.renderAmaliy();
       R.loadAmaliyData();
     } else if (tabName === 'ai') {
@@ -84,7 +90,17 @@
       return true;
     }
 
-    if (route === 'amaliy') {
+    if (route === 'home') {
+      R.navigateTo('home');
+      return true;
+    }
+    if (route === 'amaliy' || route === 'practical' || route === 'amaliy/modules') {
+      R.state.amaliySubtab = R.state.isGuest ? 'penalty' : 'modules';
+      R.navigateTo('amaliy');
+      return true;
+    }
+    if (route === 'amaliy/penalty' || route === 'penalty' || route === 'jarima') {
+      R.state.amaliySubtab = 'penalty';
       R.navigateTo('amaliy');
       return true;
     }
@@ -100,32 +116,46 @@
       R.startSession({ session_type: 'EXAM' });
       return true;
     }
-    if (route === 'mistakes' && typeof R.startSession === 'function') {
-      R.startSession({ session_type: 'MISTAKES' });
+    if (route === 'mistakes') {
+      R.state.prepareSubtab = 'drill';
+      if (typeof R.startSession === 'function' && !R.state.isGuest) {
+        R.startSession({ session_type: 'MISTAKES', total_questions: 30 });
+      } else {
+        R.navigateTo('tests');
+      }
       return true;
     }
-    if (route === 'srs' || route === 'takrorlash' || route === 'adaptive') {
-      R.state.prepareSubtab = 'adaptive';
+    if (route === 'srs' || route === 'takrorlash' || route === 'adaptive' || route === 'saved' || route === 'custom' || route === 'drill' || route === 'tests/drill' || route === 'prepare/drill') {
+      R.state.prepareSubtab = 'drill';
       R.navigateTo('tests');
       return true;
     }
-    if (route === 'signs' || route === 'belgilar') {
-      R.state.prepareSubtab = 'signs';
+    if (route === 'signs' || route === 'belgilar' || route === 'tests/reference/signs' || route === 'prepare/reference/signs') {
+      R.state.refSubMode = 'signs';
+      R.state.prepareSubtab = 'reference';
       R.navigateTo('tests');
       return true;
     }
-    if (route === 'rules' || route === 'qoidalar' || route === 'law') {
-      R.state.prepareSubtab = 'rules';
+    if (route === 'rules' || route === 'qoidalar' || route === 'law' || route === 'tests/reference/rules' || route === 'prepare/reference/rules' || route === 'reference' || route === 'tests/reference' || route === 'prepare/reference') {
+      R.state.refSubMode = (route === 'reference' || route === 'tests/reference' || route === 'prepare/reference')
+        ? (R.state.refSubMode || 'signs')
+        : 'rules';
+      R.state.prepareSubtab = 'reference';
       R.navigateTo('tests');
       return true;
     }
-    if (route === 'tickets' || route === 'bilets') {
+    if (route === 'tickets' || route === 'bilets' || route === 'tests/tickets' || route === 'prepare/tickets' || route === 'prepare') {
       R.state.prepareSubtab = 'tickets';
       R.navigateTo('tests');
       return true;
     }
-    if (route === 'tests' || route === 'topics') {
+    if (route === 'topics' || route === 'categories' || route === 'mavzular' || route === 'tests/topics' || route === 'prepare/topics') {
       R.state.prepareSubtab = 'topics';
+      R.navigateTo('tests');
+      return true;
+    }
+    if (route === 'tests') {
+      R.state.prepareSubtab = R.state.prepareSubtab || 'tickets';
       R.navigateTo('tests');
       return true;
     }
@@ -192,6 +222,40 @@
     } catch (e) {}
   };
 
+  function applyBootBundle(data) {
+    if (!data) return;
+    if (data.user) R.state.user = data.user;
+    R.state.lang = R.normalizeLang(data.language || (data.user && data.user.language) || R.state.lang);
+    if (data.subscription) R.state.subscription = data.subscription;
+    if (data.free_tier) R.state.freeTier = data.free_tier;
+    if (data.streak) R.state.streak = data.streak;
+    if (data.stats) R.state.stats = data.stats;
+    if (Array.isArray(data.history)) R.state.history = data.history;
+    if (data.bookmarks_count !== undefined) R.state.bookmarksCount = data.bookmarks_count;
+    if (Array.isArray(data.categories) && data.categories.length) R.state.categories = data.categories;
+    if (data.analytics) R.state.analytics = data.analytics;
+    if (data.ai_usage_today) R.state.ai.usage = data.ai_usage_today;
+    R.state.isGuest = false;
+    R.state.authPending = false;
+  }
+
+  R.bootRefresh = async function () {
+    try {
+      const boot = await R.api('/api/miniapp/boot', {
+        method: 'POST',
+        body: { init_data: R.state.initData || R.resolveInitData() || null, lang: R.state.lang }
+      });
+      applyBootBundle(boot);
+      R.syncShellUI();
+      if (R.state.activeTab === 'home') R.renderHome();
+      else if (R.state.activeTab === 'tests') R.renderPrepare();
+      else if (R.state.activeTab === 'profile') R.renderProfile();
+      else if (R.state.activeTab === 'ai') R.renderAiView();
+    } catch (e) {
+      await R.refreshProfileSnapshot();
+    }
+  };
+
   R.loadAnalyticsAsync = async function () {
     try {
       const data = await R.api('/api/learning/analytics?lang=' + R.state.lang);
@@ -225,7 +289,16 @@
     } catch (e) {}
     R.syncShellUI();
     const dl = R.resolveDeepLinkRoute();
-    if (dl === 'signs' || dl === 'belgilar' || dl === 'rules' || dl === 'qoidalar' || dl === 'law' || dl === 'amaliy' || dl === 'profile') {
+    const guestAllowed = new Set([
+      'tests', 'tests/tickets', 'tests/topics', 'tests/drill',
+      'tests/reference', 'tests/reference/signs', 'tests/reference/rules',
+      'prepare', 'prepare/tickets', 'prepare/topics', 'prepare/drill',
+      'prepare/reference', 'prepare/reference/signs', 'prepare/reference/rules',
+      'tickets', 'topics', 'drill', 'reference',
+      'signs', 'belgilar', 'rules', 'qoidalar', 'law',
+      'amaliy', 'practical', 'amaliy/modules', 'amaliy/penalty', 'penalty', 'jarima', 'profile'
+    ]);
+    if (guestAllowed.has(dl)) {
       R.applyDeepLinkRoute(dl);
     } else {
       R.renderHome();
@@ -343,31 +416,13 @@
     R.renderHome();
 
     try {
-      if (R.state.initData) {
-        const auth = await R.api('/api/auth/telegram', {
-          method: 'POST',
-          body: { init_data: R.state.initData }
-        });
-        R.state.user = auth.user;
-        R.state.lang = R.normalizeLang(auth.user && auth.user.language);
-        R.state.subscription = auth.subscription || R.state.subscription;
-        R.state.freeTier = auth.free_tier || R.state.freeTier;
-        R.state.streak = auth.streak || R.state.streak;
-        R.state.stats = auth.stats || {};
-        R.state.authPending = false;
-        R.refreshProfileSnapshot();
-      } else {
-        // Local dev server allows dev user 8809526955; production returns 401 -> branded Telegram gate
-        const me = await R.api('/api/user/me');
-        R.state.user = me.user;
-        R.state.lang = R.normalizeLang(me.user && me.user.language);
-        R.state.subscription = me.subscription || R.state.subscription;
-        R.state.freeTier = me.free_tier || R.state.freeTier;
-        R.state.streak = me.streak || R.state.streak;
-        R.state.stats = me.stats || {};
-        R.state.history = me.history || [];
-        R.state.bookmarksCount = me.bookmarks_count || 0;
-        R.state.authPending = false;
+      const boot = await R.api('/api/miniapp/boot', {
+        method: 'POST',
+        body: { init_data: R.state.initData || null }
+      });
+      applyBootBundle(boot);
+      if (R.state.lang !== 'uz_latn') {
+        await R.loadLocaleJson(R.state.lang);
       }
 
       R.syncShellUI();
@@ -377,7 +432,6 @@
       if (typeof R.maybeShowOnboarding === 'function') {
         R.maybeShowOnboarding();
       }
-      R.loadAnalyticsAsync();
       window.addEventListener('hashchange', function () {
         R.applyDeepLinkRoute();
       });

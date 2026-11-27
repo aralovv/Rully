@@ -77,8 +77,9 @@ def test_phase4_frontend_modules_and_i18n_parity():
     assert "openLawModal" in ref_js
 
     prep_js = (ROOT_DIR / "static" / "js" / "views" / "prepare.js").read_text(encoding="utf-8")
-    assert "data-prep-tab=\"signs\"" in prep_js
-    assert "data-prep-tab=\"rules\"" in prep_js
+    assert "data-prep-tab=\"reference\"" in prep_js
+    assert "data-ref-mode=\"signs\"" in prep_js
+    assert "data-ref-mode=\"rules\"" in prep_js
     assert "R.renderSignsExplorer" in prep_js
     assert "R.renderLawExplorer" in prep_js
 
@@ -90,11 +91,13 @@ def test_phase4_frontend_modules_and_i18n_parity():
     prof_js = (ROOT_DIR / "static" / "js" / "views" / "profile.js").read_text(encoding="utf-8")
     assert "cs.rules_boxes" in prof_js
     assert "cs-search-input" in prof_js
-    assert "R.openLawModal" in prof_js
+    assert "R.openInfoModal('rules')" in prof_js
 
     home_js = (ROOT_DIR / "static" / "js" / "views" / "home.js").read_text(encoding="utf-8")
-    assert "tile-signs" in home_js
-    assert "tile-rules" in home_js
+    assert "guest-tile-signs" in home_js
+    assert "guest-tile-rules" in home_js
+    assert "tile-tickets" in home_js
+    assert "tile-categories" in home_js
 
     trans_js = (ROOT_DIR / "static" / "js" / "translations.js").read_text(encoding="utf-8")
     for key in (

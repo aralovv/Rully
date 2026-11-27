@@ -6,6 +6,7 @@ lapse recovery, mastery classification, and atomic SQLite/Turso upsert builders.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -131,20 +132,69 @@ def compute_next_sm2_state(
     }
 
 
+_SRS_SNAPSHOT_FIELDS = (
+    "ease_factor",
+    "interval_days",
+    "repetitions",
+    "lapses",
+    "last_quality",
+    "last_reviewed_at",
+    "next_review_at",
+)
+
+
+def serialize_srs_prev_state(prev_state: Optional[Dict[str, Any]]) -> str:
+    """Serializes pre-answer SM-2 card state cleanly (storing JSON 'null' for new cards)."""
+    if prev_state is None:
+        return "null"
+    compact = {k: prev_state.get(k) for k in _SRS_SNAPSHOT_FIELDS if k in prev_state}
+    return json.dumps(compact, ensure_ascii=True, separators=(",", ":"))
+
+
 def build_srs_upsert_stmt(
     user_id: int,
     canonical_id: str,
     state: Dict[str, Any],
+    prev_state_json: Optional[str] = None,
 ) -> Tuple[str, List[Any]]:
     """
     Returns an atomic idempotent UPSERT statement for user_question_srs compatible with
     both local SQLite and remote Turso execute_batch().
+    Persists prev_state_json so post-answer recalibration works across stateless workers.
     """
+    if prev_state_json is None:
+        sql = """
+        INSERT INTO user_question_srs (
+            user_id, canonical_id, ease_factor, interval_days,
+            repetitions, lapses, last_quality, last_reviewed_at, next_review_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, canonical_id) DO UPDATE SET
+            ease_factor = excluded.ease_factor,
+            interval_days = excluded.interval_days,
+            repetitions = excluded.repetitions,
+            lapses = excluded.lapses,
+            last_quality = excluded.last_quality,
+            last_reviewed_at = excluded.last_reviewed_at,
+            next_review_at = excluded.next_review_at
+        """
+        params = [
+            int(user_id),
+            str(canonical_id),
+            float(state["ease_factor"]),
+            int(state["interval_days"]),
+            int(state["repetitions"]),
+            int(state["lapses"]),
+            int(state["last_quality"]),
+            str(state["last_reviewed_at"]),
+            str(state["next_review_at"]),
+        ]
+        return (sql.strip(), params)
+
     sql = """
     INSERT INTO user_question_srs (
         user_id, canonical_id, ease_factor, interval_days,
-        repetitions, lapses, last_quality, last_reviewed_at, next_review_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        repetitions, lapses, last_quality, last_reviewed_at, next_review_at, prev_state_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(user_id, canonical_id) DO UPDATE SET
         ease_factor = excluded.ease_factor,
         interval_days = excluded.interval_days,
@@ -152,7 +202,8 @@ def build_srs_upsert_stmt(
         lapses = excluded.lapses,
         last_quality = excluded.last_quality,
         last_reviewed_at = excluded.last_reviewed_at,
-        next_review_at = excluded.next_review_at
+        next_review_at = excluded.next_review_at,
+        prev_state_json = excluded.prev_state_json
     """
     params = [
         int(user_id),
@@ -164,5 +215,6 @@ def build_srs_upsert_stmt(
         int(state["last_quality"]),
         str(state["last_reviewed_at"]),
         str(state["next_review_at"]),
+        prev_state_json,
     ]
     return (sql.strip(), params)

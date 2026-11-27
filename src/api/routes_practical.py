@@ -1,15 +1,15 @@
 """
 Practical Driving Exam (Amaliy Imtihon) API endpoints for RULLY Mini App.
-Provides curriculum modules, official checklist, and situational driving scenarios.
+Provides core instructional modules and step-by-step practice guidance.
 """
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from src.api.deps import get_current_user, get_db
 from src.bot.database import BotDatabase
-from src.amaliy_curriculum import PRACTICAL_MODULES, PRACTICAL_CHECKLIST, PRACTICAL_SCENARIOS
+from src.amaliy_curriculum import PRACTICAL_MODULES
 
 router = APIRouter(prefix="/api/amaliy", tags=["Practical Exam"])
 
@@ -118,124 +118,4 @@ def get_module_detail(
         "common_mistakes": mistakes,
         "disqualification_trap": trap,
         "is_completed": is_done
-    }
-
-# 3. Official Autodrome & City Readiness Checklist
-@router.get("/checklist")
-def get_checklist(
-    lang: Optional[str] = Query(None),
-    user: Dict[str, Any] = Depends(get_current_user),
-    db: BotDatabase = Depends(get_db)
-):
-    user_id = user["user_id"]
-    selected_lang = get_valid_lang(lang, user.get("language", "uz_latn"))
-    user_status = db.get_checklist_status(user_id)
-
-    items = []
-    completed_count = 0
-    for chk in PRACTICAL_CHECKLIST:
-        is_done = user_status.get(chk["id"], False)
-        if is_done:
-            completed_count += 1
-        items.append({
-            "id": chk["id"],
-            "category": chk["category"],
-            "title": chk["title"].get(selected_lang, chk["title"]["uz_latn"]),
-            "is_completed": is_done
-        })
-
-    total = len(items)
-    percentage = round((completed_count / total * 100), 1) if total > 0 else 0.0
-
-    return {
-        "language": selected_lang,
-        "total": total,
-        "completed_count": completed_count,
-        "readiness_percentage": percentage,
-        "items": items
-    }
-
-class ChecklistToggleRequest(BaseModel):
-    item_id: str
-    is_completed: Optional[bool] = None
-
-@router.post("/checklist/toggle")
-def toggle_checklist(
-    req: ChecklistToggleRequest,
-    user: Dict[str, Any] = Depends(get_current_user),
-    db: BotDatabase = Depends(get_db)
-):
-    new_state = db.toggle_checklist_item(user["user_id"], req.item_id, req.is_completed)
-    return {"ok": True, "item_id": req.item_id, "is_completed": new_state}
-
-@router.post("/checklist/reset")
-def reset_checklist(
-    user: Dict[str, Any] = Depends(get_current_user),
-    db: BotDatabase = Depends(get_db)
-):
-    db.reset_checklist(user["user_id"])
-    return {"ok": True}
-
-# 4. Situational Decision Tests
-@router.get("/scenarios")
-def get_scenarios(
-    lang: Optional[str] = Query(None),
-    user: Dict[str, Any] = Depends(get_current_user)
-):
-    selected_lang = get_valid_lang(lang, user.get("language", "uz_latn"))
-    scenarios = []
-    for s in PRACTICAL_SCENARIOS:
-        opts = [
-            {
-                "id": opt["id"],
-                "text": opt["text"].get(selected_lang, opt["text"]["uz_latn"])
-            }
-            for opt in s["options"]
-        ]
-        scenarios.append({
-            "id": s["id"],
-            "title": s["title"].get(selected_lang, s["title"]["uz_latn"]),
-            "situation": s["situation"].get(selected_lang, s["situation"]["uz_latn"]),
-            "options": opts
-        })
-    return {
-        "language": selected_lang,
-        "count": len(scenarios),
-        "scenarios": scenarios
-    }
-
-class ScenarioAnswerRequest(BaseModel):
-    scenario_id: str
-    selected_option: int
-    language: Optional[str] = None
-
-@router.post("/scenarios/answer")
-def answer_scenario(
-    req: ScenarioAnswerRequest,
-    user: Dict[str, Any] = Depends(get_current_user),
-    db: BotDatabase = Depends(get_db)
-):
-    user_id = user["user_id"]
-    selected_lang = get_valid_lang(req.language, user.get("language", "uz_latn"))
-    scen = next((s for s in PRACTICAL_SCENARIOS if s["id"] == req.scenario_id), None)
-    if not scen:
-        raise HTTPException(status_code=404, detail="Scenario not found")
-
-    correct_option = scen["correct_option"]
-    is_correct = (req.selected_option == correct_option)
-
-    # Persist in DB
-    db.record_practical_quiz_result(
-        user_id=user_id,
-        scenario_id=req.scenario_id,
-        selected_option=req.selected_option,
-        is_correct=is_correct
-    )
-
-    return {
-        "scenario_id": req.scenario_id,
-        "selected_option": req.selected_option,
-        "correct_option": correct_option,
-        "is_correct": is_correct,
-        "explanation": scen["explanation"].get(selected_lang, scen["explanation"]["uz_latn"])
     }

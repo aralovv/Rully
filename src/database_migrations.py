@@ -352,12 +352,14 @@ CREATE TABLE IF NOT EXISTS user_question_srs (
     last_quality INTEGER NOT NULL DEFAULT 0,
     last_reviewed_at TEXT NOT NULL,
     next_review_at TEXT NOT NULL,
+    prev_state_json TEXT DEFAULT NULL,
     PRIMARY KEY (user_id, canonical_id),
     FOREIGN KEY (user_id) REFERENCES telegram_users(user_id) ON DELETE CASCADE,
     FOREIGN KEY (canonical_id) REFERENCES canonical_questions(canonical_id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_srs_user_due ON user_question_srs(user_id, next_review_at);
 CREATE INDEX IF NOT EXISTS idx_srs_user_reps ON user_question_srs(user_id, repetitions, lapses);
+CREATE INDEX IF NOT EXISTS idx_session_answers_user_answered ON session_answers(user_id, is_correct, answered_at);
 """
 
 def run_migrations(db_path: str = "master_database.sqlite"):
@@ -449,12 +451,25 @@ def run_turso_migrations(apply: bool = False):
     if not apply:
         conn = get_db_connection()
         try:
-            from src.db.migrations_v2 import verify_phase5_schema_parity, verify_schema_parity
+            from src.db.migrations_v2 import (
+                verify_phase3_schema_parity,
+                verify_phase4_schema_parity,
+                verify_phase5_schema_parity,
+                verify_schema_parity,
+            )
             p1 = verify_schema_parity(conn)
             p5 = verify_phase5_schema_parity(conn)
+            p3 = verify_phase3_schema_parity(conn)
+            p4 = verify_phase4_schema_parity(conn)
             return {
                 "dry_run": True,
-                "parity": {"passed": bool(p1["passed"] and p5["passed"]), "phase1": p1, "phase5": p5},
+                "parity": {
+                    "passed": bool(p1["passed"] and p5["passed"] and p3["passed"] and p4["passed"]),
+                    "phase1": p1,
+                    "phase5": p5,
+                    "phase3": p3,
+                    "phase4": p4,
+                },
             }
         finally:
             conn.close()

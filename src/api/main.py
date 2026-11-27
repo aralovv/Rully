@@ -57,7 +57,10 @@ _CSP_ADMIN_PANEL = (
 def _attach_admin_routers(target_app: FastAPI) -> None:
     """Imports and registers the 12 Admin routers cleanly (deferred on serverless cold starts)."""
     from src.admin.routes_admin_auth import router as admin_auth_router
-    from src.admin.routes_admin_dashboard import router as admin_dashboard_router
+    from src.admin.routes_admin_dashboard import (
+        router as admin_dashboard_router,
+        overview_router as admin_overview_router,
+    )
     from src.admin.routes_admin_users import router as admin_users_router
     from src.admin.routes_admin_plans import router as admin_plans_router
     from src.admin.routes_admin_cards import router as admin_cards_router
@@ -72,6 +75,7 @@ def _attach_admin_routers(target_app: FastAPI) -> None:
     for r in (
         admin_auth_router,
         admin_dashboard_router,
+        admin_overview_router,
         admin_users_router,
         admin_plans_router,
         admin_cards_router,
@@ -235,7 +239,8 @@ async def lifespan(app: FastAPI):
                 global _bot_instance, _dp_instance
                 try:
                     from src.bot.bot import create_bot_app, setup_bot_commands
-                    bot, dp, _, _ = create_bot_app()
+                    from src.api.routes_theory import engine as shared_engine
+                    bot, dp, _, _ = create_bot_app(product_engine=shared_engine)
                     _bot_instance = bot
                     _dp_instance = dp
                     await bot.delete_webhook(drop_pending_updates=True)

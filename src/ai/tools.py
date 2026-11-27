@@ -311,65 +311,33 @@ def tool_get_user_mistakes(user_id: int, limit: int = 5, language: str = "uz_lat
 
 def tool_get_user_statistics(user_id: int, language: str = "uz_latn") -> Dict[str, Any]:
     """Foydalanuvchining umumiy tayyorgarlik darajasi, imtihonlari, SM-2 takrorlash holati va statistikasini olish."""
+    from src.db.repos.analytics_repo import AnalyticsRepo
+    repo = AnalyticsRepo()
     with get_db_connection() as conn:
-        c = conn.cursor()
-        
-        c.execute("""
-        SELECT COUNT(*) as total_exams,
-               SUM(CASE WHEN passed = 1 THEN 1 ELSE 0 END) as passed_exams,
-               AVG(correct_count) as avg_score,
-               AVG(percentage) as avg_percentage
-        FROM exam_results
-        WHERE user_id = ?
-        """, (user_id,))
-        exam_stats = c.fetchone()
-        
-        c.execute("""
-        SELECT COUNT(*) as total_bookmarks FROM user_bookmarks WHERE user_id = ?
-        """, (user_id,))
-        bm_count = c.fetchone()["total_bookmarks"]
-        
-        c.execute("""
-        SELECT COUNT(*) as total_mistakes FROM user_mistakes WHERE user_id = ? AND COALESCE(is_resolved, 0) = 0
-        """, (user_id,))
-        mistake_count = c.fetchone()["total_mistakes"]
+        full = repo.get_ai_full_stats_on_conn(conn, user_id)
+    stats = full["stats"]
+    srs = stats.get("srs_summary") or {}
+    bm_count = full["bookmarks_count"]
+    avg_correct = full["avg_correct"]
+    avg_pct = full["avg_pct"]
 
-        srs_tracked = 0
-        srs_due_now = 0
-        srs_mastered = 0
-        try:
-            now_ts = datetime.utcnow().isoformat()
-            c.execute(
-                """
-                SELECT COUNT(*) AS tracked_count,
-                       COALESCE(SUM(CASE WHEN next_review_at <= ? THEN 1 ELSE 0 END), 0) AS due_now_count,
-                       COALESCE(SUM(CASE WHEN repetitions >= 3 AND interval_days >= 21 AND ease_factor >= 2.0 THEN 1 ELSE 0 END), 0) AS mastered_count
-                FROM user_question_srs
-                WHERE user_id = ?
-                """,
-                (now_ts, user_id),
-            )
-            srs_row = dict(c.fetchone() or {})
-            srs_tracked = int(srs_row.get("tracked_count") or 0)
-            srs_due_now = int(srs_row.get("due_now_count") or 0)
-            srs_mastered = int(srs_row.get("mastered_count") or 0)
-        except Exception:
-            pass
-
-        srs_retention = round(((srs_tracked - min(srs_tracked, srs_due_now)) / srs_tracked) * 100.0, 1) if srs_tracked > 0 else 100.0
-        
-        return {
-            "total_exams_taken": exam_stats["total_exams"] or 0,
-            "passed_exams": exam_stats["passed_exams"] or 0,
-            "average_correct_answers": round(exam_stats["avg_score"] or 0.0, 1),
-            "average_percentage": round(exam_stats["avg_percentage"] or 0.0, 1),
-            "saved_questions_count": bm_count,
-            "mistakes_in_pool": mistake_count,
-            "srs_tracked_total": srs_tracked,
-            "srs_due_now": srs_due_now,
-            "srs_mastered_count": srs_mastered,
-            "srs_retention_pct": srs_retention,
-        }
+    return {
+        "total_exams_taken": stats["total_exams"],
+        "passed_exams": stats["passed_exams"],
+        "pass_rate": stats["pass_rate"],
+        "accuracy": stats["accuracy"],
+        "readiness_score": stats["readiness_score"],
+        "unique_questions_tested": stats["unique_questions_tested"],
+        "catalog_coverage_pct": stats["catalog_coverage_pct"],
+        "average_correct_answers": avg_correct,
+        "average_percentage": avg_pct,
+        "saved_questions_count": bm_count,
+        "mistakes_in_pool": stats["unresolved_mistakes"],
+        "srs_tracked_total": int(srs.get("tracked_count") or 0),
+        "srs_due_now": int(srs.get("due_now_count") or 0),
+        "srs_mastered_count": int(srs.get("mastered_count") or 0),
+        "srs_retention_pct": float(srs.get("retention_rate") or 0.0),
+    }
 
 def tool_get_srs_review_queue(user_id: int, limit: int = 5, language: str = "uz_latn") -> Dict[str, Any]:
     """Aqlli Takrorlash (SM-2) bo'yicha muddati kelgan yoki eng qiyin savollarni olish."""

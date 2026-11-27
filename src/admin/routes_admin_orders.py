@@ -13,7 +13,7 @@ from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.admin.deps import get_current_admin, require_admin_role
-from src.payments.order_manager import expire_stale_orders
+from src.db_adapter import fetch_batch_dicts, get_db_connection
 
 router = APIRouter(
     prefix="/api/admin/orders",
@@ -21,9 +21,6 @@ router = APIRouter(
     dependencies=[Depends(require_admin_role("FINANCE", "SUPPORT"))],
 )
 DB_PATH = os.getenv("DB_PATH", "master_database.sqlite")
-
-
-from src.db_adapter import get_db_connection
 
 def _get_connection():
     return get_db_connection(DB_PATH)
@@ -39,8 +36,7 @@ def list_orders(
     sort_order: str = Query("desc", description="desc, asc"),
     current_admin: dict = Depends(get_current_admin)
 ):
-    """Lists orders filtered by lifecycle tab with search, tab counters, and pagination."""
-    expire_stale_orders()
+    """Lists orders filtered by lifecycle tab in 1 batched DB round-trip (zero GET writes)."""
     now_iso = datetime.utcnow().isoformat()
     offset = (page - 1) * limit
     direction = "ASC" if sort_order.lower() == "asc" else "DESC"
@@ -49,7 +45,6 @@ def list_orders(
     conditions = []
     params = []
 
-    # Tab filter
     if tab == "active":
         conditions.append("o.status = 'PENDING' AND o.expires_at > ?")
         params.append(now_iso)
@@ -63,7 +58,6 @@ def list_orders(
     elif tab == "cancelled":
         conditions.append("o.status = 'CANCELLED'")
 
-    # Search filter
     if q:
         q_clean = f"%{q.strip()}%"
         conditions.append("""(
@@ -79,53 +73,56 @@ def list_orders(
     where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
 
     with _get_connection() as conn:
-        c = conn.cursor()
-
-        # Get counts for tabs
-        c.execute(
-            """
-            SELECT 
-                COUNT(*) as all_count,
-                SUM(CASE WHEN status = 'PENDING' AND expires_at > ? THEN 1 ELSE 0 END) as active_count,
-                SUM(CASE WHEN status = 'EXPIRED' OR (status = 'PENDING' AND expires_at <= ?) THEN 1 ELSE 0 END) as expired_count,
-                SUM(CASE WHEN status = 'PAID' THEN 1 ELSE 0 END) as paid_count,
-                SUM(CASE WHEN status = 'PAYMENT_REVIEW_REQUIRED' THEN 1 ELSE 0 END) as review_count,
-                SUM(CASE WHEN status = 'CANCELLED' THEN 1 ELSE 0 END) as cancelled_count
-            FROM payment_orders
-            """,
-            (now_iso, now_iso),
+        batches = fetch_batch_dicts(
+            conn,
+            [
+                (
+                    """
+                    SELECT
+                        COUNT(*) AS all_count,
+                        SUM(CASE WHEN status = 'PENDING' AND expires_at > ? THEN 1 ELSE 0 END) AS active_count,
+                        SUM(CASE WHEN status = 'EXPIRED' OR (status = 'PENDING' AND expires_at <= ?) THEN 1 ELSE 0 END) AS expired_count,
+                        SUM(CASE WHEN status = 'PAID' THEN 1 ELSE 0 END) AS paid_count,
+                        SUM(CASE WHEN status = 'PAYMENT_REVIEW_REQUIRED' THEN 1 ELSE 0 END) AS review_count,
+                        SUM(CASE WHEN status = 'CANCELLED' THEN 1 ELSE 0 END) AS cancelled_count
+                    FROM payment_orders
+                    """.strip(),
+                    [now_iso, now_iso],
+                ),
+                (
+                    f"""
+                    SELECT COUNT(*) AS cnt
+                    FROM payment_orders o
+                    LEFT JOIN telegram_users u ON o.user_id = u.user_id
+                    {where_clause}
+                    """.strip(),
+                    list(params),
+                ),
+                (
+                    f"""
+                    SELECT o.*, u.username, u.first_name, u.last_name
+                    FROM payment_orders o
+                    LEFT JOIN telegram_users u ON o.user_id = u.user_id
+                    {where_clause}
+                    ORDER BY {order_col} {direction}
+                    LIMIT ? OFFSET ?
+                    """.strip(),
+                    list(params) + [limit, offset],
+                ),
+            ],
         )
-        counts_row = c.fetchone()
-        tab_counts = {
-            "all": counts_row["all_count"] or 0,
-            "active": counts_row["active_count"] or 0,
-            "expired": counts_row["expired_count"] or 0,
-            "paid": counts_row["paid_count"] or 0,
-            "review_required": counts_row["review_count"] or 0,
-            "cancelled": counts_row["cancelled_count"] or 0
-        }
 
-        # Filtered total
-        count_query = f"""
-            SELECT COUNT(*) 
-            FROM payment_orders o 
-            LEFT JOIN telegram_users u ON o.user_id = u.user_id 
-            {where_clause}
-        """
-        c.execute(count_query, params)
-        total_items = c.fetchone()[0]
-
-        # Fetch page items
-        data_query = f"""
-            SELECT o.*, u.username, u.first_name, u.last_name
-            FROM payment_orders o
-            LEFT JOIN telegram_users u ON o.user_id = u.user_id
-            {where_clause}
-            ORDER BY {order_col} {direction}
-            LIMIT ? OFFSET ?
-        """
-        c.execute(data_query, params + [limit, offset])
-        orders = [dict(r) for r in c.fetchall()]
+    counts_row = batches[0][0] if batches[0] else {}
+    tab_counts = {
+        "all": counts_row.get("all_count") or 0,
+        "active": counts_row.get("active_count") or 0,
+        "expired": counts_row.get("expired_count") or 0,
+        "paid": counts_row.get("paid_count") or 0,
+        "review_required": counts_row.get("review_count") or 0,
+        "cancelled": counts_row.get("cancelled_count") or 0,
+    }
+    total_items = int(batches[1][0]["cnt"] or 0) if batches[1] else 0
+    orders = batches[2]
 
     return {
         "ok": True,

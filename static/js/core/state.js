@@ -29,13 +29,12 @@
     mistakesList: [],
     bookmarksList: [],
     modules: [],
-    checklist: [],
-    scenarios: [],
     refSigns: null,
     refLaw: null,
     srsQueue: null,
     activeTab: 'home',
-    prepareSubtab: 'topics',
+    prepareSubtab: 'tickets',
+    refSubMode: 'signs',
     topicFilter: 'all',
     topicSearch: '',
     ticketFilter: 'all',
@@ -135,7 +134,7 @@
   R.loadLocaleJson = async function (lang) {
     const valid = R.normalizeLang(lang);
     try {
-      const resp = await fetch('/static/i18n/' + valid + '.json?v=5.0.0');
+      const resp = await fetch('/static/i18n/' + valid + '.json?v=10.0.0');
       if (resp.ok) {
         const bundle = await resp.json();
         window.I18N = window.I18N || {};

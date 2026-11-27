@@ -317,9 +317,18 @@ def validate_admin_session(session_token: str) -> Optional[Dict[str, Any]]:
             conn.commit()
             return None
 
-        # Update last activity
-        c.execute("UPDATE admin_sessions SET last_activity_at = ? WHERE session_id = ?", (now_str, session_token))
-        conn.commit()
+        # Throttle last_activity_at writes (> 120s stale) so admin reads cost 1 RT instead of 2 RTs
+        last_act_raw = row["last_activity_at"] if "last_activity_at" in row.keys() else None
+        needs_touch = True
+        if last_act_raw:
+            try:
+                last_act_dt = datetime.fromisoformat(str(last_act_raw).replace("Z", ""))
+                needs_touch = (now_dt - last_act_dt).total_seconds() > 120.0
+            except Exception:
+                needs_touch = True
+        if needs_touch:
+            c.execute("UPDATE admin_sessions SET last_activity_at = ? WHERE session_id = ?", (now_str, session_token))
+            conn.commit()
 
         return {
             "id": row["admin_id"],

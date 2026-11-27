@@ -7,6 +7,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.filters import Command
 from src.bot.database import BotDatabase
 from src.bot.config import WEB_APP_URL
+from src.bot.keyboards import build_webapp_route_url
 
 mistakes_router = Router(name="mistakes_router")
 
@@ -70,7 +71,7 @@ async def show_mistakes_flow(event: Message | CallbackQuery, db: BotDatabase):
         )
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=btn_text, web_app=WebAppInfo(url=f"{WEB_APP_URL}#profile"))],
+        [InlineKeyboardButton(text=btn_text, web_app=WebAppInfo(url=build_webapp_route_url("mistakes")))],
         [InlineKeyboardButton(text="🏠 Bosh menyu" if lang == "uz_latn" else ("🏠 Бош меню" if lang == "uz_cyrl" else "🏠 Главное меню"), callback_data="menu:main")]
     ])
 

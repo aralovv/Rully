@@ -119,7 +119,9 @@ class AvtotestProductEngine:
         self._preload_cache()
 
     def _get_connection(self):
-        if os.path.exists(self.db_path) and not (is_turso_enabled() and os.path.normpath(self.db_path) == os.path.normpath("master_database.sqlite")):
+        if is_turso_enabled():
+            return get_db_connection(self.db_path)
+        if os.path.exists(self.db_path):
             conn = sqlite3.connect(self.db_path, timeout=15.0, check_same_thread=False)
             conn.row_factory = sqlite3.Row
             return conn
@@ -384,6 +386,7 @@ class AvtotestProductEngine:
 
     # Helper to construct a QuestionItem in a specified language
     def get_question(self, canonical_id: str, language: str = "uz_latn", include_answer_key: bool = True) -> Optional[QuestionItem]:
+        self.ensure_fresh_cache()
         if language not in SUPPORTED_LANGUAGES:
             raise ValueError(f"Unsupported language '{language}'. Choose from {list(SUPPORTED_LANGUAGES.keys())}")
 
@@ -528,6 +531,7 @@ class AvtotestProductEngine:
 
     # 5. 20-Question Exam Simulation
     def create_exam_session(self, language: str = "uz_latn", config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        self.ensure_fresh_cache()
         cfg = dict(DEFAULT_EXAM_CONFIG)
         if config:
             cfg.update(config)
@@ -557,6 +561,7 @@ class AvtotestProductEngine:
 
     # 6. Immediate Feedback on Submitted Answer
     def check_answer(self, canonical_id: str, submitted_key: str, language: str = "uz_latn") -> QuestionFeedback:
+        self.ensure_fresh_cache()
         submitted_key = submitted_key.strip().upper()
 
         if self._cache_questions and canonical_id in self._cache_questions:
@@ -702,6 +707,7 @@ class AvtotestProductEngine:
         return all_ids[start : start + self.TICKET_SIZE]
 
     def get_tickets_summary(self, language: str = "uz_latn") -> List[Dict[str, Any]]:
+        self.ensure_fresh_cache()
         all_ids = self._ordered_all_ids()
         tickets = []
         total_tickets = (len(all_ids) + self.TICKET_SIZE - 1) // self.TICKET_SIZE
@@ -802,6 +808,7 @@ class AvtotestProductEngine:
         Builds a daily "Aqlli Takrorlash" session queue strictly prioritized by:
         1) Overdue SM-2 items (in urgency order), 2) Active mistakes, 3) Weak categories, 4) Fresh bank items.
         """
+        self.ensure_fresh_cache()
         all_ids = self._ordered_all_ids()
         if not all_ids:
             return [], {"due_srs": 0, "mistakes": 0, "weak_or_new": 0}
