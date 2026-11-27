@@ -96,19 +96,19 @@ async def show_custom_test_launcher(event: Message | CallbackQuery, db: BotDatab
     )
     desc = (
         "<b>RULLY</b> platformasida test parametrlarini o‘zingizga moslang:\n\n"
-        "• Savollar sonini tanlash (10 dan 30 tagacha)\n"
+        "• Savollar sonini tanlash (10 dan 100 tagacha)\n"
         "• Telegram uslubidagi qulay vaqt chegarasi slayderi\n"
         "• Noto‘g‘ri javob berilganda to‘g‘risini ko‘rsatish sozlamasi\n"
         "• Har bir savolga qonuniy asos va tushuntirish izohi.\n\n"
         "Aralash testni boshlash uchun quyidagi tugmani bosing:" if lang == "uz_latn" else (
             "<b>RULLY</b> платформасида тест параметрларини ўзингизга мосланг:\n\n"
-            "• Саволлар сонини танлаш (10 дан 30 тагача)\n"
+            "• Саволлар сонини танлаш (10 дан 100 тагача)\n"
             "• Telegram услубидаги қулай вақт чегараси слайдери\n"
             "• Нотўғри жавоб берилганда тўғрисини кўрсатиш созламаси\n"
             "• Ҳар бир саволга қонуний асос ва тушунтириш изоҳи.\n\n"
             "Аралаш тестни бошлаш учун қуйидаги тугмани босинг:" if lang == "uz_cyrl" else
             "В приложении <b>RULLY</b> вы можете настроить параметры тестирования под себя:\n\n"
-            "• Выбор количества вопросов (от 10 до 30)\n"
+            "• Выбор количества вопросов (от 10 до 100)\n"
             "• Удобный слайдер времени в стиле Telegram\n"
             "• Настройка показа правильного ответа при ошибке\n"
             "• Официальные статьи ПДД и подробные пояснения.\n\n"

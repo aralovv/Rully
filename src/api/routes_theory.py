@@ -348,9 +348,22 @@ def start_session(
         srs_map = {qid: full_srs_map[qid] for qid in question_ids if qid in full_srs_map}
         time_limit = req.time_limit_seconds or 0
     else:  # RANDOM / CUSTOM
-        count = req.total_questions or 10
-        loaded_questions = engine.get_random_practice(count=count, language=lang)
-        question_ids = [q.canonical_id for q in loaded_questions]
+        count = max(5, min(100, int(req.total_questions or 10)))
+        if req.category_id:
+            import random
+            cat_questions = engine.get_questions_by_category(
+                int(req.category_id),
+                language=lang,
+                limit=1000,
+            )
+            if len(cat_questions) > count:
+                loaded_questions = random.sample(cat_questions, count)
+            else:
+                loaded_questions = cat_questions
+            question_ids = [q.canonical_id for q in loaded_questions]
+        else:
+            loaded_questions = engine.get_random_practice(count=count, language=lang)
+            question_ids = [q.canonical_id for q in loaded_questions]
         time_limit = req.time_limit_seconds or 0
 
     if not question_ids:

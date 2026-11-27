@@ -1,9 +1,9 @@
 /**
  * RULLY 2.0 Nazariya (Theory) View — 4-Subtab Clean IA:
- * 1. tickets   — Official VMQ 408 Tickets (01..67)
- * 2. topics    — 41 YHQ Categories with mastery tracking
- * 3. drill     — Official Exam + Active Mistakes + SM-2 SRS + Custom Drill + Bookmarks
- * 4. reference — Statutory Road Signs + VMQ 172 Law Reader + Cheatsheet
+ * 1. tickets    — Official VMQ 408 Tickets (01..67)
+ * 2. topics     — 41 YHQ Categories with mastery tracking
+ * 3. drill      — Official Exam + Active Mistakes + SM-2 SRS + Custom Drill + Bookmarks
+ * 4. cheatsheet — Authentic Multilingual Exam Cheatsheet (Inline, zero modal sub-window)
  */
 (function () {
   'use strict';
@@ -19,8 +19,8 @@
     if (k === 'drill' || k === 'adaptive' || k === 'srs' || k === 'takrorlash' || k === 'saved' || k === 'mistakes' || k === 'custom') {
       return 'drill';
     }
-    if (k === 'reference' || k === 'signs' || k === 'belgilar' || k === 'rules' || k === 'qoidalar' || k === 'law') {
-      return 'reference';
+    if (k === 'cheatsheet' || k === 'shpargalka' || k === 'spargalka' || k === 'cheat' || k === 'reference' || k === 'signs' || k === 'rules') {
+      return 'cheatsheet';
     }
     return 'tickets';
   }
@@ -30,10 +30,6 @@
     const sub = normalizeSubtab(R.state.prepareSubtab || 'tickets');
     R.state.prepareSubtab = sub;
     if (R.state.isGuest) {
-      if (sub === 'reference') {
-        if (R.state.refSubMode === 'rules' && typeof R.loadReferenceLaw === 'function') await R.loadReferenceLaw();
-        else if (typeof R.loadReferenceSigns === 'function') await R.loadReferenceSigns();
-      }
       R.renderPrepare();
       return;
     }
@@ -58,10 +54,6 @@
         }));
       }
     }
-    if (sub === 'reference') {
-      if (R.state.refSubMode === 'rules' && typeof R.loadReferenceLaw === 'function') tasks.push(R.loadReferenceLaw());
-      else if (typeof R.loadReferenceSigns === 'function') tasks.push(R.loadReferenceSigns());
-    }
 
     if (tasks.length) {
       try {
@@ -84,10 +76,10 @@
         '<div class="surface-card" style="text-align:center;padding:24px 16px;">' +
         '  <strong style="display:block;font-size:15px;margin-bottom:6px;">' + R.escHtml(R.t('tab_tickets')) + '</strong>' +
         '  <p style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px;">' + R.escHtml(R.t('guest_sync_note')) + '</p>' +
-        '  <button type="button" class="btn btn-primary btn-sm" id="prep-guest-ref-btn">' + R.escHtml(R.t('tab_reference')) + '</button>' +
+        '  <button type="button" class="btn btn-primary btn-sm" id="prep-guest-ref-btn">' + R.escHtml(R.t('card_cheatsheet_title')) + '</button>' +
         '</div>';
       document.getElementById('prep-guest-ref-btn')?.addEventListener('click', function () {
-        R.state.prepareSubtab = 'reference';
+        R.state.prepareSubtab = 'cheatsheet';
         R.renderPrepare();
         R.loadPrepareData();
       });
@@ -176,10 +168,10 @@
         '<div class="surface-card" style="text-align:center;padding:24px 16px;">' +
         '  <strong style="display:block;font-size:15px;margin-bottom:6px;">' + R.escHtml(R.t('tab_categories')) + '</strong>' +
         '  <p style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px;">' + R.escHtml(R.t('guest_sync_note')) + '</p>' +
-        '  <button type="button" class="btn btn-primary btn-sm" id="prep-guest-ref-btn2">' + R.escHtml(R.t('tab_reference')) + '</button>' +
+        '  <button type="button" class="btn btn-primary btn-sm" id="prep-guest-ref-btn2">' + R.escHtml(R.t('card_cheatsheet_title')) + '</button>' +
         '</div>';
       document.getElementById('prep-guest-ref-btn2')?.addEventListener('click', function () {
-        R.state.prepareSubtab = 'reference';
+        R.state.prepareSubtab = 'cheatsheet';
         R.renderPrepare();
         R.loadPrepareData();
       });
@@ -281,10 +273,10 @@
         '<div class="surface-card" style="text-align:center;padding:24px 16px;">' +
         '  <strong style="display:block;font-size:15px;margin-bottom:6px;">' + R.escHtml(R.t('tab_drill')) + '</strong>' +
         '  <p style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px;">' + R.escHtml(R.t('guest_sync_note')) + '</p>' +
-        '  <button type="button" class="btn btn-primary btn-sm" id="prep-guest-sign-btn">' + R.escHtml(R.t('tab_reference')) + '</button>' +
+        '  <button type="button" class="btn btn-primary btn-sm" id="prep-guest-sign-btn">' + R.escHtml(R.t('card_cheatsheet_title')) + '</button>' +
         '</div>';
       document.getElementById('prep-guest-sign-btn')?.addEventListener('click', function () {
-        R.state.prepareSubtab = 'reference';
+        R.state.prepareSubtab = 'cheatsheet';
         R.renderPrepare();
         R.loadPrepareData();
       });
@@ -374,6 +366,8 @@
       '          <button type="button" class="seg-pill" data-qcnt="10">10</button>' +
       '          <button type="button" class="seg-pill active" data-qcnt="20">20</button>' +
       '          <button type="button" class="seg-pill" data-qcnt="30">30</button>' +
+      '          <button type="button" class="seg-pill" data-qcnt="50">50</button>' +
+      '          <button type="button" class="seg-pill" data-qcnt="100">100</button>' +
       '        </div>' +
       '      </div>' +
       '    </div>' +
@@ -465,41 +459,102 @@
     });
   }
 
-  function renderReferenceTab(container) {
-    const mode = R.state.refSubMode === 'rules' ? 'rules' : 'signs';
-    R.state.refSubMode = mode;
-
-    container.innerHTML =
-      '<div class="toolbar-row" style="justify-content:space-between;align-items:center;margin-bottom:12px;">' +
-      '  <div class="seg-pills">' +
-      '    <button type="button" class="seg-pill ' + (mode === 'signs' ? 'active' : '') + '" data-ref-mode="signs">' + R.icon('compass', 'xs') + ' ' + R.escHtml(R.t('tab_signs')) + '</button>' +
-      '    <button type="button" class="seg-pill ' + (mode === 'rules' ? 'active' : '') + '" data-ref-mode="rules">' + R.icon('bookOpen', 'xs') + ' ' + R.escHtml(R.t('tab_rules')) + '</button>' +
-      '  </div>' +
-      '  <button type="button" class="btn btn-sm btn-secondary" id="btn-prep-cheatsheet">' + R.icon('sparkles', 'xs') + ' ' + R.escHtml(R.t('card_cheatsheet_title')) + '</button>' +
-      '</div>' +
-      '<div id="ref-sub-container"></div>';
-
-    container.querySelectorAll('[data-ref-mode]').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        R.state.refSubMode = btn.dataset.refMode;
-        if (R.state.activeTab === 'tests' && window.history && window.history.replaceState) {
-          window.history.replaceState(null, '', '#tests/reference/' + R.state.refSubMode);
-        }
-        R.renderPrepare();
-        R.loadPrepareData();
-      });
-    });
-
-    document.getElementById('btn-prep-cheatsheet')?.addEventListener('click', function () {
-      if (typeof R.openCheatsheetModal === 'function') R.openCheatsheetModal();
-    });
-
-    const bodyEl = document.getElementById('ref-sub-container');
-    if (mode === 'rules') {
-      if (typeof R.renderLawExplorer === 'function') R.renderLawExplorer(bodyEl, R.state.lawHighlightChapter || null);
-    } else {
-      if (typeof R.renderSignsExplorer === 'function') R.renderSignsExplorer(bodyEl);
+  function renderCheatsheetTab(container) {
+    const lang = R.state.lang || 'uz_latn';
+    const cs = (window.CHEATSHEET_DATA && (window.CHEATSHEET_DATA[lang] || window.CHEATSHEET_DATA.uz_latn)) || null;
+    if (!cs) {
+      container.innerHTML = '<div class="surface-card empty-state-box">Shpargalka maʼlumotlari yuklanmoqda...</div>';
+      return;
     }
+
+    function drawCheatsheet() {
+      const q = (R.state.cheatsheetSearch || '').trim().toLowerCase();
+
+      const hiList = (cs.high_prob_items || []).filter(function (it) {
+        if (!q) return true;
+        return ((it.term || '') + ' ' + (it.hint || '') + ' ' + (it.search || '')).toLowerCase().includes(q);
+      });
+      const trapList = (cs.trap_items || []).filter(function (it) {
+        if (!q) return true;
+        return ((it.term || '') + ' ' + (it.hint || '') + ' ' + (it.search || '')).toLowerCase().includes(q);
+      });
+      const ruleBoxes = (cs.rules_boxes || []).filter(function (box) {
+        if (!q) return true;
+        const inner = (box.items || []).map(function (i) { return (i.k || '') + ' ' + (i.badge_val || '') + ' ' + (i.v || ''); }).join(' ');
+        return ((box.tag || '') + ' ' + (box.search || '') + ' ' + inner).toLowerCase().includes(q);
+      });
+
+      const hiHtml = hiList.map(function (it) {
+        return '<div class="surface-card" style="padding:12px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:4px;"><strong>' + R.escHtml(it.term) + '</strong><span class="badge-pill badge-emerald font-mono">' + R.escHtml(it.chip) + '</span></div>' +
+          '<div style="font-size:12px;color:var(--text-secondary);">' + R.escHtml(it.hint) + '</div>' +
+          '</div>';
+      }).join('');
+
+      const trapHtml = trapList.map(function (it) {
+        return '<div class="surface-card" style="padding:12px;border-color:rgba(239,68,68,0.3);">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:4px;"><strong>' + R.escHtml(it.term) + '</strong><span class="badge-pill badge-rose font-mono">' + R.escHtml(it.chip) + '</span></div>' +
+          '<div style="font-size:12px;color:var(--text-secondary);">' + R.safeRichHtml(it.hint) + '</div>' +
+          '</div>';
+      }).join('');
+
+      const rulesHtml = ruleBoxes.map(function (box) {
+        return '<div class="surface-card">' +
+          '<div style="margin-bottom:8px;"><span class="badge-pill badge-primary">' + R.escHtml(box.tag) + '</span></div>' +
+          '<div class="cs-rules-grid">' +
+          (box.items || []).map(function (it) {
+            return '<div class="cs-rule-item">' +
+              (it.badge_val ? '<span class="badge-pill badge-' + R.escHtml(it.badge_color || 'neutral') + ' font-mono cs-badge-val">' + R.escHtml(it.badge_val) + '</span>' : '') +
+              (it.k ? '<strong style="font-size:12.5px;">' + R.escHtml(it.k) + '</strong> ' : '') +
+              '<span style="font-size:12px;color:var(--text-secondary);line-height:1.45;">' + R.safeRichHtml(it.v || '') + '</span>' +
+              '</div>';
+          }).join('') +
+          '</div>' +
+          '</div>';
+      }).join('');
+
+      container.innerHTML =
+        '<div class="surface-card" style="margin-bottom:12px;">' +
+        '  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
+        '    <div>' +
+        '      <strong style="font-size:15px;display:block;">' + R.escHtml(R.t('card_cheatsheet_title')) + '</strong>' +
+        '      <p style="font-size:12px;color:var(--text-secondary);">' + R.escHtml(R.t('sub_feature_cheatsheet')) + '</p>' +
+        '    </div>' +
+        '    <span class="badge-pill badge-primary font-mono">1 327</span>' +
+        '  </div>' +
+        '</div>' +
+        '<div class="search-box" style="margin-bottom:12px;">' +
+        '  <span class="search-icon">' + R.icon('search', 'sm') + '</span>' +
+        '  <input type="search" class="search-input" id="cs-search-input" value="' + R.escHtml(R.state.cheatsheetSearch || '') + '" placeholder="' + R.escHtml(R.t('cs_search_placeholder')) + '">' +
+        '</div>' +
+        (!q && cs.collective
+          ? '<div class="surface-card" style="background:var(--color-primary-soft);border-color:var(--color-primary-border);margin-bottom:12px;">' +
+            '  <span class="badge-pill badge-primary" style="margin-bottom:6px;">' + R.escHtml(cs.collective.badge) + '</span>' +
+            '  <div style="font-weight:700;margin-bottom:4px;">' + R.escHtml(cs.collective.title) + '</div>' +
+            '  <p style="font-size:12.5px;">' + R.safeRichHtml(cs.collective.desc) + '</p>' +
+            '</div>'
+          : '') +
+        (hiHtml ? '<div class="section-heading" style="margin-top:10px;"><span>' + R.escHtml(cs.high_prob_title || '') + '</span></div><div class="list-stack">' + hiHtml + '</div>' : '') +
+        (trapHtml ? '<div class="section-heading" style="margin-top:10px;"><span>' + R.escHtml(cs.trap_title || '') + '</span></div><div class="list-stack">' + trapHtml + '</div>' : '') +
+        (rulesHtml ? '<div class="section-heading" style="margin-top:10px;"><span>' + R.escHtml(R.t('ref_law_tab_norms')) + '</span></div><div class="list-stack">' + rulesHtml + '</div>' : '') +
+        (!hiHtml && !trapHtml && !rulesHtml ? '<div class="surface-card empty-state-box"><strong>' + R.escHtml(R.t('empty_search_title')) + '</strong></div>' : '');
+
+      const csInput = document.getElementById('cs-search-input');
+      if (csInput) {
+        csInput.addEventListener('input', function () {
+          R.state.cheatsheetSearch = csInput.value;
+          drawCheatsheet();
+          const refocused = document.getElementById('cs-search-input');
+          if (refocused) {
+            refocused.focus();
+            const len = refocused.value.length;
+            refocused.setSelectionRange(len, len);
+          }
+        });
+      }
+    }
+
+    drawCheatsheet();
   }
 
   R.renderPrepare = function () {
@@ -517,7 +572,7 @@
       '  <button type="button" class="subtab-btn ' + (sub === 'tickets' ? 'active' : '') + '" data-prep-tab="tickets">' + R.escHtml(R.t('tab_tickets')) + '</button>' +
       '  <button type="button" class="subtab-btn ' + (sub === 'topics' ? 'active' : '') + '" data-prep-tab="topics">' + R.escHtml(R.t('tab_categories')) + '</button>' +
       '  <button type="button" class="subtab-btn ' + (sub === 'drill' ? 'active' : '') + '" data-prep-tab="drill">' + R.escHtml(R.t('tab_drill')) + '</button>' +
-      '  <button type="button" class="subtab-btn ' + (sub === 'reference' ? 'active' : '') + '" data-prep-tab="reference">' + R.escHtml(R.t('tab_reference')) + '</button>' +
+      '  <button type="button" class="subtab-btn ' + (sub === 'cheatsheet' ? 'active' : '') + '" data-prep-tab="cheatsheet">' + R.escHtml(R.t('card_cheatsheet_title')) + '</button>' +
       '</div>' +
       '<div id="prepare-subtab-body"></div>';
 
@@ -526,8 +581,7 @@
         const nextSub = normalizeSubtab(btn.dataset.prepTab);
         R.state.prepareSubtab = nextSub;
         if (R.state.activeTab === 'tests' && window.history && window.history.replaceState) {
-          const refSuffix = nextSub === 'reference' ? '/' + (R.state.refSubMode === 'rules' ? 'rules' : 'signs') : '';
-          window.history.replaceState(null, '', '#tests/' + nextSub + refSuffix);
+          window.history.replaceState(null, '', '#tests/' + nextSub);
         }
         R.renderPrepare();
         R.loadPrepareData();
@@ -537,7 +591,7 @@
     const body = document.getElementById('prepare-subtab-body');
     if (sub === 'topics') renderTopicsTab(body);
     else if (sub === 'drill') renderDrillTab(body);
-    else if (sub === 'reference') renderReferenceTab(body);
+    else if (sub === 'cheatsheet') renderCheatsheetTab(body);
     else renderTicketsTab(body);
   };
 })();

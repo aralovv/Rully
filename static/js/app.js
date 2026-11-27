@@ -30,9 +30,8 @@
         const curHash = String(window.location.hash || '');
         if (!curHash.includes('tgWebAppData=')) {
           const sub = R.state.prepareSubtab || 'tickets';
-          const refPart = sub === 'reference' ? '/' + (R.state.refSubMode === 'rules' ? 'rules' : 'signs') : '';
           const hashTarget = tabName === 'tests'
-            ? '#tests/' + sub + refPart
+            ? '#tests/' + sub
             : '#' + tabName;
           window.history.replaceState(null, '', hashTarget);
         }
@@ -130,17 +129,13 @@
       R.navigateTo('tests');
       return true;
     }
-    if (route === 'signs' || route === 'belgilar' || route === 'tests/reference/signs' || route === 'prepare/reference/signs') {
-      R.state.refSubMode = 'signs';
-      R.state.prepareSubtab = 'reference';
+    if (route === 'cheatsheet' || route === 'shpargalka' || route === 'tests/cheatsheet' || route === 'prepare/cheatsheet' || route === 'tests/shpargalka') {
+      R.state.prepareSubtab = 'cheatsheet';
       R.navigateTo('tests');
       return true;
     }
-    if (route === 'rules' || route === 'qoidalar' || route === 'law' || route === 'tests/reference/rules' || route === 'prepare/reference/rules' || route === 'reference' || route === 'tests/reference' || route === 'prepare/reference') {
-      R.state.refSubMode = (route === 'reference' || route === 'tests/reference' || route === 'prepare/reference')
-        ? (R.state.refSubMode || 'signs')
-        : 'rules';
-      R.state.prepareSubtab = 'reference';
+    if (route === 'signs' || route === 'belgilar' || route === 'rules' || route === 'qoidalar' || route === 'law' || route === 'reference' || route.startsWith('tests/reference') || route.startsWith('prepare/reference')) {
+      R.state.prepareSubtab = 'cheatsheet';
       R.navigateTo('tests');
       return true;
     }
@@ -290,12 +285,9 @@
     R.syncShellUI();
     const dl = R.resolveDeepLinkRoute();
     const guestAllowed = new Set([
-      'tests', 'tests/tickets', 'tests/topics', 'tests/drill',
-      'tests/reference', 'tests/reference/signs', 'tests/reference/rules',
-      'prepare', 'prepare/tickets', 'prepare/topics', 'prepare/drill',
-      'prepare/reference', 'prepare/reference/signs', 'prepare/reference/rules',
-      'tickets', 'topics', 'drill', 'reference',
-      'signs', 'belgilar', 'rules', 'qoidalar', 'law',
+      'tests', 'tests/tickets', 'tests/topics', 'tests/drill', 'tests/cheatsheet',
+      'prepare', 'prepare/tickets', 'prepare/topics', 'prepare/drill', 'prepare/cheatsheet',
+      'tickets', 'topics', 'drill', 'cheatsheet', 'shpargalka',
       'amaliy', 'practical', 'amaliy/modules', 'amaliy/penalty', 'penalty', 'jarima', 'profile'
     ]);
     if (guestAllowed.has(dl)) {

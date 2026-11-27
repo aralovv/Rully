@@ -211,95 +211,12 @@
   };
 
   R.openCheatsheetModal = function () {
-    const isPro = Boolean(R.state.subscription && R.state.subscription.is_pro);
-    if (!isPro) {
-      R.openPaywallModal();
-      return;
+    // Shpargalka now renders inline inside Nazariya (#tests/cheatsheet), using R.safeRichHtml
+    R.state.prepareSubtab = 'cheatsheet';
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState(null, '', '#tests/cheatsheet');
     }
-    const cs = (window.CHEATSHEET_DATA && (window.CHEATSHEET_DATA[R.state.lang] || window.CHEATSHEET_DATA.uz_latn)) || null;
-    const body = document.getElementById('cheatsheet-modal-body');
-    if (!body || !cs) return;
-
-    function renderCheatsheetBody() {
-      const q = (R.state.cheatsheetSearch || '').trim().toLowerCase();
-
-      const hiList = (cs.high_prob_items || []).filter(function (it) {
-        if (!q) return true;
-        return (it.term + ' ' + it.hint + ' ' + (it.search || '')).toLowerCase().includes(q);
-      });
-      const trapList = (cs.trap_items || []).filter(function (it) {
-        if (!q) return true;
-        return (it.term + ' ' + it.hint + ' ' + (it.search || '')).toLowerCase().includes(q);
-      });
-      const ruleBoxes = (cs.rules_boxes || []).filter(function (box) {
-        if (!q) return true;
-        const inner = (box.items || []).map(function (i) { return (i.k || '') + ' ' + (i.badge_val || '') + ' ' + (i.v || ''); }).join(' ');
-        return (box.tag + ' ' + (box.search || '') + ' ' + inner).toLowerCase().includes(q);
-      });
-
-      const hiHtml = hiList.map(function (it) {
-        return '<div class="surface-card" style="padding:12px;">' +
-          '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:4px;"><strong>' + R.escHtml(it.term) + '</strong><span class="badge-pill badge-emerald font-mono">' + R.escHtml(it.chip) + '</span></div>' +
-          '<div style="font-size:12px;color:var(--text-secondary);">' + R.escHtml(it.hint) + '</div>' +
-          '</div>';
-      }).join('');
-
-      const trapHtml = trapList.map(function (it) {
-        return '<div class="surface-card" style="padding:12px;border-color:rgba(239,68,68,0.3);">' +
-          '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:4px;"><strong>' + R.escHtml(it.term) + '</strong><span class="badge-pill badge-rose font-mono">' + R.escHtml(it.chip) + '</span></div>' +
-          '<div style="font-size:12px;color:var(--text-secondary);">' + R.safeRichHtml(it.hint) + '</div>' +
-          '</div>';
-      }).join('');
-
-      const rulesHtml = ruleBoxes.map(function (box) {
-        return '<div class="surface-card">' +
-          '<div style="margin-bottom:8px;"><span class="badge-pill badge-primary">' + R.escHtml(box.tag) + '</span></div>' +
-          '<div class="cs-rules-grid">' +
-          (box.items || []).map(function (it) {
-            return '<div class="cs-rule-item">' +
-              (it.badge_val ? '<span class="badge-pill badge-' + R.escHtml(it.badge_color || 'neutral') + ' font-mono cs-badge-val">' + R.escHtml(it.badge_val) + '</span>' : '') +
-              (it.k ? '<strong style="font-size:12.5px;">' + R.escHtml(it.k) + '</strong> ' : '') +
-              '<span style="font-size:12px;color:var(--text-secondary);line-height:1.45;">' + R.safeRichHtml(it.v || '') + '</span>' +
-              '</div>';
-          }).join('') +
-          '</div>' +
-          '</div>';
-      }).join('');
-
-      body.innerHTML =
-        '<div class="search-box" style="margin-bottom:4px;">' +
-        '  <span class="search-icon">' + R.icon('search', 'sm') + '</span>' +
-        '  <input type="search" class="search-input" id="cs-search-input" value="' + R.escHtml(R.state.cheatsheetSearch || '') + '" placeholder="' + R.escHtml(R.t('cs_search_placeholder')) + '">' +
-        '</div>' +
-        (!q && cs.collective
-          ? '<div class="surface-card" style="background:var(--color-primary-soft);border-color:var(--color-primary-border);">' +
-            '  <span class="badge-pill badge-primary" style="margin-bottom:6px;">' + R.escHtml(cs.collective.badge) + '</span>' +
-            '  <div style="font-weight:700;margin-bottom:4px;">' + R.escHtml(cs.collective.title) + '</div>' +
-            '  <p style="font-size:12.5px;">' + R.safeRichHtml(cs.collective.desc) + '</p>' +
-            '</div>'
-          : '') +
-        (hiHtml ? '<div class="section-heading" style="margin-top:6px;"><span>' + R.escHtml(cs.high_prob_title || '') + '</span></div><div class="list-stack">' + hiHtml + '</div>' : '') +
-        (trapHtml ? '<div class="section-heading" style="margin-top:6px;"><span>' + R.escHtml(cs.trap_title || '') + '</span></div><div class="list-stack">' + trapHtml + '</div>' : '') +
-        (rulesHtml ? '<div class="section-heading" style="margin-top:6px;"><span>' + R.escHtml(R.t('ref_law_tab_norms')) + '</span></div><div class="list-stack">' + rulesHtml + '</div>' : '') +
-        (!hiHtml && !trapHtml && !rulesHtml ? '<div class="surface-card empty-state-box"><strong>' + R.escHtml(R.t('empty_search_title')) + '</strong></div>' : '');
-
-      const csInput = document.getElementById('cs-search-input');
-      if (csInput) {
-        csInput.addEventListener('input', function () {
-          R.state.cheatsheetSearch = csInput.value;
-          renderCheatsheetBody();
-          const refocused = document.getElementById('cs-search-input');
-          if (refocused) {
-            refocused.focus();
-            const len = refocused.value.length;
-            refocused.setSelectionRange(len, len);
-          }
-        });
-      }
-    }
-
-    renderCheatsheetBody();
-    R.openModal('cheatsheet-modal');
+    R.navigateTo('tests');
   };
 
   R.openInfoModal = function (mode) {

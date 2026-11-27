@@ -367,13 +367,11 @@
     });
 
     document.getElementById('guest-tile-signs')?.addEventListener('click', function () {
-      R.state.refSubMode = 'signs';
-      R.state.prepareSubtab = 'reference';
+      R.state.prepareSubtab = 'cheatsheet';
       R.navigateTo('tests');
     });
     document.getElementById('guest-tile-rules')?.addEventListener('click', function () {
-      R.state.refSubMode = 'rules';
-      R.state.prepareSubtab = 'reference';
+      R.state.prepareSubtab = 'cheatsheet';
       R.navigateTo('tests');
     });
     document.getElementById('guest-tile-amaliy')?.addEventListener('click', function () {

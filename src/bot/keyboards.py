@@ -75,8 +75,8 @@ def get_custom_settings_keyboard(settings: Dict[str, Any], language: str = "uz_l
     show_ans = settings.get("show_answer", True)
     show_expl = settings.get("show_expl", True)
 
-    # Row 1: Question Count Options
-    count_options = [10, 20, 30, 50, 100, 122]
+    # Row 1: Question Count Options (up to 100)
+    count_options = [10, 20, 30, 50, 100]
     cnt_buttons = []
     for c in count_options:
         label = f"🔘 {c}" if c == curr_cnt else f"{c}"

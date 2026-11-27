@@ -499,7 +499,7 @@ def test_phase4_hard_purge_migration_005_and_nazariya_i18n(tmp_path, monkeypatch
 
     # Workstream 4D: exact 4-subtab prepare.js + clean hash sync + i18n parity
     prep_txt = (ROOT_DIR / "static" / "js" / "views" / "prepare.js").read_text(encoding="utf-8")
-    for tok in ('data-prep-tab="tickets"', 'data-prep-tab="topics"', 'data-prep-tab="drill"', 'data-prep-tab="reference"', 'data-ref-mode="signs"', 'data-ref-mode="rules"'):
+    for tok in ('data-prep-tab="tickets"', 'data-prep-tab="topics"', 'data-prep-tab="drill"', 'data-prep-tab="cheatsheet"'):
         assert tok in prep_txt
 
     i18n_check = r"""
@@ -597,7 +597,7 @@ def test_phase4_frontend_backend_schema_contracts_e2e(tmp_path, monkeypatch):
 
     const sandbox = {{
       window: {{
-        location: {{ protocol: 'https:', hash: '#tests/reference/rules', search: '' }},
+        location: {{ protocol: 'https:', hash: '#tests/cheatsheet', search: '' }},
         history: {{ replaceState: (_a,_b,u) => {{ sandbox.lastHash = u; }} }},
         addEventListener: () => {{}},
       }},
@@ -673,8 +673,8 @@ def test_phase4_frontend_backend_schema_contracts_e2e(tmp_path, monkeypatch):
     R.renderHome();
     if (elements['view-home'].innerHTML.includes('undefined')) throw new Error('Home HTML contains undefined');
 
-    // 2. Render Tickets, Topics, Drill
-    for (const tab of ['tickets', 'topics', 'drill', 'reference']) {{
+    // 2. Render Tickets, Topics, Drill, Cheatsheet
+    for (const tab of ['tickets', 'topics', 'drill', 'cheatsheet']) {{
       R.state.prepareSubtab = tab;
       R.renderPrepare();
       const html = elements['prepare-subtab-body'].innerHTML;

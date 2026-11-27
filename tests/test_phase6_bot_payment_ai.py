@@ -754,6 +754,6 @@ def test_spa_deep_link_hash_js_syntax_and_routing():
     parsed = json.loads(run.stdout.strip())
     assert {"tab": "tests", "sub": "drill"} in parsed["navigated"]
     assert {"tab": "tests", "sub": "tickets"} in parsed["navigated"]
-    assert {"tab": "tests", "sub": "reference"} in parsed["navigated"]
+    assert any(n.get("sub") in ("reference", "cheatsheet") for n in parsed["navigated"])
     assert any(n["tab"] == "amaliy" for n in parsed["navigated"])
     assert {"session_type": "BILET", "ticket_number": 7} in parsed["sessions"]

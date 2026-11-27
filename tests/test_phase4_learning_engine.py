@@ -77,11 +77,10 @@ def test_phase4_frontend_modules_and_i18n_parity():
     assert "openLawModal" in ref_js
 
     prep_js = (ROOT_DIR / "static" / "js" / "views" / "prepare.js").read_text(encoding="utf-8")
-    assert "data-prep-tab=\"reference\"" in prep_js
-    assert "data-ref-mode=\"signs\"" in prep_js
-    assert "data-ref-mode=\"rules\"" in prep_js
-    assert "R.renderSignsExplorer" in prep_js
-    assert "R.renderLawExplorer" in prep_js
+    assert "data-prep-tab=\"cheatsheet\"" in prep_js
+    assert "data-prep-tab=\"tickets\"" in prep_js
+    assert "data-prep-tab=\"topics\"" in prep_js
+    assert "data-prep-tab=\"drill\"" in prep_js
 
     quiz_js = (ROOT_DIR / "static" / "js" / "views" / "quiz.js").read_text(encoding="utf-8")
     assert "R.renderProvenanceBadge" in quiz_js
@@ -89,9 +88,12 @@ def test_phase4_frontend_modules_and_i18n_parity():
     assert "data-rev-filter" in quiz_js
 
     prof_js = (ROOT_DIR / "static" / "js" / "views" / "profile.js").read_text(encoding="utf-8")
-    assert "cs.rules_boxes" in prof_js
-    assert "cs-search-input" in prof_js
+    assert "prof-cheatsheet-btn" in prof_js
     assert "R.openInfoModal('rules')" in prof_js
+
+    # Cheatsheet is now inline in Nazariya (prepare.js) without sub-window
+    assert "cs.rules_boxes" in prep_js
+    assert "cs-search-input" in prep_js
 
     home_js = (ROOT_DIR / "static" / "js" / "views" / "home.js").read_text(encoding="utf-8")
     assert "guest-tile-signs" in home_js
