@@ -51,9 +51,43 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 DB_PATH = os.getenv("DB_PATH", "master_database.sqlite")
-DEFAULT_API_ID = int(os.getenv("TG_API_ID", "2040"))
-DEFAULT_API_HASH = os.getenv("TG_API_HASH", "b18441a1ff607e10a989891a5462e627")
-MONITORED_BOT = os.getenv("MTPROTO_MONITORED_BOT", "Humocardbot")
+DEFAULT_API_ID = int(os.getenv("TG_API_ID") or "0")
+DEFAULT_API_HASH = os.getenv("TG_API_HASH", "").strip()
+MONITORED_BOT = os.getenv("MTPROTO_MONITORED_BOT", "Humocardbot").strip()
+MONITORED_BOT_ID = int(os.getenv("MTPROTO_MONITORED_BOT_ID") or "0")
+
+
+def _is_cloud_prod_env() -> bool:
+    return (
+        os.getenv("ENVIRONMENT", "").strip().lower() in ("production", "prod", "standalone-cloud")
+        or bool(os.getenv("VERCEL"))
+        or bool(os.getenv("RENDER"))
+    )
+
+
+def _is_verified_humo_sender(event: Any, sender: Any) -> bool:
+    """Strictly authenticates Humocardbot origin: rejects forwards and substring spoofing."""
+    if getattr(event, "fwd_from", None) is not None:
+        return False
+    msg_obj = getattr(event, "message", None)
+    if msg_obj is not None and getattr(msg_obj, "fwd_from", None) is not None:
+        return False
+
+    expected_handle = MONITORED_BOT.lstrip("@").lower()
+    sender_username = (getattr(sender, "username", None) or "").strip().lstrip("@").lower()
+    sender_id = getattr(sender, "id", None)
+
+    if MONITORED_BOT_ID and sender_id is not None:
+        try:
+            if int(sender_id) == MONITORED_BOT_ID:
+                return True
+        except (TypeError, ValueError):
+            pass
+
+    if expected_handle and sender_username == expected_handle:
+        return True
+
+    return False
 
 
 class MTProtoManager:
@@ -178,6 +212,14 @@ class MTProtoManager:
             self._sync_status_to_db("DISCONNECTED", self.last_error)
             return False
 
+        if not self.api_id or not self.api_hash:
+            err_msg = "TG_API_ID and TG_API_HASH environment variables are required for MTProto."
+            self.connection_status = "ERROR"
+            self.last_error = err_msg
+            self._sync_status_to_db("ERROR", err_msg)
+            logger.error(err_msg)
+            return False
+
         try:
             self.connection_status = "CONNECTING"
             self.client = TelegramClient(StringSession(session_str), self.api_id, self.api_hash)
@@ -233,22 +275,11 @@ class MTProtoManager:
         async def incoming_message_handler(event):
             try:
                 sender = await event.get_sender()
-                sender_username = getattr(sender, "username", "") or ""
-                sender_first_name = getattr(sender, "first_name", "") or ""
-                sender_title = getattr(sender, "title", "") or ""
-
-                is_from_humo = (
-                    MONITORED_BOT.lower() in sender_username.lower()
-                    or "humo" in sender_username.lower()
-                    or "humo" in sender_first_name.lower()
-                    or "humo" in sender_title.lower()
-                    or MONITORED_BOT.lower() in str(event.chat_id).lower()
-                )
-
-                raw_text = event.raw_text or ""
-                if not is_from_humo and not ("HUMOCARD" in raw_text or "HUMO" in raw_text or "To‘ldirish" in raw_text or "To'ldirish" in raw_text):
+                if not _is_verified_humo_sender(event, sender):
                     return
 
+                sender_username = getattr(sender, "username", "") or ""
+                raw_text = event.raw_text or ""
                 self.last_event_at = datetime.utcnow().isoformat()
 
                 # Parse Humocard notification

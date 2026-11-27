@@ -19,6 +19,7 @@ from src.security.crypto import (
     hash_password, verify_password, generate_secure_otp,
     hash_otp, verify_otp_hash, generate_session_token
 )
+from src.security.rate_limiter import BoundedTTLCache
 from src.security.telegram_notifier import send_admin_otp
 
 load_dotenv()
@@ -38,8 +39,8 @@ _is_prod = is_production()
 if _is_prod and not os.getenv("ADMIN_PASSWORD") and "PYTEST_CURRENT_TEST" not in os.environ:
     logger.critical("SECURITY CRITICAL: ADMIN_PASSWORD environment variable is not set in production!")
 
-# In-memory rate limiter for failed login attempts by IP
-_login_failures: Dict[str, list] = {}
+# Bounded in-memory rate limiter for failed login attempts by IP (15 min TTL, max 2000 entries)
+_login_failures: BoundedTTLCache[str, list] = BoundedTTLCache(maxsize=2000, ttl_seconds=900)
 
 
 from src.db_adapter import execute_batch, get_db_connection
@@ -76,25 +77,26 @@ def is_rate_limited(ip_address: str, max_attempts: int = 8, window_minutes: int 
     """Checks if IP is temporarily blocked due to repeated failed login attempts."""
     now = datetime.utcnow()
     window_start = now - timedelta(minutes=window_minutes)
-    attempts = _login_failures.get(ip_address, [])
-    # Keep only attempts in recent window
+    attempts = _login_failures.get(ip_address) or []
     valid_attempts = [t for t in attempts if t > window_start]
-    _login_failures[ip_address] = valid_attempts
+    if valid_attempts:
+        _login_failures.set(ip_address, valid_attempts)
+    else:
+        _login_failures.pop(ip_address, None)
     return len(valid_attempts) >= max_attempts
 
 
 def record_failed_attempt(ip_address: str):
     """Records a failed authentication attempt."""
     now = datetime.utcnow()
-    if ip_address not in _login_failures:
-        _login_failures[ip_address] = []
-    _login_failures[ip_address].append(now)
+    attempts = list(_login_failures.get(ip_address) or [])
+    attempts.append(now)
+    _login_failures.set(ip_address, attempts)
 
 
 def clear_failed_attempts(ip_address: str):
     """Clears failed attempts for an IP upon successful authentication."""
-    if ip_address in _login_failures:
-        _login_failures.pop(ip_address, None)
+    _login_failures.pop(ip_address, None)
 
 
 def _initiate_admin_login_sync(username: str, password: str, ip_address: str = "") -> Tuple[bool, str, Optional[Dict[str, Any]], Optional[str], Optional[int]]:
@@ -208,18 +210,42 @@ def _verify_admin_otp_sync(challenge_id: str, otp_code: str, ip_address: str = "
             conn.commit()
             return False, "Bir martalik kodning amal qilish muddati tugagan (5 daqiqa).", None
 
-        attempts = challenge["attempts_count"] + 1
-        if attempts > challenge["max_attempts"]:
+        if challenge["attempts_count"] >= challenge["max_attempts"]:
             c.execute("UPDATE admin_otp_challenges SET is_used = 1 WHERE challenge_id = ?", (challenge_id,))
             conn.commit()
             return False, "Noto‘g‘ri kod kiritish urinishlari soni oshib ketdi. Yangi kod so‘rang.", None
 
-        c.execute("UPDATE admin_otp_challenges SET attempts_count = ? WHERE challenge_id = ?", (attempts, challenge_id))
+        # Atomically claim one verification attempt BEFORE checking hash so concurrent brute-force cannot exceed max_attempts
+        c.execute(
+            """
+            UPDATE admin_otp_challenges
+            SET attempts_count = attempts_count + 1
+            WHERE challenge_id = ? AND is_used = 0 AND attempts_count < max_attempts
+            """,
+            (challenge_id,),
+        )
         conn.commit()
+        if (c.rowcount or 0) != 1:
+            return False, "Ushbu bir martalik kod muddati tugagan yoki urinishlar soni oshib ketdi.", None
+
+        attempts = int(challenge["attempts_count"]) + 1
+        max_attempts = int(challenge["max_attempts"])
 
         if not verify_otp_hash(otp_code.strip(), challenge["otp_hash"]):
-            remaining = challenge["max_attempts"] - attempts
-            return False, f"Noto‘g‘ri kod kiritildi. Qolgan urinishlar: {max(0, remaining)} ta.", None
+            remaining = max(0, max_attempts - attempts)
+            if remaining == 0:
+                c.execute("UPDATE admin_otp_challenges SET is_used = 1 WHERE challenge_id = ?", (challenge_id,))
+                conn.commit()
+            return False, f"Noto‘g‘ri kod kiritildi. Qolgan urinishlar: {remaining} ta.", None
+
+        # Atomically mark challenge consumed so concurrent duplicate requests can only issue ONE session token
+        c.execute(
+            "UPDATE admin_otp_challenges SET is_used = 1 WHERE challenge_id = ? AND is_used = 0",
+            (challenge_id,),
+        )
+        conn.commit()
+        if (c.rowcount or 0) != 1:
+            return False, "Ushbu bir martalik kod allaqachon ishlatilgan. Qaytadan kiring.", None
 
         admin_id = challenge["admin_id"]
         session_token = generate_session_token()
@@ -230,7 +256,6 @@ def _verify_admin_otp_sync(challenge_id: str, otp_code: str, ip_address: str = "
         admin_data = dict(c.fetchone())
 
         execute_batch(conn, [
-            ("UPDATE admin_otp_challenges SET is_used = 1 WHERE challenge_id = ?", [challenge_id]),
             (
                 """
                 INSERT INTO admin_sessions (

@@ -13,6 +13,7 @@
     reviewCasesCache: [],
     unmatchedCache: [],
     transactionsCache: [],
+    starsCache: [],
     usersCache: [],
     stagedCache: [],
     selectedEditorialIds: new Set(),
@@ -214,13 +215,22 @@
     if (actRes.status === 'fulfilled') {
       const a = actRes.value.analytics || {};
       setText('bi-dau-wau-mau', `${a.dau ?? 0} / ${a.wau ?? 0} / ${a.mau ?? 0}`);
-      const feat = Object.entries(a.feature_distribution || {}).sort((x, y) => y[1] - x[1])[0];
+      let feat = null;
+      if (Array.isArray(a.feature_breakdown) && a.feature_breakdown.length) {
+        feat = [a.feature_breakdown[0].event, a.feature_breakdown[0].count];
+      } else {
+        feat = Object.entries(a.feature_distribution || {}).sort((x, y) => y[1] - x[1])[0];
+      }
       setText('bi-top-feature', feat ? `${feat[0]} (${feat[1]})` : 'Ma’lumot yo‘q');
     }
 
     if (retRes.status === 'fulfilled') {
       const r = retRes.value.retention || {};
-      setText('bi-retention', `${r.d1_pct ?? 0}% / ${r.d7_pct ?? 0}% / ${r.d30_pct ?? 0}%`);
+      const latestCohort = Array.isArray(r.cohorts) && r.cohorts.length ? r.cohorts[0] : {};
+      const d1 = r.d1_pct ?? latestCohort.d1_pct ?? 0;
+      const d7 = r.d7_pct ?? latestCohort.d7_pct ?? 0;
+      const d30 = r.d30_pct ?? latestCohort.d30_pct ?? 0;
+      setText('bi-retention', `${d1}% / ${d7}% / ${d30}%`);
     }
 
     if (salesRes.status === 'fulfilled') {
@@ -346,17 +356,19 @@
     }
 
     try {
-      const [ordRes, revRes, unmRes, txRes] = await Promise.allSettled([
+      const [ordRes, revRes, unmRes, txRes, starsRes] = await Promise.allSettled([
         apiFetch('/api/admin/orders?limit=100'),
         apiFetch('/api/admin/payments/review-cases?status=PENDING'),
         apiFetch('/api/admin/payments/unmatched?status=UNRESOLVED&limit=50'),
-        apiFetch('/api/admin/payments/transactions?limit=50')
+        apiFetch('/api/admin/payments/transactions?limit=50'),
+        apiFetch('/api/admin/payments/stars?limit=50')
       ]);
 
       state.ordersCache = ordRes.status === 'fulfilled' ? (ordRes.value.orders || []) : [];
       state.reviewCasesCache = revRes.status === 'fulfilled' ? (revRes.value.cases || []) : [];
       state.unmatchedCache = unmRes.status === 'fulfilled' ? (unmRes.value.unmatched || []) : [];
       state.transactionsCache = txRes.status === 'fulfilled' ? (txRes.value.transactions || []) : [];
+      state.starsCache = starsRes.status === 'fulfilled' ? (starsRes.value.orders || []) : [];
 
       setText('ptab-badge-review', String(state.reviewCasesCache.length));
       setText('ptab-badge-unmatched', String(state.unmatchedCache.length));
@@ -435,10 +447,13 @@
         container.innerHTML = '<div class="text-center text-muted text-xs py-8">Kechiktirilgan yoki tekshiruvdagi to‘lovlar yo‘q.</div>';
         return;
       }
-      container.innerHTML = cases.map(c => `
+      container.innerHTML = cases.map(c => {
+        const cid = c.case_id ?? c.id;
+        const amt = c.incoming_amount_uzs ?? c.amount_uzs ?? c.expected_amount_uzs;
+        return `
         <div class="mobile-card-row">
           <div class="m-card-top">
-            <span class="font-mono font-bold text-xs text-slate-200">Case #${escapeHtml(c.case_id)} • Order #${escapeHtml(c.order_id)}</span>
+            <span class="font-mono font-bold text-xs text-slate-200">Case #${escapeHtml(cid)} • Order #${escapeHtml(c.order_id)}</span>
             <span class="badge badge-red">${escapeHtml(c.status)}</span>
           </div>
           <div class="m-card-body">
@@ -447,19 +462,20 @@
               <div class="text-[11px] text-muted">${escapeHtml(c.reason || '')} • ${escapeHtml(formatDate(c.created_at))}</div>
             </div>
             <div class="text-right">
-              <div class="font-mono font-bold text-emerald text-sm">${escapeHtml(formatMoney(c.incoming_amount_uzs || c.expected_amount_uzs))}</div>
+              <div class="font-mono font-bold text-emerald text-sm">${escapeHtml(formatMoney(amt))}</div>
               <div class="text-[10px] text-muted">${escapeHtml(c.plan_name || c.plan_id || '')}</div>
             </div>
           </div>
           <div class="m-card-footer">
             <span class="text-xs text-muted font-mono">User ID: ${escapeHtml(c.user_id)}</span>
             <div class="flex gap-2">
-              <button type="button" class="btn btn-primary btn-sm" data-action="approve-review" data-case-id="${escapeHtml(c.case_id)}" data-order-id="${escapeHtml(c.order_id)}">✅ Tasdiqlash</button>
-              <button type="button" class="btn btn-danger btn-sm" data-action="reject-review" data-case-id="${escapeHtml(c.case_id)}">❌ Rad etish</button>
+              <button type="button" class="btn btn-primary btn-sm" data-action="approve-review" data-case-id="${escapeHtml(cid)}" data-order-id="${escapeHtml(c.order_id)}">✅ Tasdiqlash</button>
+              <button type="button" class="btn btn-danger btn-sm" data-action="reject-review" data-case-id="${escapeHtml(cid)}">❌ Rad etish</button>
             </div>
           </div>
         </div>
-      `).join('');
+      `;
+      }).join('');
       return;
     }
 
@@ -467,7 +483,7 @@
       let unm = state.unmatchedCache;
       if (query) {
         unm = unm.filter(u =>
-          String(u.incoming_amount_uzs || '').includes(query) ||
+          String(u.incoming_amount_uzs ?? u.amount_uzs ?? '').includes(query) ||
           String(u.raw_message || '').toLowerCase().includes(query) ||
           String(u.candidate_order_id || '').toLowerCase().includes(query)
         );
@@ -476,10 +492,12 @@
         container.innerHTML = '<div class="text-center text-muted text-xs py-8">Bog‘lanmagan to‘lovlar mavjud emas.</div>';
         return;
       }
-      container.innerHTML = unm.map(u => `
+      container.innerHTML = unm.map(u => {
+        const uAmt = u.incoming_amount_uzs ?? u.amount_uzs;
+        return `
         <div class="mobile-card-row">
           <div class="m-card-top">
-            <span class="font-mono font-bold text-xs text-amber-300">Unmatched #${escapeHtml(u.id)} • ${escapeHtml(formatMoney(u.incoming_amount_uzs))}</span>
+            <span class="font-mono font-bold text-xs text-amber-300">Unmatched #${escapeHtml(u.id)} • ${escapeHtml(formatMoney(uAmt))}</span>
             <span class="badge badge-amber">${escapeHtml(u.status || 'UNRESOLVED')}</span>
           </div>
           <div class="text-xs text-slate-300 mt-1">${escapeHtml(u.raw_message || u.reason || 'Bank xabari')}</div>
@@ -487,9 +505,45 @@
             Karta: •••• ${escapeHtml(u.card_suffix || '—')} | Vaqt: ${escapeHtml(formatDate(u.created_at))}
             ${u.candidate_order_id ? ` | Tavsiya: <b class="font-mono text-slate-200">${escapeHtml(u.candidate_order_id)}</b>` : ''}
           </div>
+          ${u.candidate_hint ? `<div class="text-[11px] text-amber-300/90 mt-0.5">${escapeHtml(u.candidate_hint)}</div>` : ''}
           <div class="m-card-footer mt-2">
             <button type="button" class="btn btn-primary btn-sm" data-action="link-unmatched" data-unmatched-id="${escapeHtml(u.id)}" data-candidate-order="${escapeHtml(u.candidate_order_id || '')}">🔗 Buyurtmaga bog‘lash</button>
             <button type="button" class="btn btn-ghost btn-sm text-xs" data-action="resolve-unmatched" data-unmatched-id="${escapeHtml(u.id)}">Ignor / Qaytarildi</button>
+          </div>
+        </div>
+      `;
+      }).join('');
+      return;
+    }
+
+    if (tab === 'STARS') {
+      let starsList = state.starsCache;
+      if (query) {
+        starsList = starsList.filter(s =>
+          String(s.order_id || '').toLowerCase().includes(query) ||
+          String(s.user_id || '').includes(query) ||
+          String(s.username || '').toLowerCase().includes(query)
+        );
+      }
+      if (!starsList.length) {
+        container.innerHTML = '<div class="text-center text-muted text-xs py-8">Telegram Stars (XTR) buyurtmalari topilmadi.</div>';
+        return;
+      }
+      container.innerHTML = starsList.map(s => `
+        <div class="mobile-card-row">
+          <div class="m-card-top">
+            <span class="font-mono font-bold text-xs text-amber-300">⭐ ${escapeHtml(s.order_id)}</span>
+            ${renderStatusBadge(s.status)}
+          </div>
+          <div class="m-card-body">
+            <div>
+              <div class="font-bold text-sm text-slate-100">${s.username ? '@' + escapeHtml(s.username) : 'ID: ' + escapeHtml(s.user_id)}</div>
+              <div class="text-[11px] text-muted">${escapeHtml(s.plan_name || s.plan_id || '')} • ${escapeHtml(formatDate(s.paid_at || s.created_at))}</div>
+            </div>
+            <div class="text-right">
+              <div class="font-mono font-bold text-amber-300 text-sm">${escapeHtml(s.stars_amount || 0)} ⭐ XTR</div>
+              <div class="text-[10px] text-muted">${escapeHtml(formatMoney(s.uzs_equivalent || 0))}</div>
+            </div>
           </div>
         </div>
       `).join('');
@@ -617,7 +671,8 @@
         showToast('Ushbu buyurtma uchun ochiq review case topilmadi.', 'error');
         return;
       }
-      await apiFetch(`/api/admin/payments/review/${encodeURIComponent(c.case_id)}/approve`, {
+      const cid = c.case_id ?? c.id;
+      await apiFetch(`/api/admin/payments/review/${encodeURIComponent(cid)}/approve`, {
         method: 'POST',
         body: JSON.stringify({ notes: 'Admin qo‘lda tasdiqladi' })
       });
@@ -761,7 +816,7 @@
             </div>
             <div class="bg-slate-900/80 border border-slate-800 rounded p-2.5">
               <div class="text-[11px] text-muted">Segment / Faollik</div>
-              <div class="font-bold text-indigo-200">${escapeHtml(u.activity_classification?.segment || 'UNKNOWN')}</div>
+              <div class="font-bold text-indigo-200">${escapeHtml(u.activity_classification?.segment || u.activity_classification?.category || 'UNKNOWN')}</div>
             </div>
             <div class="bg-slate-900/80 border border-slate-800 rounded p-2.5">
               <div class="text-[11px] text-muted">Imtihonlar (O‘tgan / Jami)</div>
@@ -771,7 +826,7 @@
 
           <div class="bg-slate-900/60 border border-slate-800 rounded p-2.5">
             <div class="font-bold text-slate-200 mb-1">Obunalar tarixi (${subs.length})</div>
-            ${subs.length ? subs.slice(0, 5).map(s => `<div class="text-[11px] text-slate-300 font-mono">${escapeHtml(s.status)} • ${escapeHtml(s.plan_id || '')} • ${escapeHtml(formatDate(s.starts_at))} → ${escapeHtml(formatDate(s.expires_at))}</div>`).join('') : '<div class="text-muted">Obuna tarixi yo‘q</div>'}
+            ${subs.length ? subs.slice(0, 5).map(s => `<div class="text-[11px] text-slate-300 font-mono">${escapeHtml(s.status)} • ${escapeHtml(s.plan_id || '')} • ${escapeHtml(formatDate(s.starts_at || s.created_at))} → ${escapeHtml(formatDate(s.expires_at))}</div>`).join('') : '<div class="text-muted">Obuna tarixi yo‘q</div>'}
           </div>
 
           <div class="bg-slate-900/60 border border-slate-800 rounded p-2.5">
@@ -781,7 +836,7 @@
 
           <div class="bg-slate-900/60 border border-slate-800 rounded p-2.5">
             <div class="font-bold text-slate-200 mb-1">So‘nggi harakatlar (${acts.length})</div>
-            ${acts.length ? acts.slice(0, 8).map(ev => `<div class="text-[11px] text-slate-400 font-mono">${escapeHtml(ev.event_name)} (${escapeHtml(ev.feature_area || '')}) • ${escapeHtml(formatDate(ev.created_at))}</div>`).join('') : '<div class="text-muted">Telemetriya yo‘q</div>'}
+            ${acts.length ? acts.slice(0, 8).map(ev => `<div class="text-[11px] text-slate-400 font-mono">${escapeHtml(ev.event_name)} (${escapeHtml(ev.feature_area || ev.event_data || '')}) • ${escapeHtml(formatDate(ev.created_at))}</div>`).join('') : '<div class="text-muted">Telemetriya yo‘q</div>'}
           </div>
         `;
       }
@@ -1388,8 +1443,8 @@
             </div>
             <div class="text-slate-300 font-sans italic bg-slate-950 p-2 rounded border border-slate-800 mt-1">"${escapeHtml(meta.message_snippet || '')}"</div>
             <div class="flex items-center gap-3 text-xs pt-1 text-slate-400">
-              <span class="text-emerald">✓ Yetkazildi: <b>${escapeHtml(meta.sent || 0)}</b></span>
-              <span class="text-rose">✕ Xatolik: <b>${escapeHtml(meta.failed || 0)}</b></span>
+              <span class="text-emerald">✓ Yetkazildi: <b>${escapeHtml(meta.sent ?? meta.sent_count ?? 0)}</b></span>
+              <span class="text-rose">✕ Xatolik: <b>${escapeHtml(meta.failed ?? meta.failed_count ?? 0)}</b></span>
               <span class="text-muted">Jami: <b>${escapeHtml(meta.total_targets || 0)}</b></span>
             </div>
           </div>
@@ -1451,15 +1506,18 @@
       const rt = healthRes.runtime || {};
 
       if (badge) {
-        const statusText = healthRes.status || 'HEALTHY';
+        const statusText = healthRes.status || healthRes.overall_status || 'HEALTHY';
         badge.className = `badge ${statusText === 'HEALTHY' ? 'badge-emerald' : 'badge-amber'}`;
         badge.textContent = statusText;
       }
       setText('obs-db-val', `${db.integrity_check || 'ok'} • ${db.latency_ms ?? 0}ms`);
-      setText('obs-latency-val', `p50 ${obs.latency_p50_ms ?? 0}ms / p95 ${obs.latency_p95_ms ?? 0}ms`);
-      setText('obs-req-val', `${obs.total_requests ?? 0} req • 5xx:${obs.errors_5xx ?? 0} • RL:${rl.rejected_requests ?? 0}`);
+      const p50 = obs.latency_p50_ms ?? obs.global_p50_ms ?? 0;
+      const p95 = obs.latency_p95_ms ?? obs.global_p95_ms ?? 0;
+      const rejected = rl.rejected_requests ?? rl.rejections_total ?? 0;
+      setText('obs-latency-val', `p50 ${p50}ms / p95 ${p95}ms`);
+      setText('obs-req-val', `${obs.total_requests ?? 0} req • 5xx:${obs.errors_5xx ?? 0} • RL:${rejected}`);
       const upMin = Math.floor((obs.uptime_seconds || 0) / 60);
-      setText('obs-runtime-val', `${upMin}m • ${rt.rss_mb ?? 'n/a'}MB • ${rt.router_mode || 'full'}`);
+      setText('obs-runtime-val', `${upMin}m • ${rt.rss_mb ?? obs.memory_rss_mb ?? 'n/a'}MB • ${rt.router_mode || obs.router_mode || 'full'}`);
 
       if (routesEl) {
         const top = (obs.top_routes || []).slice(0, 4).map(r => `${r.route} (${r.count}x, p95 ${r.p95_ms}ms)`);

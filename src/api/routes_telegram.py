@@ -78,7 +78,7 @@ async def telegram_webhook_handler(
     except Exception as e:
         logger.error(f"Error handling Telegram webhook update: {e}", exc_info=True)
         # Always return 200/ok:true to Telegram so it doesn't enter an endless retry loop
-        return {"ok": True, "error": str(e)}
+        return {"ok": True, "error": "Webhook processing error"}
 
 
 @router.get("/info")

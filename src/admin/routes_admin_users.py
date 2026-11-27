@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.admin.deps import get_current_admin, require_admin_role
-from src.analytics.tracker import classify_user_activity
+from src.analytics.tracker import classify_user_activity, classify_users_activity_batch
 from src.db_adapter import execute_batch, get_db_connection
 from src.security.telegram_notifier import send_user_subscription_granted_notification
 
@@ -76,13 +76,16 @@ def list_users(
         conditions.append("(u.username LIKE ? OR u.first_name LIKE ? OR CAST(u.user_id AS TEXT) LIKE ?)")
         params.extend([q_clean, q_clean, q_clean])
 
+    now_iso = datetime.utcnow().isoformat()
     effective_sub = (filter_status or subscription_status or "all").strip().lower()
     if effective_sub == "blocked" and is_blocked is None:
         is_blocked = 1
     elif effective_sub == "pro":
-        conditions.append("u.is_pro = 1 AND u.subscription_expires_at > datetime('now')")
+        conditions.append("u.is_pro = 1 AND u.subscription_expires_at > ?")
+        params.append(now_iso)
     elif effective_sub == "free":
-        conditions.append("(u.is_pro = 0 OR u.subscription_expires_at <= datetime('now') OR u.subscription_expires_at IS NULL)")
+        conditions.append("(u.is_pro = 0 OR u.subscription_expires_at <= ? OR u.subscription_expires_at IS NULL)")
+        params.append(now_iso)
 
     if is_blocked is not None:
         conditions.append("u.is_blocked = ?")
@@ -115,13 +118,14 @@ def list_users(
         """
         c.execute(query, params + [limit, offset])
         rows = c.fetchall()
+        page_uids = [int(r["user_id"]) for r in rows]
+        cls_map = classify_users_activity_batch(page_uids, conn)
 
         items = []
         for r in rows:
             u_dict = dict(r)
-            # Add explainable activity classification
-            classification = classify_user_activity(u_dict["user_id"], conn)
-            u_dict["activity_classification"] = classification
+            uid_val = int(u_dict["user_id"])
+            u_dict["activity_classification"] = cls_map.get(uid_val) or classify_user_activity(uid_val, conn)
             items.append(u_dict)
 
     return {
@@ -150,9 +154,9 @@ def get_user_profile(user_id: int, current_admin: dict = Depends(require_admin_r
         # 2. Activity Classification
         user_data["activity_classification"] = classify_user_activity(user_id, conn)
 
-        # 3. Subscription History
+        # 3. Subscription History (expose starts_at alias for created_at)
         c.execute("""
-            SELECT * FROM user_subscriptions 
+            SELECT *, created_at AS starts_at FROM user_subscriptions 
             WHERE user_id = ? 
             ORDER BY created_at DESC
         """, (user_id,))
@@ -180,7 +184,22 @@ def get_user_profile(user_id: int, current_admin: dict = Depends(require_admin_r
             WHERE user_id = ? 
             ORDER BY created_at DESC LIMIT 50
         """, (user_id,))
-        activity_events = [dict(r) for r in c.fetchall()]
+        activity_events = []
+        for r in c.fetchall():
+            ev = dict(r)
+            ev_name = str(ev.get("event_name") or "").upper()
+            if "STARS" in ev_name or "PAYMENT" in ev_name or "ORDER" in ev_name:
+                area = "payment"
+            elif "AI" in ev_name:
+                area = "ai_ustoz"
+            elif "AMALIY" in ev_name:
+                area = "amaliy"
+            elif "EXAM" in ev_name or "QUIZ" in ev_name or "SRS" in ev_name:
+                area = "theory"
+            else:
+                area = "general"
+            ev.setdefault("feature_area", area)
+            activity_events.append(ev)
 
         # 7. Exam Results summary
         c.execute("""

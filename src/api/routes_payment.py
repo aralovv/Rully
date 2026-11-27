@@ -72,19 +72,22 @@ async def api_create_payment_order(
     if not success:
         raise HTTPException(status_code=400, detail=message)
 
-    # Deliver in-bot payment details notification
+    # Deliver in-bot payment details notification (awaited cleanly so serverless requests do not cancel tasks)
     try:
         raw_card = order.get("card_number_raw") or order.get("card_number_masked", "")
-        asyncio.create_task(send_payment_invoice_to_user(
-            user_id=user_id,
-            plan_name=order.get("plan_name") or ("30 kunlik PRO" if "30" in req.plan_id else "14 kunlik PRO"),
-            cardholder_name=order.get("cardholder_name", "ANVARJON ARALOV"),
-            card_number_full=raw_card,
-            final_amount_uzs=order.get("final_amount_uzs", 0),
-            order_id=order.get("order_id", "")
-        ))
+        notify_coros = [
+            send_payment_invoice_to_user(
+                user_id=user_id,
+                plan_name=order.get("plan_name") or ("30 kunlik PRO" if "30" in req.plan_id else "14 kunlik PRO"),
+                cardholder_name=order.get("cardholder_name", "ANVARJON ARALOV"),
+                card_number_full=raw_card,
+                final_amount_uzs=order.get("final_amount_uzs", 0),
+                order_id=order.get("order_id", ""),
+            )
+        ]
         if "yaratildi" in (message or "").lower():
-            asyncio.create_task(send_order_created_alert(order))
+            notify_coros.append(send_order_created_alert(order))
+        await asyncio.gather(*notify_coros, return_exceptions=True)
     except Exception:
         pass
 

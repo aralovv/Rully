@@ -34,23 +34,31 @@ def _get_connection():
 
 
 class BroadcastMessageRequest(BaseModel):
-    message_text: str = Field(..., min_length=1, max_length=4000, description="Broadcast message text with optional HTML tags")
+    message_text: Optional[str] = Field(None, max_length=4000, description="Broadcast message text with optional HTML tags")
+    message: Optional[str] = Field(None, max_length=4000, description="Frontend-compatible alias for message_text")
     target_group: str = Field("all", description="Target group: 'all', 'pro', or 'free'")
+
+    def resolved_message(self) -> str:
+        return (self.message_text if self.message_text is not None else (self.message or "")).strip()
 
 
 @router.get("/audience")
 def get_broadcast_audience(current_admin: dict = Depends(get_current_admin)):
     """Returns recipient counts for different target segments."""
+    now_iso = datetime.utcnow().isoformat()
     with _get_connection() as conn:
         c = conn.cursor()
-        c.execute("""
+        c.execute(
+            """
             SELECT 
                 COUNT(*) as total_users,
-                SUM(CASE WHEN is_pro = 1 AND subscription_expires_at > datetime('now') THEN 1 ELSE 0 END) as pro_users,
-                SUM(CASE WHEN is_pro = 0 OR subscription_expires_at <= datetime('now') OR subscription_expires_at IS NULL THEN 1 ELSE 0 END) as free_users
+                SUM(CASE WHEN is_pro = 1 AND subscription_expires_at > ? THEN 1 ELSE 0 END) as pro_users,
+                SUM(CASE WHEN is_pro = 0 OR subscription_expires_at <= ? OR subscription_expires_at IS NULL THEN 1 ELSE 0 END) as free_users
             FROM telegram_users
             WHERE is_blocked = 0
-        """)
+            """,
+            (now_iso, now_iso),
+        )
         row = c.fetchone()
         return {
             "ok": True,
@@ -102,6 +110,8 @@ async def _execute_broadcast_task(users: List[Dict[str, Any]], clean_text: str, 
         "total_targets": len(users),
         "sent_count": sent_count,
         "failed_count": failed_count,
+        "sent": sent_count,
+        "failed": failed_count,
         "message_snippet": clean_text[:120] + ("..." if len(clean_text) > 120 else ""),
         "admin_username": admin_username
     }, ensure_ascii=False)
@@ -113,6 +123,7 @@ async def _execute_broadcast_task(users: List[Dict[str, Any]], clean_text: str, 
 
 
 @router.post("")
+@router.post("/send")
 def send_broadcast_message(
     req: BroadcastMessageRequest,
     background_tasks: BackgroundTasks,
@@ -126,23 +137,32 @@ def send_broadcast_message(
     if target not in ("all", "pro", "free"):
         raise HTTPException(status_code=400, detail="Noto‘g‘ri maqsadli guruh: 'all', 'pro', yoki 'free' bo‘lishi lozim.")
 
-    clean_text = req.message_text.strip()
+    clean_text = req.resolved_message()
     if not clean_text:
         raise HTTPException(status_code=400, detail="Xabar matni bo‘sh bo‘lishi mumkin emas.")
+    if len(clean_text) > 4000:
+        raise HTTPException(status_code=400, detail="Xabar matni 4000 belgidan oshmasligi kerak.")
 
+    now_iso = datetime.utcnow().isoformat()
     # 1. Fetch targeted recipients
     with _get_connection() as conn:
         c = conn.cursor()
         if target == "pro":
-            c.execute("""
+            c.execute(
+                """
                 SELECT user_id, first_name FROM telegram_users 
-                WHERE is_blocked = 0 AND is_pro = 1 AND subscription_expires_at > datetime('now')
-            """)
+                WHERE is_blocked = 0 AND is_pro = 1 AND subscription_expires_at > ?
+                """,
+                (now_iso,),
+            )
         elif target == "free":
-            c.execute("""
+            c.execute(
+                """
                 SELECT user_id, first_name FROM telegram_users 
-                WHERE is_blocked = 0 AND (is_pro = 0 OR subscription_expires_at <= datetime('now') OR subscription_expires_at IS NULL)
-            """)
+                WHERE is_blocked = 0 AND (is_pro = 0 OR subscription_expires_at <= ? OR subscription_expires_at IS NULL)
+                """,
+                (now_iso,),
+            )
         else:  # all
             c.execute("SELECT user_id, first_name FROM telegram_users WHERE is_blocked = 0")
         
@@ -154,6 +174,8 @@ def send_broadcast_message(
             "total_targets": 0,
             "sent_count": 0,
             "failed_count": 0,
+            "sent": 0,
+            "failed": 0,
             "message": "Tanlangan guruhda faol foydalanuvchilar topilmadi."
         }
 
@@ -191,11 +213,19 @@ def get_broadcast_history(
         """, (limit,))
         rows = [dict(r) for r in c.fetchall()]
         for r in rows:
+            meta: Dict[str, Any] = {}
             if r.get("details"):
                 try:
-                    r["meta"] = json.loads(r["details"])
+                    meta = json.loads(r["details"]) or {}
                 except Exception:
-                    r["meta"] = {}
+                    meta = {}
+            sent_val = meta.get("sent", meta.get("sent_count", 0))
+            failed_val = meta.get("failed", meta.get("failed_count", 0))
+            meta["sent"] = sent_val
+            meta["sent_count"] = sent_val
+            meta["failed"] = failed_val
+            meta["failed_count"] = failed_val
+            r["meta"] = meta
         return {
             "ok": True,
             "history": rows

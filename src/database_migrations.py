@@ -223,6 +223,15 @@ CREATE INDEX IF NOT EXISTS idx_stars_orders_user ON payment_stars_orders(user_id
 CREATE INDEX IF NOT EXISTS idx_stars_orders_status ON payment_stars_orders(status);
 CREATE INDEX IF NOT EXISTS idx_stars_orders_payload ON payment_stars_orders(payload);
 
+CREATE TABLE IF NOT EXISTS payment_stars_charges (
+    charge_id TEXT PRIMARY KEY,
+    order_id TEXT UNIQUE NOT NULL,
+    user_id INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'PAID',
+    created_at TEXT NOT NULL,
+    refunded_at TEXT
+);
+
 -- 12. User Activity Events (Real activity telemetry)
 CREATE TABLE IF NOT EXISTS user_activity_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

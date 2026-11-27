@@ -23,6 +23,7 @@ except ImportError:
     get_mtproto_manager = None
 from src.payments.matching_engine import (
     _compute_extended_expiry_iso,
+    _inspect_unmatched_candidates,
     get_payment_reconciliation_health_sync,
     link_unmatched_to_order_sync,
 )
@@ -125,14 +126,29 @@ def list_unmatched_payments(
         total_items = c.fetchone()[0]
 
         c.execute(f"""
-            SELECT u.*, e.raw_message, e.source_chat
+            SELECT u.*, u.amount_uzs AS incoming_amount_uzs, e.raw_message, e.source_chat
             FROM unmatched_payments u
             LEFT JOIN payment_events e ON u.event_id = e.id
             {where_clause}
             ORDER BY u.created_at DESC
             LIMIT ? OFFSET ?
         """, params + [limit, offset])
-        unmatched = [dict(r) for r in c.fetchall()]
+        unmatched = []
+        for r in c.fetchall():
+            item = dict(r)
+            if item.get("status") == "UNRESOLVED":
+                cand = _inspect_unmatched_candidates(
+                    c,
+                    int(item.get("amount_uzs") or 0),
+                    str(item.get("card_suffix") or ""),
+                )
+                item["candidate_order_id"] = cand.get("candidate_order_id")
+                item["candidate_hint"] = cand.get("hint")
+                item["candidate_reason"] = cand.get("reason_code")
+            else:
+                item.setdefault("candidate_order_id", None)
+                item.setdefault("candidate_hint", None)
+            unmatched.append(item)
 
     return {
         "ok": True,
@@ -153,27 +169,25 @@ def resolve_unmatched_payment(
     now_str = datetime.utcnow().isoformat()
     with _get_connection() as conn:
         c = conn.cursor()
-        c.execute("SELECT id FROM unmatched_payments WHERE id = ?", (unmatched_id,))
-        if not c.fetchone():
-            raise HTTPException(status_code=404, detail="Unmatched payment record not found")
+        c.execute(
+            """
+            UPDATE unmatched_payments
+            SET status = ?, resolution_notes = ?, resolved_by_admin = ?, resolved_at = ?
+            WHERE id = ? AND status = 'UNRESOLVED'
+            """,
+            (req.status, req.notes, current_admin["username"], now_str, unmatched_id),
+        )
+        if (c.rowcount or 0) != 1:
+            raise HTTPException(status_code=404, detail="Unresolved unmatched payment record not found")
 
-        execute_batch(conn, [
-            (
-                """
-                UPDATE unmatched_payments
-                SET status = ?, resolution_notes = ?, resolved_by_admin = ?, resolved_at = ?
-                WHERE id = ?
-                """,
-                [req.status, req.notes, current_admin["username"], now_str, unmatched_id],
-            ),
-            (
-                """
-                INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
-                VALUES (?, 'UNMATCHED_PAYMENT_RESOLVED', ?, ?)
-                """,
-                [current_admin["id"], f"ID: {unmatched_id}, Status: {req.status}, Notes: {req.notes}", now_str],
-            ),
-        ])
+        c.execute(
+            """
+            INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
+            VALUES (?, 'UNMATCHED_PAYMENT_RESOLVED', ?, ?)
+            """,
+            (current_admin["id"], f"ID: {unmatched_id}, Status: {req.status}, Notes: {req.notes}", now_str),
+        )
+        conn.commit()
 
     return {"ok": True, "message": "Holat muvaffaqiyatli hal qilindi."}
 
@@ -242,7 +256,10 @@ def list_payment_review_cases(
     with _get_connection() as conn:
         c = conn.cursor()
         c.execute(f"""
-            SELECT r.*, o.plan_id, o.plan_name, o.duration_days, o.card_suffix,
+            SELECT r.*, r.id AS case_id,
+                   r.amount_uzs AS incoming_amount_uzs,
+                   o.final_amount_uzs AS expected_amount_uzs,
+                   o.plan_id, o.plan_name, o.duration_days, o.card_suffix,
                    u.username, u.first_name, u.last_name
             FROM payment_review_cases r
             JOIN payment_orders o ON r.order_id = o.order_id
@@ -285,70 +302,90 @@ def _approve_late_payment_sync(
         card_suffix = case["card_suffix"]
         event_id = case["event_id"]
 
-        c.execute("SELECT is_pro, subscription_expires_at FROM telegram_users WHERE user_id = ?", (user_id,))
-        u_row = c.fetchone()
+        # Atomically claim PENDING -> APPROVING so concurrent approve/reject cannot double-grant PRO
+        c.execute(
+            "UPDATE payment_review_cases SET status = 'APPROVING' WHERE id = ? AND status = 'PENDING'",
+            (case_id,),
+        )
+        conn.commit()
+        if (c.rowcount or 0) != 1:
+            raise HTTPException(status_code=409, detail="Pending review case already resolved or in progress")
 
-        base_dt = now_dt
-        if u_row and u_row["is_pro"] and u_row["subscription_expires_at"]:
+        try:
+            c.execute("SELECT is_pro, subscription_expires_at FROM telegram_users WHERE user_id = ?", (user_id,))
+            u_row = c.fetchone()
+
+            base_dt = now_dt
+            if u_row and u_row["is_pro"] and u_row["subscription_expires_at"]:
+                try:
+                    curr_exp = datetime.fromisoformat(u_row["subscription_expires_at"].replace("Z", ""))
+                    if curr_exp > now_dt:
+                        base_dt = curr_exp
+                except Exception:
+                    pass
+
+            new_expires_dt = base_dt + timedelta(days=duration_days)
+            new_expires_str = new_expires_dt.isoformat()
+
+            execute_batch(conn, [
+                (
+                    """
+                    UPDATE payment_review_cases
+                    SET status = 'APPROVED', admin_notes = ?, resolved_by_admin = ?, resolved_at = ?
+                    WHERE id = ? AND status = 'APPROVING'
+                    """,
+                    [notes, admin_name, now_str, case_id],
+                ),
+                (
+                    "UPDATE payment_orders SET status = 'PAID', paid_at = ? WHERE order_id = ? AND status != 'PAID'",
+                    [now_str, order_id],
+                ),
+                (
+                    "UPDATE payment_events SET status = 'MATCHED', matched_order_id = ? WHERE id = ?",
+                    [order_id, event_id],
+                ),
+                (
+                    """
+                    INSERT INTO payment_transactions (
+                        order_id, user_id, event_id, amount_uzs, plan_id, card_suffix, payment_timestamp, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [order_id, user_id, event_id, amount_uzs, plan_id, card_suffix, now_str, now_str],
+                ),
+                (
+                    """
+                    UPDATE telegram_users
+                    SET is_pro = 1, subscription_tier = ?, subscription_expires_at = ?
+                    WHERE user_id = ?
+                    """,
+                    [plan_id, new_expires_str, user_id],
+                ),
+                (
+                    """
+                    INSERT INTO user_subscriptions (
+                        user_id, plan_id, plan_name, duration_days, price_uzs, status, created_at, expires_at
+                    ) VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
+                    """,
+                    [user_id, plan_id, plan_name, duration_days, amount_uzs, now_str, new_expires_str],
+                ),
+                (
+                    """
+                    INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
+                    VALUES (?, 'LATE_PAYMENT_APPROVED', ?, ?)
+                    """,
+                    [admin_id, f"Case: {case_id}, Order: {order_id}, User: {user_id}, Notes: {notes}", now_str],
+                ),
+            ])
+        except Exception:
             try:
-                curr_exp = datetime.fromisoformat(u_row["subscription_expires_at"].replace("Z", ""))
-                if curr_exp > now_dt:
-                    base_dt = curr_exp
+                conn.execute(
+                    "UPDATE payment_review_cases SET status = 'PENDING' WHERE id = ? AND status = 'APPROVING'",
+                    (case_id,),
+                )
+                conn.commit()
             except Exception:
                 pass
-
-        new_expires_dt = base_dt + timedelta(days=duration_days)
-        new_expires_str = new_expires_dt.isoformat()
-
-        execute_batch(conn, [
-            (
-                """
-                UPDATE payment_review_cases
-                SET status = 'APPROVED', admin_notes = ?, resolved_by_admin = ?, resolved_at = ?
-                WHERE id = ?
-                """,
-                [notes, admin_name, now_str, case_id],
-            ),
-            (
-                "UPDATE payment_orders SET status = 'PAID', paid_at = ? WHERE order_id = ?",
-                [now_str, order_id],
-            ),
-            (
-                "UPDATE payment_events SET status = 'MATCHED', matched_order_id = ? WHERE id = ?",
-                [order_id, event_id],
-            ),
-            (
-                """
-                INSERT INTO payment_transactions (
-                    order_id, user_id, event_id, amount_uzs, plan_id, card_suffix, payment_timestamp, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [order_id, user_id, event_id, amount_uzs, plan_id, card_suffix, now_str, now_str],
-            ),
-            (
-                """
-                UPDATE telegram_users
-                SET is_pro = 1, subscription_tier = ?, subscription_expires_at = ?
-                WHERE user_id = ?
-                """,
-                [plan_id, new_expires_str, user_id],
-            ),
-            (
-                """
-                INSERT INTO user_subscriptions (
-                    user_id, plan_id, plan_name, duration_days, price_uzs, status, created_at, expires_at
-                ) VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
-                """,
-                [user_id, plan_id, plan_name, duration_days, amount_uzs, now_str, new_expires_str],
-            ),
-            (
-                """
-                INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
-                VALUES (?, 'LATE_PAYMENT_APPROVED', ?, ?)
-                """,
-                [admin_id, f"Case: {case_id}, Order: {order_id}, User: {user_id}, Notes: {notes}", now_str],
-            ),
-        ])
+            raise
 
     try:
         from src.api.deps import invalidate_user_cache

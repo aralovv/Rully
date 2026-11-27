@@ -27,9 +27,13 @@ from src.bot.database import BotDatabase
 from src.payments.stars_service import (
     create_stars_invoice_order,
     fulfill_stars_payment,
+    refund_stars_payment,
     validate_stars_pre_checkout,
 )
-from src.security.telegram_notifier import send_stars_payment_alert_to_admin
+from src.security.telegram_notifier import (
+    send_stars_payment_alert_to_admin,
+    send_stars_refund_alert_to_admin,
+)
 
 logger = logging.getLogger(__name__)
 payments_router = Router(name="payments_router")
@@ -159,13 +163,52 @@ async def handle_stars_successful_payment(message: Message, db: BotDatabase):
 
     if not res.get("already_processed"):
         try:
-            asyncio.create_task(
-                send_stars_payment_alert_to_admin(
-                    order_id=res.get("order_id", ""),
-                    stars_amount=int(stars_amt),
-                    user_id=user_id,
-                    plan_name=plan_name,
-                )
+            await send_stars_payment_alert_to_admin(
+                order_id=res.get("order_id", ""),
+                stars_amount=int(stars_amt),
+                user_id=user_id,
+                plan_name=plan_name,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to send Stars payment alert to admin: %s", exc)
+
+
+@payments_router.message(F.refunded_payment)
+async def handle_stars_refunded_payment(message: Message, db: BotDatabase):
+    """Idempotently revokes PRO duration when Telegram refunds a Stars (`XTR`) transaction."""
+    rp = message.refunded_payment
+    user_id = message.from_user.id
+    lang = db.get_user_language(user_id)
+
+    res = await asyncio.to_thread(
+        refund_stars_payment,
+        user_id=user_id,
+        currency=rp.currency,
+        total_amount=rp.total_amount,
+        telegram_payment_charge_id=rp.telegram_payment_charge_id,
+        invoice_payload=getattr(rp, "invoice_payload", None),
+        provider_payment_charge_id=getattr(rp, "provider_payment_charge_id", None),
+    )
+
+    if not res.get("ok"):
+        logger.warning("Stars refund event ignored/unmatched for user=%s: %s", user_id, res)
+        return
+
+    if not res.get("already_refunded"):
+        if lang == "ru":
+            txt = "ℹ️ Оплата через Telegram Stars возвращена. Срок PRO-подписки скорректирован."
+        elif lang == "uz_cyrl":
+            txt = "ℹ️ Telegram Stars орқали тўлов қайтарилди. PRO обуна муддати қайта ҳисобланди."
+        else:
+            txt = "ℹ️ Telegram Stars orqali to‘lov qaytarildi. PRO obuna muddati qayta hisoblandi."
+        await message.answer(txt)
+        try:
+            await send_stars_refund_alert_to_admin(
+                order_id=res.get("order_id", ""),
+                stars_amount=int(res.get("stars_amount", rp.total_amount)),
+                user_id=user_id,
+                plan_name=res.get("plan_name", "PRO"),
+                still_pro=bool(res.get("pro_active")),
+            )
+        except Exception as exc:
+            logger.warning("Failed to send Stars refund alert to admin: %s", exc)

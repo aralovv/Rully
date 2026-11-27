@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import secrets
+import sqlite3
 from datetime import datetime, timedelta
 from threading import Lock
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -68,6 +69,16 @@ def _ensure_stars_schema(conn: Any) -> None:
             "CREATE INDEX IF NOT EXISTS idx_stars_orders_user ON payment_stars_orders(user_id)",
             "CREATE INDEX IF NOT EXISTS idx_stars_orders_status ON payment_stars_orders(status)",
             "CREATE INDEX IF NOT EXISTS idx_stars_orders_payload ON payment_stars_orders(payload)",
+            """
+            CREATE TABLE IF NOT EXISTS payment_stars_charges (
+                charge_id TEXT PRIMARY KEY,
+                order_id TEXT UNIQUE NOT NULL,
+                user_id INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'PAID',
+                created_at TEXT NOT NULL,
+                refunded_at TEXT
+            )
+            """.strip(),
         ],
     )
     with _STARS_SCHEMA_LOCK:
@@ -309,6 +320,21 @@ def validate_stars_pre_checkout(
     if order["status"] not in ("PENDING",):
         return False, "Buyurtma holati yaroqsiz. Iltimos, qaytadan urinib ko‘ring."
 
+    exp_raw = order.get("expires_at")
+    if exp_raw:
+        try:
+            exp_dt = datetime.fromisoformat(str(exp_raw).replace("Z", ""))
+            if datetime.utcnow() >= exp_dt:
+                with _get_connection() as conn:
+                    conn.execute(
+                        "UPDATE payment_stars_orders SET status = 'EXPIRED' WHERE order_id = ? AND status = 'PENDING'",
+                        (order["order_id"],),
+                    )
+                    conn.commit()
+                return False, "Buyurtma muddati tugagan. Iltimos, yangi to‘lov yarating."
+        except Exception:
+            pass
+
     if not get_subscription_plan(order["plan_id"]):
         return False, "Tanlangan tarif hozirda faol emas."
     return True, None
@@ -408,6 +434,13 @@ def fulfill_stars_payment(
         stmts: List[Any] = [
             (
                 """
+                INSERT INTO payment_stars_charges (charge_id, order_id, user_id, status, created_at)
+                VALUES (?, ?, ?, 'PAID', ?)
+                """,
+                [charge_id, order_id, int(user_id), now_str],
+            ),
+            (
+                """
                 UPDATE payment_stars_orders
                 SET status = 'PAID',
                     telegram_payment_charge_id = ?,
@@ -465,10 +498,11 @@ def fulfill_stars_payment(
         try:
             execute_batch(conn, stmts)
         except Exception as exc:
-            if "UNIQUE" in str(exc).upper():
+            err_upper = str(exc).upper()
+            if isinstance(exc, sqlite3.IntegrityError) or "UNIQUE" in err_upper or "CONSTRAINT" in err_upper:
                 c.execute(
-                    "SELECT * FROM payment_stars_orders WHERE telegram_payment_charge_id = ?",
-                    (charge_id,),
+                    "SELECT * FROM payment_stars_orders WHERE telegram_payment_charge_id = ? OR order_id = ?",
+                    (charge_id, order_id),
                 )
                 race_row = c.fetchone()
                 if race_row:
@@ -502,4 +536,187 @@ def fulfill_stars_payment(
         "duration_days": duration_days,
         "expires_at": new_expires_str,
         "charge_id": charge_id,
+    }
+
+
+def refund_stars_payment(
+    user_id: int,
+    currency: str,
+    total_amount: int,
+    telegram_payment_charge_id: str,
+    invoice_payload: Optional[str] = None,
+    provider_payment_charge_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Idempotently handles Telegram Stars (`XTR`) refund clawbacks (`refunded_payment`):
+    marks order & charge REFUNDED and revokes granted PRO duration atomically.
+    """
+    if str(currency or "").upper() != "XTR":
+        return {"ok": False, "reason": "INVALID_CURRENCY"}
+    charge_id = str(telegram_payment_charge_id or "").strip()
+    if not charge_id:
+        return {"ok": False, "reason": "MISSING_CHARGE_ID"}
+
+    now_dt = datetime.utcnow()
+    now_str = now_dt.isoformat()
+
+    with _get_connection() as conn:
+        _ensure_stars_schema(conn)
+        c = conn.cursor()
+        c.execute(
+            "SELECT * FROM payment_stars_orders WHERE telegram_payment_charge_id = ? OR (? != '' AND payload = ?)",
+            (charge_id, str(invoice_payload or ""), str(invoice_payload or "")),
+        )
+        row = c.fetchone()
+        if not row:
+            return {"ok": False, "reason": "ORDER_NOT_FOUND"}
+        order = dict(row)
+
+        target_user_id = int(order["user_id"])
+        if user_id and int(user_id) != target_user_id:
+            return {"ok": False, "reason": "USER_MISMATCH"}
+
+        order_id = order["order_id"]
+        prev_status = order["status"]
+        if prev_status in ("REFUNDED", "REFUNDING"):
+            return {
+                "ok": True,
+                "already_refunded": True,
+                "order_id": order_id,
+                "user_id": target_user_id,
+                "plan_id": order["plan_id"],
+                "plan_name": order["plan_name"],
+                "stars_amount": int(order["stars_amount"]),
+            }
+
+        # Atomic state-claim lock BEFORE computing duration subtraction (prevents double-deduction on concurrent webhooks)
+        c.execute(
+            "UPDATE payment_stars_orders SET status = 'REFUNDING' WHERE order_id = ? AND status IN ('PAID', 'PENDING')",
+            (order_id,),
+        )
+        conn.commit()
+        if (c.rowcount or 0) != 1:
+            return {
+                "ok": True,
+                "already_refunded": True,
+                "order_id": order_id,
+                "user_id": target_user_id,
+                "plan_id": order["plan_id"],
+                "plan_name": order["plan_name"],
+                "stars_amount": int(order["stars_amount"]),
+            }
+
+        duration_days = int(order["duration_days"])
+        stars_amount = int(order["stars_amount"])
+
+        try:
+            c.execute(
+                "SELECT is_pro, subscription_tier, subscription_expires_at FROM telegram_users WHERE user_id = ?",
+                (target_user_id,),
+            )
+            u_row = c.fetchone()
+            new_is_pro = 0
+            new_tier = "FREE"
+            new_exp_str: Optional[str] = None
+
+            if u_row and u_row["is_pro"] and u_row["subscription_expires_at"]:
+                try:
+                    cur_exp = datetime.fromisoformat(str(u_row["subscription_expires_at"]).replace("Z", ""))
+                    adjusted = cur_exp - timedelta(days=duration_days)
+                    if adjusted > now_dt:
+                        new_is_pro = 1
+                        new_tier = u_row["subscription_tier"] or order["plan_id"]
+                        new_exp_str = adjusted.isoformat()
+                except Exception:
+                    pass
+
+            execute_batch(
+                conn,
+                [
+                    (
+                        "UPDATE payment_stars_orders SET status = 'REFUNDED' WHERE order_id = ? AND status = 'REFUNDING'",
+                        [order_id],
+                    ),
+                    (
+                        "UPDATE payment_stars_charges SET status = 'REFUNDED', refunded_at = ? WHERE charge_id = ? OR order_id = ?",
+                        [now_str, charge_id, order_id],
+                    ),
+                    (
+                        """
+                        UPDATE telegram_users
+                        SET is_pro = ?, subscription_tier = ?, subscription_expires_at = ?
+                        WHERE user_id = ?
+                        """,
+                        [new_is_pro, new_tier, new_exp_str, target_user_id],
+                    ),
+                    (
+                        """
+                        UPDATE user_subscriptions
+                        SET status = 'REFUNDED'
+                        WHERE id = (
+                            SELECT id FROM user_subscriptions
+                            WHERE user_id = ? AND plan_id = ? AND status = 'ACTIVE'
+                            ORDER BY created_at DESC LIMIT 1
+                        )
+                        """,
+                        [target_user_id, order["plan_id"]],
+                    ),
+                    (
+                        """
+                        INSERT INTO user_activity_events (user_id, event_name, event_data, created_at)
+                        VALUES (?, 'STARS_PAYMENT_REFUNDED', ?, ?)
+                        """,
+                        [
+                            target_user_id,
+                            json.dumps(
+                                {
+                                    "order_id": order_id,
+                                    "charge_id": charge_id,
+                                    "stars_amount": total_amount or stars_amount,
+                                    "revoked_days": duration_days,
+                                    "still_pro": bool(new_is_pro),
+                                }
+                            ),
+                            now_str,
+                        ],
+                    ),
+                    (
+                        """
+                        INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
+                        VALUES (0, 'STARS_PAYMENT_REFUNDED', ?, ?)
+                        """,
+                        [
+                            f"Order: {order_id}, User: {target_user_id}, Stars: {total_amount or stars_amount} XTR, Charge: {charge_id}",
+                            now_str,
+                        ],
+                    ),
+                ],
+            )
+        except Exception:
+            try:
+                conn.execute(
+                    "UPDATE payment_stars_orders SET status = ? WHERE order_id = ? AND status = 'REFUNDING'",
+                    (prev_status, order_id),
+                )
+                conn.commit()
+            except Exception:
+                pass
+            raise
+
+    try:
+        from src.api.deps import invalidate_user_cache
+        invalidate_user_cache(target_user_id)
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "already_refunded": False,
+        "order_id": order_id,
+        "user_id": target_user_id,
+        "plan_id": order["plan_id"],
+        "plan_name": order["plan_name"],
+        "stars_amount": total_amount or stars_amount,
+        "pro_active": bool(new_is_pro),
+        "expires_at": new_exp_str,
     }

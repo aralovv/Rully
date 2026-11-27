@@ -54,20 +54,23 @@ def list_audit_logs(
     params = []
 
     if action:
-        conditions.append("action = ?")
+        conditions.append("l.action = ?")
         params.append(action)
 
     where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
 
     with _get_connection() as conn:
         c = conn.cursor()
-        c.execute(f"SELECT COUNT(*) FROM admin_audit_logs {where_clause}", params)
+        c.execute(f"SELECT COUNT(*) FROM admin_audit_logs l {where_clause}", params)
         total_items = c.fetchone()[0]
 
         c.execute(f"""
-            SELECT * FROM admin_audit_logs 
+            SELECT l.*,
+                   COALESCE(a.username, CASE WHEN l.admin_id = 0 THEN 'system' ELSE 'admin' END) AS username
+            FROM admin_audit_logs l
+            LEFT JOIN admin_users a ON l.admin_id = a.id
             {where_clause}
-            ORDER BY id DESC 
+            ORDER BY l.id DESC 
             LIMIT ? OFFSET ?
         """, params + [limit, offset])
         logs = [dict(r) for r in c.fetchall()]
@@ -131,11 +134,19 @@ def get_system_health(current_admin: dict = Depends(get_current_admin)):
     active_orders = get_active_orders_count()
 
     is_overall_healthy = integrity_ok and fk_violations == 0
+    obs_snap = observability.snapshot()
+    status_label = "HEALTHY" if is_overall_healthy else "WARNING"
 
     return {
         "ok": True,
-        "overall_status": "HEALTHY" if is_overall_healthy else "WARNING",
+        "status": status_label,
+        "overall_status": status_label,
         "catalog_version": catalog_version,
+        "runtime": {
+            "rss_mb": obs_snap.get("memory_rss_mb"),
+            "router_mode": obs_snap.get("router_mode", "full"),
+            "cold_start_ms": obs_snap.get("cold_start_ms"),
+        },
         "database": {
             "integrity_check": "ok" if integrity_ok else str(int_res),
             "foreign_key_violations": fk_violations,
@@ -153,6 +164,6 @@ def get_system_health(current_admin: dict = Depends(get_current_admin)):
             "active_orders_count": active_orders,
             "matching_pipeline": "ACTIVE" if active_orders > 0 else "IDLE_ZERO_ORDERS"
         },
-        "observability": observability.snapshot(),
+        "observability": obs_snap,
         "rate_limiter": rate_limiter.stats(),
     }

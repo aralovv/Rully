@@ -313,7 +313,8 @@ async def render_session_results(bot: Bot, chat_id: int, session_id: str,
         JOIN canonical_questions cq ON sa.canonical_id = cq.canonical_id
         WHERE sa.session_id = ?
         """, (session_id,))
-        for cat_name, is_c in c.fetchall():
+        for row in c.fetchall():
+            cat_name, is_c = row[0], row[1]
             if cat_name not in category_breakdown:
                 category_breakdown[cat_name] = {"correct": 0, "incorrect": 0, "total": 0}
             category_breakdown[cat_name]["total"] += 1

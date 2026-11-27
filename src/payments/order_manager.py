@@ -316,10 +316,18 @@ def create_or_get_payment_order(user_id: int, plan_id: str) -> Tuple[bool, str, 
                     break
 
             if allocated_suffix is None:
-                # Fallback strictly to only active unexpired PENDING check when suffix pool is heavily contended
+                # Fallback to shorter 30-minute grace window under extreme suffix congestion (never 0-minute collision)
+                short_grace_cutoff = (now_dt - timedelta(minutes=30)).isoformat()
                 c.execute(
-                    "SELECT final_amount_uzs FROM payment_orders WHERE card_id = ? AND status = 'PENDING' AND expires_at > ?",
-                    (card["id"], now_str),
+                    """
+                    SELECT final_amount_uzs FROM payment_orders
+                    WHERE card_id = ?
+                      AND (
+                          (status = 'PENDING' AND expires_at > ?)
+                          OR (status = 'EXPIRED' AND expires_at > ?)
+                      )
+                    """,
+                    (card["id"], now_str, short_grace_cutoff),
                 )
                 active_only = set(row[0] for row in c.fetchall())
                 for s in candidate_suffixes:

@@ -5,7 +5,9 @@ import time
 import base64
 import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import AsyncIterator, Dict, Any, List, Optional, Tuple
+from urllib.parse import urlparse
 import httpx
 from src.ai.prompts import SYSTEM_PROMPT_UZ, get_system_prompt
 from src.ai.tools import (
@@ -26,6 +28,16 @@ GEMINI_MODELS = [
 ]
 
 _KEY_COOLDOWNS: Dict[str, float] = {}
+_TASHKENT_TZ = timezone(timedelta(hours=5))
+_ALLOWED_IMAGE_HOSTS = frozenset({
+    "fastly.jsdelivr.net",
+    "cdn.jsdelivr.net",
+    "raw.githubusercontent.com",
+    "rully-app.onrender.com",
+    "rully-three.vercel.app",
+})
+_SAFE_IMAGE_NAME_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,128}\.(?:webp|png|jpe?g)$", re.IGNORECASE)
+_MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 class GeminiService:
     def __init__(self):
@@ -122,45 +134,92 @@ class GeminiService:
             return "image/png"
         return None
 
-    async def _load_image_base64(self, image_url: str) -> Optional[Tuple[str, str]]:
-        """Loads question image and returns (base64_str, mime_type).
-        Validates image magic bytes to ensure HTML error pages are never sent to Gemini.
-        """
+    @staticmethod
+    def _tashkent_today_str() -> str:
+        return datetime.now(_TASHKENT_TZ).date().isoformat()
+
+    @staticmethod
+    def _resolve_trusted_image_filename(image_url: Optional[str], canonical_id: Optional[str] = None) -> Optional[str]:
+        """Resolves only an allowlisted or canonical DB image filename (prevents arbitrary SSRF)."""
+        if canonical_id:
+            try:
+                with get_db_connection() as conn:
+                    row = conn.execute(
+                        """
+                        SELECT i.filename
+                        FROM canonical_questions cq
+                        JOIN images i ON cq.primary_image_id = i.id
+                        WHERE cq.canonical_id = ?
+                        LIMIT 1
+                        """,
+                        (str(canonical_id).strip(),),
+                    ).fetchone()
+                    if row:
+                        db_name = os.path.basename(str(row["filename"] if hasattr(row, "keys") else row[0]).replace("\\", "/"))
+                        if _SAFE_IMAGE_NAME_RE.fullmatch(db_name):
+                            return db_name
+            except Exception:
+                pass
+
         if not image_url:
             return None
+
+        raw = str(image_url).strip()
+        parsed = urlparse(raw)
+        if parsed.scheme:
+            if parsed.scheme.lower() != "https":
+                return None
+            host = (parsed.hostname or "").lower()
+            if host not in _ALLOWED_IMAGE_HOSTS:
+                return None
+        elif not raw.startswith("/images/") and "/" in raw.lstrip("/"):
+            return None
+
+        clean_name = os.path.basename(parsed.path.replace("\\", "/"))
+        if not _SAFE_IMAGE_NAME_RE.fullmatch(clean_name):
+            return None
+        return clean_name
+
+    async def _load_image_base64(self, image_url: Optional[str], canonical_id: Optional[str] = None) -> Optional[Tuple[str, str]]:
+        """Loads question image strictly from local disk or pinned CDN hosts (no arbitrary remote SSRF)."""
+        clean_name = self._resolve_trusted_image_filename(image_url, canonical_id=canonical_id)
+        if not clean_name:
+            return None
         try:
-            clean_name = os.path.basename(image_url.split("?")[0].replace("\\", "/"))
             local_path = os.path.join("data", "images", "original", clean_name)
 
             # 1. Local disk check
-            if os.path.exists(local_path):
+            if os.path.exists(local_path) and os.path.getsize(local_path) <= _MAX_IMAGE_BYTES:
                 with open(local_path, "rb") as f:
-                    content = f.read()
-                    mime = self._detect_image_mime(content)
-                    if mime:
-                        return base64.b64encode(content).decode("utf-8"), mime
+                    content = f.read(_MAX_IMAGE_BYTES + 1)
+                    if len(content) <= _MAX_IMAGE_BYTES:
+                        mime = self._detect_image_mime(content)
+                        if mime:
+                            return base64.b64encode(content).decode("utf-8"), mime
 
-            # 2. CDN-first remote candidates (never wait on sleeping Render before fastly CDN)
-            candidates = []
-            if image_url.startswith("http://") or image_url.startswith("https://"):
-                candidates.append(image_url)
-            candidates.extend([
+            # 2. Pinned CDN-first remote candidates (no arbitrary client URL fetching & no redirects)
+            candidates = [
                 f"https://fastly.jsdelivr.net/gh/aralovv/Rully@main/data/images/original/{clean_name}",
                 f"https://raw.githubusercontent.com/aralovv/Rully/main/data/images/original/{clean_name}",
                 f"https://rully-app.onrender.com/images/{clean_name}",
-            ])
-            async with httpx.AsyncClient(timeout=4.0) as client:
+            ]
+            async with httpx.AsyncClient(timeout=4.0, follow_redirects=False) as client:
                 for candidate in candidates:
                     try:
                         r = await client.get(candidate)
-                        if r.status_code == 200 and len(r.content) > 12:
+                        if r.status_code != 200:
+                            continue
+                        cl = r.headers.get("Content-Length")
+                        if cl and int(cl) > _MAX_IMAGE_BYTES:
+                            continue
+                        if 12 < len(r.content) <= _MAX_IMAGE_BYTES:
                             mime = self._detect_image_mime(r.content)
                             if mime:
                                 return base64.b64encode(r.content).decode("utf-8"), mime
                     except Exception:
                         continue
         except Exception as e:
-            logger.warning(f"Failed to load image for Gemini vision ({image_url}): {e}")
+            logger.warning(f"Failed to load image for Gemini vision ({clean_name}): {e}")
         return None
 
     def _get_scene_annotation(self, filename: Optional[str], canonical_id: Optional[str]) -> Optional[Dict[str, Any]]:
@@ -274,20 +333,11 @@ class GeminiService:
         question_context: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
         """Builds prompt ground truth context and returns resolved DB metadata for post-guardrails."""
-        clean_filename = os.path.basename(image_url.split("?")[0].replace("\\", "/")) if image_url else None
+        clean_filename = self._resolve_trusted_image_filename(image_url, canonical_id=canonical_id)
         scene = self._get_scene_annotation(clean_filename, canonical_id)
         db_gt = self._get_db_ground_truth(canonical_id, clean_filename, lang)
 
-        # Normalize client-passed provenance status ONLY as a defensive fallback if DB record is absent
-        if not db_gt and question_context and question_context.get("legal_verification_status"):
-            db_gt = {
-                "canonical_id": canonical_id,
-                "legal_verification_status": question_context.get("legal_verification_status"),
-                "legal_reference": question_context.get("legal_reference"),
-                "legal_chapter": question_context.get("legal_chapter"),
-                "legal_clause": question_context.get("legal_clause"),
-            }
-
+        # Provenance must come solely from authoritative DB rows — never accept client-supplied provenance flags.
         if not scene and not db_gt:
             return None, None
 
@@ -423,10 +473,10 @@ class GeminiService:
                 f"Imtihonlar: {student_snapshot.get('passed_exams', 0)}/{student_snapshot.get('total_exams', 0)}, "
                 f"Faol xatolar banki: {student_snapshot.get('active_mistakes', 0)} ta savol.{srs_part}"
             )
-        if question_context:
-            sel = question_context.get("selected_key")
-            is_ok = question_context.get("is_correct")
-            if sel:
+        if question_context and isinstance(question_context, dict):
+            sel = str(question_context.get("selected_key") or "").strip().upper()
+            is_ok = bool(question_context.get("is_correct"))
+            if sel in {"A", "B", "C", "D", "E"}:
                 blocks.append(
                     f"[TALABA TANLOVI]: O‘quvchi ushbu savolda {sel} variantini tanladi "
                     f"({'To‘g‘ri' if is_ok else 'Noto‘g‘ri javob bergan — aynan nima sababdan bunday bo‘lishini tushuntiring'})."
@@ -435,44 +485,54 @@ class GeminiService:
 
     def check_and_increment_rate_limit(self, user_id: int, is_pro: bool) -> tuple[bool, int, int]:
         """
-        Enforces daily AI Ustoz quota:
+        Atomically enforces daily AI Ustoz quota (Tashkent UTC+5 calendar day):
         - PRO users: up to 100 requests per day.
         - Free users: 3 complimentary daily teaser analyses to experience AI Ustoz.
         Returns: (allowed: bool, current_usage: int, max_limit: int)
         """
         max_limit = 100 if is_pro else 3
+        today = self._tashkent_today_str()
         with get_db_connection() as conn:
             c = conn.cursor()
-
-            c.execute("""
-            SELECT request_count FROM ai_usage_limits
-            WHERE user_id = ? AND usage_date = DATE('now')
-            """, (user_id,))
+            c.execute(
+                """
+                INSERT OR IGNORE INTO ai_usage_limits (user_id, usage_date, request_count)
+                VALUES (?, ?, 0)
+                """,
+                (user_id, today),
+            )
+            c.execute(
+                """
+                UPDATE ai_usage_limits
+                SET request_count = request_count + 1
+                WHERE user_id = ? AND usage_date = ? AND request_count < ?
+                """,
+                (user_id, today, max_limit),
+            )
+            allowed = (c.rowcount or 0) > 0
+            c.execute(
+                """
+                SELECT request_count FROM ai_usage_limits
+                WHERE user_id = ? AND usage_date = ?
+                """,
+                (user_id, today),
+            )
             row = c.fetchone()
-
-            current = row["request_count"] if row else 0
-            if current >= max_limit:
-                return False, current, max_limit
-
-            c.execute("""
-            INSERT INTO ai_usage_limits (user_id, usage_date, request_count)
-            VALUES (?, DATE('now'), 1)
-            ON CONFLICT(user_id, usage_date) DO UPDATE SET request_count = request_count + 1
-            """, (user_id,))
             conn.commit()
-
-            return True, current + 1, max_limit
+            current = int(row["request_count"] if hasattr(row, "keys") else row[0]) if row else 0
+            return allowed, current, max_limit
 
     def refund_rate_limit(self, user_id: int):
         """Refund 1 request count if external Gemini API call failed or timed out."""
+        today = self._tashkent_today_str()
         try:
             with get_db_connection() as conn:
                 c = conn.cursor()
                 c.execute("""
                 UPDATE ai_usage_limits
                 SET request_count = MAX(0, request_count - 1)
-                WHERE user_id = ? AND usage_date = DATE('now')
-                """, (user_id,))
+                WHERE user_id = ? AND usage_date = ?
+                """, (user_id, today))
                 conn.commit()
                 logger.info(f"Refunded AI rate limit for user {user_id} due to API failure")
         except Exception as e:
@@ -643,8 +703,8 @@ class GeminiService:
         user_msg_id = await asyncio.to_thread(self.save_message, user_id, session_id, "user", message, user_meta)
 
         current_parts: List[Dict[str, Any]] = [{"text": message}]
-        if image_url:
-            img_data = await self._load_image_base64(image_url)
+        if image_url or canonical_id:
+            img_data = await self._load_image_base64(image_url, canonical_id=canonical_id)
             if img_data:
                 b64_str, mime_type = img_data
                 current_parts.append({"inline_data": {"mime_type": mime_type, "data": b64_str}})
@@ -798,14 +858,14 @@ class GeminiService:
                     "cards": persisted_cards,
                     "grounding": grounding_meta,
                 }
-            except Exception as e:
+            except Exception:
                 logger.exception("AI assistant invocation exception")
                 await asyncio.to_thread(self.refund_rate_limit, user_id)
                 await asyncio.to_thread(self._delete_message_by_id, user_msg_id)
                 return {
                     "ok": False,
-                    "reply": f"AI xizmatida vaqtinchalik xatolik yuz berdi: {str(e)}",
-                    "error": str(e),
+                    "reply": "AI xizmatida vaqtinchalik xatolik yuz berdi. Iltimos, birozdan so‘ng qayta urinib ko‘ring.",
+                    "error": "temporary_ai_error",
                 }
 
     async def stream_chat(

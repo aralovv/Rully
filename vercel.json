@@ -23,39 +23,92 @@
       "dest": "/static/$1/$2"
     },
     {
+      "src": "/static/admin/(.*)",
+      "headers": {
+        "Cache-Control": "public, max-age=0, must-revalidate",
+        "X-Frame-Options": "DENY",
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+        "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://cdn.jsdelivr.net https://raw.githubusercontent.com; connect-src 'self' https://rully-three.vercel.app https://rully-app.onrender.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+      },
+      "dest": "/static/admin/$1"
+    },
+    {
+      "src": "/static/index\\.html",
+      "headers": {
+        "Cache-Control": "public, max-age=0, must-revalidate",
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+        "Content-Security-Policy": "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://cdn.jsdelivr.net https://raw.githubusercontent.com https://t.me https://*.telegram.org; connect-src 'self' https://rully-three.vercel.app https://rully-app.onrender.com https://cdn.jsdelivr.net; frame-ancestors 'self' https://web.telegram.org https://webk.telegram.org https://webz.telegram.org https://t.me; base-uri 'self'; form-action 'self'; object-src 'none'"
+      },
+      "dest": "/static/index.html"
+    },
+    {
       "src": "/static/(.*)",
+      "headers": {
+        "X-Content-Type-Options": "nosniff",
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains"
+      },
       "dest": "/static/$1"
     },
     {
       "src": "/$",
       "headers": {
-        "Cache-Control": "public, max-age=0, must-revalidate"
+        "Cache-Control": "public, max-age=0, must-revalidate",
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+        "Content-Security-Policy": "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://cdn.jsdelivr.net https://raw.githubusercontent.com https://t.me https://*.telegram.org; connect-src 'self' https://rully-three.vercel.app https://rully-app.onrender.com https://cdn.jsdelivr.net; frame-ancestors 'self' https://web.telegram.org https://webk.telegram.org https://webz.telegram.org https://t.me; base-uri 'self'; form-action 'self'; object-src 'none'"
       },
       "dest": "/static/index.html"
     },
     {
       "src": "/index.html",
       "headers": {
-        "Cache-Control": "public, max-age=0, must-revalidate"
+        "Cache-Control": "public, max-age=0, must-revalidate",
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+        "Content-Security-Policy": "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://cdn.jsdelivr.net https://raw.githubusercontent.com https://t.me https://*.telegram.org; connect-src 'self' https://rully-three.vercel.app https://rully-app.onrender.com https://cdn.jsdelivr.net; frame-ancestors 'self' https://web.telegram.org https://webk.telegram.org https://webz.telegram.org https://t.me; base-uri 'self'; form-action 'self'; object-src 'none'"
       },
       "dest": "/static/index.html"
     },
     {
       "src": "/api/categories",
       "headers": {
-        "Cache-Control": "public, max-age=300, s-maxage=3600, stale-while-revalidate=3600"
+        "Cache-Control": "private, no-store"
       },
       "dest": "/api/index.py"
     },
     {
       "src": "/admin/?$",
       "headers": {
-        "Cache-Control": "public, max-age=0, must-revalidate"
+        "Cache-Control": "public, max-age=0, must-revalidate",
+        "X-Frame-Options": "DENY",
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+        "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://cdn.jsdelivr.net https://raw.githubusercontent.com; connect-src 'self' https://rully-three.vercel.app https://rully-app.onrender.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
       },
       "dest": "/static/admin/index.html"
     },
     {
       "src": "/admin/(.*)",
+      "headers": {
+        "X-Frame-Options": "DENY",
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+        "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://cdn.jsdelivr.net https://raw.githubusercontent.com; connect-src 'self' https://rully-three.vercel.app https://rully-app.onrender.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+      },
       "dest": "/static/admin/$1"
     },
     {

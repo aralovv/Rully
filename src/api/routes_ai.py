@@ -1,9 +1,10 @@
 import asyncio
 import os
+import re
 from typing import Dict, Any, Optional
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from src.api.deps import get_current_user, get_db
 from src.bot.database import BotDatabase
 from src.db_adapter import get_db_connection
@@ -13,12 +14,19 @@ from src.security.rate_limiter import rate_limiter
 router = APIRouter(prefix="/api/ai", tags=["AI Assistant"])
 gemini_service = GeminiService()
 
+def _clean_session_id(raw_sid: Optional[str]) -> str:
+    sid = str(raw_sid or "default").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_.\-]{1,64}", sid):
+        return "default"
+    return sid
+
+
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(..., max_length=2000)
     session_id: Optional[str] = "default"
     language: Optional[str] = "uz_latn"
-    image_url: Optional[str] = None
-    canonical_id: Optional[str] = None
+    image_url: Optional[str] = Field(None, max_length=512)
+    canonical_id: Optional[str] = Field(None, max_length=64)
     question_context: Optional[Dict[str, Any]] = None
 
 class ClearHistoryRequest(BaseModel):
@@ -27,14 +35,15 @@ class ClearHistoryRequest(BaseModel):
 def _load_ai_status_sync(db: BotDatabase, user_id: int) -> Dict[str, Any]:
     sub = db.get_user_subscription(user_id)
     is_pro = sub.get("is_pro", False)
+    today = GeminiService._tashkent_today_str()
     with get_db_connection() as conn:
         c = conn.cursor()
         c.execute(
             """
             SELECT request_count FROM ai_usage_limits
-            WHERE user_id = ? AND usage_date = DATE('now')
+            WHERE user_id = ? AND usage_date = ?
             """,
-            (user_id,),
+            (user_id, today),
         )
         row = c.fetchone()
         current = row["request_count"] if row else 0
@@ -94,7 +103,7 @@ async def chat_with_ai(
         empty_reply = "Iltimos, savolingizni yozing." if lang == "uz_latn" else ("Илтимос, саволингизни ёзинг." if lang == "uz_cyrl" else "Пожалуйста, введите ваш вопрос.")
         return {"ok": False, "reply": empty_reply}
 
-    session_id = req.session_id or "default"
+    session_id = _clean_session_id(req.session_id)
     student_snapshot = await asyncio.to_thread(db.get_ai_student_snapshot, user_id)
     result = await gemini_service.chat(
         user_id=user_id,
@@ -136,7 +145,7 @@ async def stream_chat_with_ai(
     return StreamingResponse(
         gemini_service.stream_chat(
             user_id=user_id,
-            session_id=req.session_id or "default",
+            session_id=_clean_session_id(req.session_id),
             message=msg,
             is_pro=is_pro,
             language=lang,
@@ -156,7 +165,7 @@ async def get_chat_history(
 ):
     user_id = user["user_id"]
     history = await asyncio.to_thread(
-        gemini_service.get_conversation_history, user_id, session_id or "default", 20, True
+        gemini_service.get_conversation_history, user_id, _clean_session_id(session_id), 20, True
     )
     return {"ok": True, "messages": history}
 
@@ -177,5 +186,5 @@ async def clear_chat_history(
     req: ClearHistoryRequest,
     user: Dict[str, Any] = Depends(get_current_user)
 ):
-    await asyncio.to_thread(_clear_history_sync, user["user_id"], req.session_id or "default")
+    await asyncio.to_thread(_clear_history_sync, user["user_id"], _clean_session_id(req.session_id))
     return {"ok": True, "cleared": True}

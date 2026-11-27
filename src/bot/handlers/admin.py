@@ -82,7 +82,7 @@ async def cb_admin_health(callback: CallbackQuery, db: BotDatabase):
         c.execute("PRAGMA foreign_key_check;")
         fk_res = c.fetchall()
 
-    status_icon = "🟢" if int_res == [('ok',)] and len(fk_res) == 0 else "🔴"
+    status_icon = "🟢" if len(int_res) == 1 and str(int_res[0][0]).lower() == "ok" and len(fk_res) == 0 else "🔴"
     text = (
         f"🩺 <b>TIZIM VA MA’LUMOTLAR BAZASI SALOMATLIGI</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n"

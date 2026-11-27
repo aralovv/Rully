@@ -1314,26 +1314,32 @@ class BotDatabase:
     def finalize_exam_session(self, session_id: str, user_id: int, total_q: int,
                               correct: int, incorrect: int, pct: float,
                               passed: bool, time_spent: float, category_breakdown: Dict[str, Any],
-                              unanswered: int = 0, status: str = "COMPLETED") -> Optional[Dict[str, Any]]:
+                              unanswered: int = 0, status: str = "COMPLETED",
+                              record_exam_result: bool = True) -> Optional[Dict[str, Any]]:
         """
-        Batches exam result recording and session status update into a single round-trip HTTP request.
+        Batches session completion and (for real EXAM sessions) exam_results persistence into one round-trip.
         """
         now_ts = datetime.utcnow().isoformat()
         with self._get_connection() as conn:
-            batch_stmts = [
-                ("""
-                INSERT OR REPLACE INTO exam_results (
-                    session_id, user_id, total_questions, correct_count, incorrect_count,
-                    percentage, passed, time_taken_seconds, category_breakdown_json, created_at,
-                    unanswered_count
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, [
-                    session_id, user_id, total_q, correct, incorrect, pct,
-                    1 if passed else 0, time_spent, json.dumps(category_breakdown), now_ts,
-                    unanswered
-                ]),
+            batch_stmts: List[Any] = []
+            if record_exam_result:
+                batch_stmts.append((
+                    """
+                    INSERT OR REPLACE INTO exam_results (
+                        session_id, user_id, total_questions, correct_count, incorrect_count,
+                        percentage, passed, time_taken_seconds, category_breakdown_json, created_at,
+                        unanswered_count
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        session_id, user_id, total_q, correct, incorrect, pct,
+                        1 if passed else 0, time_spent, json.dumps(category_breakdown), now_ts,
+                        unanswered,
+                    ],
+                ))
+            batch_stmts.append(
                 ("UPDATE user_sessions SET status = ?, updated_at = ? WHERE session_id = ?", [status, now_ts, session_id])
-            ]
+            )
             execute_batch(conn, batch_stmts)
         return self.get_session(session_id)
 
@@ -1528,7 +1534,7 @@ class BotDatabase:
             total_users = c.fetchone()[0]
 
             c.execute("SELECT language, COUNT(*) FROM telegram_users GROUP BY language")
-            users_by_lang = dict(c.fetchall())
+            users_by_lang = {r[0]: r[1] for r in c.fetchall()}
 
             c.execute("SELECT COUNT(*) FROM user_sessions WHERE status = 'COMPLETED'")
             completed_sessions = c.fetchone()[0]

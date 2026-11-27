@@ -42,6 +42,10 @@ def get_user_mention(user_id: int) -> str:
 
 async def send_telegram_message(bot_token: str, chat_id: int, text: str, parse_mode: str = "HTML") -> bool:
     """Sends an asynchronous message via Telegram Bot API."""
+    if os.getenv("ENVIRONMENT", "").lower() == "testing" and os.getenv("ENABLE_TEST_TELEGRAM", "").lower() != "true":
+        return False
+    if not bot_token or str(bot_token).strip().startswith("your_") or not chat_id:
+        return False
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     payload = {
         "chat_id": chat_id,
@@ -136,6 +140,27 @@ async def send_stars_payment_alert_to_admin(order_id: str, stars_amount: int, us
         f"Summa: <b>{stars_amount} ⭐ (XTR)</b>\n"
         f"Tarif: <b>{plan_name}</b>\n"
         "Holati: 🟢 Bir zumda avtomatik faollashtirildi"
+    )
+    return await broadcast_order_alert(text)
+
+
+async def send_stars_refund_alert_to_admin(
+    order_id: str,
+    stars_amount: int,
+    user_id: int,
+    plan_name: str,
+    still_pro: bool = False,
+) -> bool:
+    """Alerts the 'Buyurtmalar Rully' group when a Telegram Stars (XTR) refund clawback occurs."""
+    user_label = get_user_mention(user_id)
+    pro_note = "Qolgan oldingi PRO muddat saqlandi" if still_pro else "PRO kirish bekor qilindi"
+    text = (
+        "↩️ <b>Telegram Stars (XTR) to‘lov qaytarildi</b>\n\n"
+        f"Buyurtma: <code>{order_id}</code>\n"
+        f"Foydalanuvchi: {user_label}\n"
+        f"Summa: <b>{stars_amount} ⭐ (XTR)</b>\n"
+        f"Tarif: <b>{plan_name}</b>\n"
+        f"Holati: 🔴 {pro_note}"
     )
     return await broadcast_order_alert(text)
 

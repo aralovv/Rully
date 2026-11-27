@@ -182,6 +182,13 @@ class ObservabilityRegistry:
             all_vals.sort()
             total = self._total_requests
             err_rate = round((self._errors_5xx / total) * 100.0, 2) if total > 0 else 0.0
+            global_p50 = _percentile(all_vals, 50.0)
+            global_p95 = _percentile(all_vals, 95.0)
+            top_routes = sorted(
+                [{"route": k, **v} for k, v in routes_out.items()],
+                key=lambda item: item["count"],
+                reverse=True,
+            )
             return {
                 "started_at": self._started_iso,
                 "uptime_seconds": round(time.monotonic() - self._started_monotonic, 1),
@@ -192,9 +199,12 @@ class ObservabilityRegistry:
                 "errors_4xx": self._errors_4xx,
                 "errors_5xx": self._errors_5xx,
                 "error_5xx_rate_pct": err_rate,
-                "global_p50_ms": _percentile(all_vals, 50.0),
-                "global_p95_ms": _percentile(all_vals, 95.0),
+                "global_p50_ms": global_p50,
+                "global_p95_ms": global_p95,
+                "latency_p50_ms": global_p50,
+                "latency_p95_ms": global_p95,
                 "routes": routes_out,
+                "top_routes": top_routes,
                 "slow_requests": list(self._slow_requests),
                 "recent_errors": list(self._recent_errors),
             }

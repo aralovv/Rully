@@ -150,12 +150,14 @@ def tool_get_user_bookmarks(user_id: int, limit: int = 5, language: str = "uz_la
     """Foydalanuvchining saqlangan (bookmark) savollarini olish."""
     with get_db_connection() as conn:
         c = conn.cursor()
-        
+
         lang = normalize_lang(language)
         col_text = f"text_{lang}"
-        
-        c.execute("""
+        prov_sql = get_provenance_select_sql(conn, "cq")
+
+        c.execute(f"""
         SELECT ub.canonical_id, cq.category_name, cq.correct_option_key, cq.legal_reference,
+               {prov_sql},
                ct.question_text, ct.explanation
         FROM user_bookmarks ub
         JOIN canonical_questions cq ON ub.canonical_id = cq.canonical_id
@@ -164,7 +166,7 @@ def tool_get_user_bookmarks(user_id: int, limit: int = 5, language: str = "uz_la
         ORDER BY ub.created_at DESC
         LIMIT ?
         """, (lang, user_id, min(limit, 10)))
-        
+
         rows = c.fetchall()
         answers_by_cid = {}
         if rows:
@@ -181,18 +183,20 @@ def tool_get_user_bookmarks(user_id: int, limit: int = 5, language: str = "uz_la
 
         results = []
         for idx, r in enumerate(rows):
-            cid = r["canonical_id"]
+            row_dict = dict(r)
+            cid = row_dict["canonical_id"]
+            prov = format_legal_provenance_payload(row_dict)
             results.append({
                 "canonical_id": cid,
                 "question_number": idx + 1,
-                "category_name": localize_category(r["category_name"], lang),
-                "question": r["question_text"],
-                "legal_reference": r["legal_reference"],
-                "explanation": r["explanation"],
-                "correct_option_key": r["correct_option_key"],
-                "options": answers_by_cid.get(cid, [])
+                "category_name": localize_category(row_dict["category_name"], lang),
+                "question": row_dict["question_text"],
+                "explanation": row_dict["explanation"],
+                "correct_option_key": row_dict["correct_option_key"],
+                "options": answers_by_cid.get(cid, []),
+                **prov,
             })
-            
+
         return {
             "count": len(results),
             "saved_questions": results

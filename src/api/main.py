@@ -128,9 +128,10 @@ _dp_instance = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _bot_instance, _dp_instance
+    is_vercel_runtime = bool(IS_VERCEL or os.getenv("VERCEL"))
 
     # 1. Run migrations and database schema updates only on local/standalone servers
-    if not IS_VERCEL:
+    if not is_vercel_runtime:
         try:
             from src.database_migrations import run_migrations
             from src.admin.auth_service import ensure_admin_user_exists
@@ -143,8 +144,9 @@ async def lifespan(app: FastAPI):
     question_sync_task = None
     mtproto_task = None
     bot_task = None
+    keepalive_task = None
 
-    if not IS_VERCEL:
+    if not is_vercel_runtime:
         # 2. Start background order expiration task
         expiration_task = asyncio.create_task(order_expiration_worker())
 
@@ -284,7 +286,7 @@ async def lifespan(app: FastAPI):
             pass
     if mtproto_task:
         mtproto_task.cancel()
-    if not IS_VERCEL:
+    if not is_vercel_runtime:
         try:
             manager = get_mtproto_manager()
             if manager.client and manager.client.is_connected():
@@ -297,6 +299,12 @@ async def lifespan(app: FastAPI):
         question_sync_task.cancel()
 
 
+_is_cloud_prod = (
+    os.getenv("ENVIRONMENT", "").strip().lower() in ("production", "prod", "standalone-cloud")
+    or bool(os.getenv("VERCEL"))
+    or bool(os.getenv("RENDER"))
+)
+
 # Strict CORS Configuration for Mini App webviews, official Telegram clients, and private admin web access
 ALLOWED_ORIGINS = [
     "https://rully-rully4.vercel.app",
@@ -306,13 +314,16 @@ ALLOWED_ORIGINS = [
     "https://webk.telegram.org",
     "https://webz.telegram.org",
     "https://t.me",
-    "http://localhost:3000",
-    "http://localhost:8080",
-    "http://localhost:5173",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:8080",
-    "http://127.0.0.1:5173",
 ]
+if not _is_cloud_prod:
+    ALLOWED_ORIGINS.extend([
+        "http://localhost:3000",
+        "http://localhost:8080",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8080",
+        "http://127.0.0.1:5173",
+    ])
 _extra_origins = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
 if _extra_origins:
     ALLOWED_ORIGINS.extend(_extra_origins)
@@ -327,11 +338,6 @@ for _deploy_host in (os.getenv("VERCEL_URL", "").strip(), os.getenv("RENDER_EXTE
         if _deploy_origin not in ALLOWED_ORIGINS:
             ALLOWED_ORIGINS.append(_deploy_origin)
 
-_is_cloud_prod = (
-    os.getenv("ENVIRONMENT", "").strip().lower() in ("production", "prod", "standalone-cloud")
-    or bool(os.getenv("VERCEL"))
-    or bool(os.getenv("RENDER"))
-)
 STRICT_CORS_ORIGIN_REGEX = None if _is_cloud_prod else r"^https?:\/\/(localhost|127\.0\.0\.1)(:[0-9]+)?$"
 
 
@@ -428,7 +434,7 @@ def create_app(public_only: Optional[bool] = None) -> FastAPI:
         elif path.startswith(("/static/css/", "/static/js/", "/static/img/", "/static/images/")):
             response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         elif path == "/api/categories":
-            response.headers["Cache-Control"] = "public, max-age=300, s-maxage=3600, stale-while-revalidate=3600"
+            response.headers["Cache-Control"] = "private, no-store"
         elif path.startswith("/api/amaliy/"):
             response.headers["Cache-Control"] = "private, no-cache, no-store, must-revalidate"
 

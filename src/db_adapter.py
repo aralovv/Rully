@@ -23,32 +23,44 @@ try:
     import libsql_client.http
     from libsql_client.http import HttpClient
     from libsql_client.hrana.convert import _stmt_to_proto, _result_set_from_proto, _batch_to_proto, _batch_results_from_proto
-    
+
     _orig_execute = HttpClient.execute
     _orig_batch = HttpClient.batch
 
+    def _raise_sqlite_for_turso_error(msg: str, code: str = "UNKNOWN"):
+        low = f"{code} {msg}".lower()
+        if "constraint" in low or "unique" in low or "foreign key" in low:
+            raise sqlite3.IntegrityError(msg)
+        raise sqlite3.OperationalError(f"{code}: {msg}")
+
     async def _patched_execute(self, stmt, args=None):
         request = {"stmt": _stmt_to_proto(stmt, args)}
-        response = await self._send("POST", "v1/execute", request)
-        if isinstance(response, dict) and "message" in response and "result" not in response:
-            msg = response["message"]
-            code = response.get("code", "UNKNOWN")
-            if "constraint" in msg.lower() or "unique" in msg.lower():
-                raise sqlite3.IntegrityError(msg)
-            raise sqlite3.OperationalError(f"{code}: {msg}")
-        return _result_set_from_proto(response["result"])
+        try:
+            response = await self._send("POST", "v1/execute", request)
+            if isinstance(response, dict) and "message" in response and "result" not in response:
+                _raise_sqlite_for_turso_error(response["message"], response.get("code", "UNKNOWN"))
+            return _result_set_from_proto(response["result"])
+        except Exception as exc:
+            if hasattr(libsql_client, "LibsqlError") and isinstance(exc, libsql_client.LibsqlError):
+                if _is_transient_turso_error(exc):
+                    raise
+                _raise_sqlite_for_turso_error(str(exc), getattr(exc, "code", "UNKNOWN"))
+            raise
 
     async def _patched_batch(self, stmts):
         request = {"batch": _batch_to_proto(stmts)}
-        response = await self._send("POST", "v1/batch", request)
-        if isinstance(response, dict) and "message" in response and "result" not in response:
-            msg = response["message"]
-            code = response.get("code", "UNKNOWN")
-            if "constraint" in msg.lower() or "unique" in msg.lower():
-                raise sqlite3.IntegrityError(msg)
-            raise sqlite3.OperationalError(f"{code}: {msg}")
-        proto_res = response["result"]
-        return _batch_results_from_proto(proto_res, len(stmts))
+        try:
+            response = await self._send("POST", "v1/batch", request)
+            if isinstance(response, dict) and "message" in response and "result" not in response:
+                _raise_sqlite_for_turso_error(response["message"], response.get("code", "UNKNOWN"))
+            proto_res = response["result"]
+            return _batch_results_from_proto(proto_res, len(stmts))
+        except Exception as exc:
+            if hasattr(libsql_client, "LibsqlError") and isinstance(exc, libsql_client.LibsqlError):
+                if _is_transient_turso_error(exc):
+                    raise
+                _raise_sqlite_for_turso_error(str(exc), getattr(exc, "code", "UNKNOWN"))
+            raise
 
     HttpClient.execute = _patched_execute
     HttpClient.batch = _patched_batch
@@ -111,8 +123,8 @@ class TursoRow:
         else:
             self._dict = dict(zip(columns, raw_row))
 
-    def __getitem__(self, key: Union[int, str]):
-        if isinstance(key, int):
+    def __getitem__(self, key: Union[int, slice, str]):
+        if isinstance(key, (int, slice)):
             return self._raw[key]
         return self._dict[key]
 
@@ -123,8 +135,16 @@ class TursoRow:
         return len(self._columns)
 
     def __iter__(self):
-        # Allows dict(row) to work seamlessly
-        return iter(self._dict.items())
+        # Match sqlite3.Row: iterate column values in positional order while
+        # dict(row) works via .keys() + __getitem__.
+        return (self._raw[i] for i in range(len(self._columns)))
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, TursoRow):
+            return tuple(self) == tuple(other)
+        if isinstance(other, tuple):
+            return tuple(self) == other
+        return NotImplemented
 
     def __repr__(self):
         return f"<TursoRow {self._dict}>"
@@ -144,8 +164,9 @@ class TursoRow:
 
 class TursoCursor:
     """Cursor wrapper for Turso libSQL client."""
-    def __init__(self, client, url: Optional[str] = None, token: Optional[str] = None):
+    def __init__(self, client, url: Optional[str] = None, token: Optional[str] = None, conn: Optional["TursoConnection"] = None):
         self._client = client
+        self._conn = conn
         self._url = url or os.getenv("TURSO_DATABASE_URL", "").strip()
         self._token = token or os.getenv("TURSO_AUTH_TOKEN", "").strip()
         self._current_result = None
@@ -154,19 +175,34 @@ class TursoCursor:
         self.rowcount = -1
         self.description = None
 
+    def _sync_refreshed_client(self, new_client):
+        self._client = new_client
+        if self._conn is not None and getattr(self._conn, "_shared", False):
+            self._conn._client = new_client
+
     def execute(self, sql: str, params: Optional[Union[List, Tuple, Dict]] = None):
         clean_sql = sql.strip().rstrip(";")
         args = list(params) if params is not None else []
-        
+
         try:
             res = self._client.execute(clean_sql, args)
-        except (sqlite3.IntegrityError, sqlite3.OperationalError):
+        except sqlite3.IntegrityError:
             raise
         except Exception as e:
+            if HAS_LIBSQL and hasattr(libsql_client, "LibsqlError") and isinstance(e, libsql_client.LibsqlError) and not _is_transient_turso_error(e):
+                _raise_sqlite_for_turso_error(str(e), getattr(e, "code", "UNKNOWN"))
             if _is_transient_turso_error(e):
                 logger.warning(f"Turso client error ({e}), refreshing thread-local persistent connection and retrying...")
-                self._client = _refresh_shared_turso_client(self._url, self._token)
-                res = self._client.execute(clean_sql, args)
+                new_client = _refresh_shared_turso_client(self._url, self._token)
+                self._sync_refreshed_client(new_client)
+                try:
+                    res = self._client.execute(clean_sql, args)
+                except Exception as retry_e:
+                    if HAS_LIBSQL and hasattr(libsql_client, "LibsqlError") and isinstance(retry_e, libsql_client.LibsqlError):
+                        _raise_sqlite_for_turso_error(str(retry_e), getattr(retry_e, "code", "UNKNOWN"))
+                    raise
+            elif isinstance(e, sqlite3.OperationalError):
+                raise
             else:
                 logger.error(f"Turso execute error on [{clean_sql}]: {e}")
                 raise
@@ -187,13 +223,12 @@ class TursoCursor:
         stmts = [(clean_sql, list(p)) for p in seq_of_params]
         if not stmts:
             return self
-        try:
+        if self._conn is not None:
+            results = self._conn.batch(stmts)
+        else:
             results = self._client.batch(stmts)
-            self.rowcount = sum(getattr(r, "rows_affected", 0) for r in results)
-            return self
-        except Exception as e:
-            logger.error(f"Turso executemany error: {e}")
-            raise
+        self.rowcount = sum(getattr(r, "rows_affected", 0) for r in results)
+        return self
 
     def fetchone(self) -> Optional[TursoRow]:
         if not self._current_result or self._row_idx >= len(self._current_result.rows):
@@ -229,7 +264,7 @@ class TursoConnection:
         self.row_factory = None
 
     def cursor(self) -> TursoCursor:
-        return TursoCursor(self._client, url=self.url, token=self.token)
+        return TursoCursor(self._client, url=self.url, token=self.token, conn=self)
 
     def execute(self, sql: str, params: Optional[Union[List, Tuple]] = None) -> TursoCursor:
         cur = self.cursor()
@@ -237,7 +272,7 @@ class TursoConnection:
 
     def executescript(self, script: str):
         stmts = [s.strip() for s in script.split(";") if s.strip()]
-        return self._client.batch(stmts)
+        return self.batch(stmts)
 
     def batch(self, stmts: List[Union[str, Tuple[str, Any]]]):
         """Execute a batch of statements in a single round-trip HTTP request."""
@@ -253,10 +288,20 @@ class TursoConnection:
                 formatted_stmts.append(s.strip().rstrip(";"))
         try:
             return self._client.batch(formatted_stmts)
+        except sqlite3.IntegrityError:
+            raise
         except Exception as e:
             if _is_transient_turso_error(e) and self._shared:
-                # Evict poisoned socket from thread-local cache so subsequent requests start clean
-                close_shared_turso_client()
+                logger.warning(f"Turso batch client error ({e}), refreshing shared client and retrying once...")
+                self._client = _refresh_shared_turso_client(self.url, self.token)
+                try:
+                    return self._client.batch(formatted_stmts)
+                except Exception as retry_e:
+                    if HAS_LIBSQL and hasattr(libsql_client, "LibsqlError") and isinstance(retry_e, libsql_client.LibsqlError):
+                        _raise_sqlite_for_turso_error(str(retry_e), getattr(retry_e, "code", "UNKNOWN"))
+                    raise
+            if HAS_LIBSQL and hasattr(libsql_client, "LibsqlError") and isinstance(e, libsql_client.LibsqlError):
+                _raise_sqlite_for_turso_error(str(e), getattr(e, "code", "UNKNOWN"))
             raise
 
     def commit(self):

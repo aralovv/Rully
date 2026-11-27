@@ -8,6 +8,7 @@ Supports:
 
 import os
 import sqlite3
+from datetime import datetime
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -40,6 +41,7 @@ def list_orders(
 ):
     """Lists orders filtered by lifecycle tab with search, tab counters, and pagination."""
     expire_stale_orders()
+    now_iso = datetime.utcnow().isoformat()
     offset = (page - 1) * limit
     direction = "ASC" if sort_order.lower() == "asc" else "DESC"
     order_col = "o.final_amount_uzs" if sort_by == "final_amount_uzs" else "o.created_at"
@@ -49,9 +51,11 @@ def list_orders(
 
     # Tab filter
     if tab == "active":
-        conditions.append("o.status = 'PENDING' AND o.expires_at > datetime('now')")
+        conditions.append("o.status = 'PENDING' AND o.expires_at > ?")
+        params.append(now_iso)
     elif tab == "expired":
-        conditions.append("(o.status = 'EXPIRED' OR (o.status = 'PENDING' AND o.expires_at <= datetime('now')))")
+        conditions.append("(o.status = 'EXPIRED' OR (o.status = 'PENDING' AND o.expires_at <= ?))")
+        params.append(now_iso)
     elif tab == "paid":
         conditions.append("o.status = 'PAID'")
     elif tab == "review_required":
@@ -78,16 +82,19 @@ def list_orders(
         c = conn.cursor()
 
         # Get counts for tabs
-        c.execute("""
+        c.execute(
+            """
             SELECT 
                 COUNT(*) as all_count,
-                SUM(CASE WHEN status = 'PENDING' AND expires_at > datetime('now') THEN 1 ELSE 0 END) as active_count,
-                SUM(CASE WHEN status = 'EXPIRED' OR (status = 'PENDING' AND expires_at <= datetime('now')) THEN 1 ELSE 0 END) as expired_count,
+                SUM(CASE WHEN status = 'PENDING' AND expires_at > ? THEN 1 ELSE 0 END) as active_count,
+                SUM(CASE WHEN status = 'EXPIRED' OR (status = 'PENDING' AND expires_at <= ?) THEN 1 ELSE 0 END) as expired_count,
                 SUM(CASE WHEN status = 'PAID' THEN 1 ELSE 0 END) as paid_count,
                 SUM(CASE WHEN status = 'PAYMENT_REVIEW_REQUIRED' THEN 1 ELSE 0 END) as review_count,
                 SUM(CASE WHEN status = 'CANCELLED' THEN 1 ELSE 0 END) as cancelled_count
             FROM payment_orders
-        """)
+            """,
+            (now_iso, now_iso),
+        )
         counts_row = c.fetchone()
         tab_counts = {
             "all": counts_row["all_count"] or 0,

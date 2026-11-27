@@ -19,11 +19,12 @@ def test_cache_control_headers():
     cc = resp.headers.get("Cache-Control", "")
     assert "max-age=0" in cc or "must-revalidate" in cc
 
-    # 2. Categories API should have edge cache headers
+    # 2. Categories API depends on authenticated user language -> MUST NOT use shared s-maxage CDN caching
     resp_cat = client.get("/api/categories")
     assert resp_cat.status_code == 200
     cc_cat = resp_cat.headers.get("Cache-Control", "")
-    assert "s-maxage=3600" in cc_cat or "max-age=3600" in cc_cat
+    assert "private" in cc_cat and "no-store" in cc_cat
+    assert "s-maxage" not in cc_cat
 
     # 3. Practical modules contains user progress -> MUST NOT be public/s-maxage cached
     resp_amaliy = client.get("/api/amaliy/modules")
@@ -56,10 +57,11 @@ def test_ai_rate_limit_refund():
     assert allowed is True
     assert count == 1
 
-    # Check in DB
+    # Check in DB (uses unified Tashkent UTC+5 usage_date)
+    today = service._tashkent_today_str()
     with get_db_connection() as conn:
         c = conn.cursor()
-        c.execute("SELECT request_count FROM ai_usage_limits WHERE user_id = ? AND usage_date = DATE('now')", (test_user_id,))
+        c.execute("SELECT request_count FROM ai_usage_limits WHERE user_id = ? AND usage_date = ?", (test_user_id, today))
         row = c.fetchone()
         assert row["request_count"] == 1
 
@@ -69,7 +71,7 @@ def test_ai_rate_limit_refund():
     # Check refund reflected in DB
     with get_db_connection() as conn:
         c = conn.cursor()
-        c.execute("SELECT request_count FROM ai_usage_limits WHERE user_id = ? AND usage_date = DATE('now')", (test_user_id,))
+        c.execute("SELECT request_count FROM ai_usage_limits WHERE user_id = ? AND usage_date = ?", (test_user_id, today))
         row = c.fetchone()
         assert row["request_count"] == 0
 

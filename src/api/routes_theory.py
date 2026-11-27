@@ -92,7 +92,7 @@ def list_categories(
 
     rev = engine._cache_revision if engine._cache_revision is not None else 0
     response.headers["ETag"] = f'"rully-cat-{selected_lang}-r{rev}"'
-    response.headers["Cache-Control"] = "public, max-age=300, s-maxage=3600, stale-while-revalidate=3600"
+    response.headers["Cache-Control"] = "private, no-store"
 
     return {
         "language": selected_lang,
@@ -417,7 +417,8 @@ def finish_session(
         time_spent=req.time_elapsed_seconds or 0.0,
         category_breakdown=category_breakdown,
         unanswered=unanswered_count,
-        status=finish_status
+        status=finish_status,
+        record_exam_result=is_exam,
     )
 
     if session.get("session_type") == "BILET" and session.get("category_id"):

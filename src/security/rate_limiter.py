@@ -55,6 +55,7 @@ class SlidingWindowRateLimiter:
                 "tracked_keys": len(self._records),
                 "maxsize": self._maxsize,
                 "rejections_total": self._rejections_total,
+                "rejected_requests": self._rejections_total,
             }
 
     def reset(self, key: Optional[str] = None):

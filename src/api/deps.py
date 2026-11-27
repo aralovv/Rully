@@ -29,10 +29,9 @@ def invalidate_user_cache(user_id: int):
 
 def get_current_user(
     x_telegram_init_data: Optional[str] = Header(None, alias="X-Telegram-Init-Data"),
-    init_data: Optional[str] = Query(None, alias="initData"),
     db: BotDatabase = Depends(get_db)
 ) -> Dict[str, Any]:
-    raw_data = x_telegram_init_data or init_data
+    raw_data = x_telegram_init_data
 
     # Development fallback
     if not raw_data or str(raw_data).strip().lower() in ["null", "undefined", "none", ""]:

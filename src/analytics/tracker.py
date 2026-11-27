@@ -48,16 +48,50 @@ def log_user_event(
         return True
 
 
-def classify_user_activity(user_id: int, conn: Optional[sqlite3.Connection] = None) -> Dict[str, Any]:
-    """
-    Computes an explainable activity classification for a single user.
-    Categories:
-    - Highly Active
-    - Active
-    - Occasionally Active
-    - At Risk
-    - Inactive
-    """
+def _build_activity_classification(
+    events_14d: int,
+    active_days_14d: int,
+    events_prior: int,
+    is_pro: bool,
+) -> Dict[str, Any]:
+    if active_days_14d >= 7 or events_14d >= 25:
+        category = "Highly Active"
+        badge_color = "emerald"
+        explanation = f"Juda faol — So‘nggi 14 kunda {active_days_14d} kun faol bo‘lgan, {events_14d} ta harakat."
+    elif active_days_14d >= 3 or events_14d >= 8:
+        category = "Active"
+        badge_color = "blue"
+        explanation = f"Faol — So‘nggi 14 kunda {active_days_14d} kun faol, {events_14d} ta harakat."
+    elif active_days_14d >= 1 or events_14d >= 1:
+        category = "Occasionally Active"
+        badge_color = "amber"
+        explanation = f"Vaqti-vaqti bilan — So‘nggi 14 kunda {active_days_14d} kun faol."
+    elif events_prior > 0:
+        category = "At Risk"
+        badge_color = "orange"
+        explanation = "Xavf ostida — So‘nggi 14 kunda harakat yo‘q, lekin oxirgi oyda kirgan."
+    else:
+        category = "Inactive"
+        badge_color = "gray"
+        explanation = "Nofaol — 30 kundan ortiq muddat davomida tizimda harakat qayd etilmagan."
+
+    return {
+        "category": category,
+        "segment": category,
+        "badge_color": badge_color,
+        "explanation": explanation,
+        "active_days_14d": int(active_days_14d or 0),
+        "events_14d": int(events_14d or 0),
+        "is_pro": bool(is_pro),
+    }
+
+
+def classify_users_activity_batch(user_ids: List[int], conn: Optional[sqlite3.Connection] = None) -> Dict[int, Dict[str, Any]]:
+    """Classifies a page of users in O(1) batched SQL queries (eliminates 3N per-user queries)."""
+    clean_ids = [int(uid) for uid in user_ids if uid is not None]
+    if not clean_ids:
+        return {}
+
     should_close = False
     if conn is None:
         conn = _get_connection()
@@ -67,63 +101,46 @@ def classify_user_activity(user_id: int, conn: Optional[sqlite3.Connection] = No
         now_dt = datetime.utcnow()
         d14_ago = (now_dt - timedelta(days=14)).isoformat()
         d30_ago = (now_dt - timedelta(days=30)).isoformat()
-
+        placeholders = ",".join("?" * len(clean_ids))
         c = conn.cursor()
-        # 1. Total events in last 14 days
-        c.execute("""
-            SELECT COUNT(*), COUNT(DISTINCT substr(created_at, 1, 10)) 
-            FROM user_activity_events 
-            WHERE user_id = ? AND created_at >= ?
-        """, (user_id, d14_ago))
-        row14 = c.fetchone()
-        events_14d = row14[0] if row14 else 0
-        active_days_14d = row14[1] if row14 else 0
 
-        # 2. Activity in 15..30 days ago
-        c.execute("""
-            SELECT COUNT(*) FROM user_activity_events 
-            WHERE user_id = ? AND created_at >= ? AND created_at < ?
-        """, (user_id, d30_ago, d14_ago))
-        events_prior = c.fetchone()[0]
+        c.execute(f"SELECT user_id, is_pro FROM telegram_users WHERE user_id IN ({placeholders})", clean_ids)
+        pro_map = {int(r[0]): bool(r[1]) for r in c.fetchall()}
 
-        # 3. Overall last activity
-        c.execute("SELECT last_active_at, created_at, is_pro FROM telegram_users WHERE user_id = ?", (user_id,))
-        u_row = c.fetchone()
-        last_active = u_row["last_active_at"] if u_row else None
-        is_pro = bool(u_row["is_pro"]) if u_row else False
+        c.execute(
+            f"""
+            SELECT
+                user_id,
+                COALESCE(SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END), 0) AS events_14d,
+                COUNT(DISTINCT CASE WHEN created_at >= ? THEN substr(created_at, 1, 10) END) AS active_days_14d,
+                COALESCE(SUM(CASE WHEN created_at >= ? AND created_at < ? THEN 1 ELSE 0 END), 0) AS events_prior
+            FROM user_activity_events
+            WHERE user_id IN ({placeholders}) AND created_at >= ?
+            GROUP BY user_id
+            """,
+            [d14_ago, d14_ago, d30_ago, d14_ago, *clean_ids, d30_ago],
+        )
+        stats_map = {int(r[0]): (int(r[1] or 0), int(r[2] or 0), int(r[3] or 0)) for r in c.fetchall()}
 
-        if active_days_14d >= 7 or events_14d >= 25:
-            category = "Highly Active"
-            badge_color = "emerald"
-            explanation = f"Juda faol — So‘nggi 14 kunda {active_days_14d} kun faol bo‘lgan, {events_14d} ta harakat."
-        elif active_days_14d >= 3 or events_14d >= 8:
-            category = "Active"
-            badge_color = "blue"
-            explanation = f"Faol — So‘nggi 14 kunda {active_days_14d} kun faol, {events_14d} ta harakat."
-        elif active_days_14d >= 1 or events_14d >= 1:
-            category = "Occasionally Active"
-            badge_color = "amber"
-            explanation = f"Vaqti-vaqti bilan — So‘nggi 14 kunda {active_days_14d} kun faol."
-        elif events_prior > 0:
-            category = "At Risk"
-            badge_color = "orange"
-            explanation = "Xavf ostida — So‘nggi 14 kunda harakat yo‘q, lekin oxirgi oyda kirgan."
-        else:
-            category = "Inactive"
-            badge_color = "gray"
-            explanation = "Nofaol — 30 kundan ortiq muddat davomida tizimda harakat qayd etilmagan."
-
-        return {
-            "category": category,
-            "badge_color": badge_color,
-            "explanation": explanation,
-            "active_days_14d": active_days_14d,
-            "events_14d": events_14d,
-            "is_pro": is_pro
-        }
+        out: Dict[int, Dict[str, Any]] = {}
+        for uid in clean_ids:
+            ev14, days14, ev_prior = stats_map.get(uid, (0, 0, 0))
+            out[uid] = _build_activity_classification(ev14, days14, ev_prior, pro_map.get(uid, False))
+        return out
     finally:
         if should_close and conn:
             conn.close()
+
+
+def classify_user_activity(user_id: int, conn: Optional[sqlite3.Connection] = None) -> Dict[str, Any]:
+    """
+    Computes an explainable activity classification for a single user.
+    Categories: Highly Active, Active, Occasionally Active, At Risk, Inactive.
+    """
+    return classify_users_activity_batch([int(user_id)], conn=conn).get(
+        int(user_id),
+        _build_activity_classification(0, 0, 0, False),
+    )
 
 
 def get_real_activity_analytics() -> Dict[str, Any]:
@@ -227,7 +244,8 @@ def get_real_activity_analytics() -> Dict[str, Any]:
         "new_users_today": new_users_today,
         "engagement_ratio_pct": engagement_ratio,
         "classification_summary": class_counts,
-        "feature_breakdown": feature_breakdown
+        "feature_breakdown": feature_breakdown,
+        "feature_distribution": {item["event"]: item["count"] for item in feature_breakdown},
     }
 
 
@@ -292,4 +310,14 @@ def get_retention_analytics() -> Dict[str, Any]:
                 "d30_pct": round(cohort["d30"] / count * 100, 1) if count else 0
             })
 
-        return {"cohorts": summary}
+        total_cohort_users = sum(item["users_count"] for item in summary)
+        d1_pct = round(sum(item["d1_retained"] for item in summary) / total_cohort_users * 100, 1) if total_cohort_users else 0.0
+        d7_pct = round(sum(item["d7_retained"] for item in summary) / total_cohort_users * 100, 1) if total_cohort_users else 0.0
+        d30_pct = round(sum(item["d30_retained"] for item in summary) / total_cohort_users * 100, 1) if total_cohort_users else 0.0
+
+        return {
+            "d1_pct": d1_pct,
+            "d7_pct": d7_pct,
+            "d30_pct": d30_pct,
+            "cohorts": summary,
+        }

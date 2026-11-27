@@ -210,10 +210,6 @@ def _reconcile_payment_sync(
 
             stmts: List[Any] = [
                 (
-                    "UPDATE payment_orders SET status = 'PAID', paid_at = ? WHERE order_id = ?",
-                    [now_str, order_id],
-                ),
-                (
                     """
                     INSERT INTO payment_events (
                         event_fingerprint, source_chat, message_id, transaction_type,
@@ -227,6 +223,10 @@ def _reconcile_payment_sync(
                         balance_uzs, card_suffix, payment_source,
                         trans_time, raw_message, order_id, now_str,
                     ],
+                ),
+                (
+                    "UPDATE payment_orders SET status = 'PAID', paid_at = ? WHERE order_id = ? AND status = 'PENDING'",
+                    [now_str, order_id],
                 ),
                 (
                     """
@@ -466,80 +466,100 @@ def link_unmatched_to_order_sync(
         if not unmatched:
             raise ValueError("Unresolved unmatched payment not found")
 
+        # Atomically claim UNRESOLVED -> LINKING before writing order/subscription changes
         c.execute(
-            """
-            SELECT * FROM payment_orders
-            WHERE order_id = ? AND status IN ('PENDING', 'EXPIRED')
-            """,
-            (order_id,),
+            "UPDATE unmatched_payments SET status = 'LINKING' WHERE id = ? AND status = 'UNRESOLVED'",
+            (unmatched_id,),
         )
-        order = c.fetchone()
-        if not order:
-            raise ValueError("Target pending/expired order not found")
+        conn.commit()
+        if (c.rowcount or 0) != 1:
+            raise ValueError("Unresolved unmatched payment not found or already resolved")
 
-        user_id = int(order["user_id"])
-        plan_id = order["plan_id"]
-        plan_name = order["plan_name"]
-        duration_days = int(order["duration_days"])
-        amount_uzs = int(unmatched["amount_uzs"])
-        card_suffix = unmatched["card_suffix"]
-        event_id = unmatched["event_id"]
+        try:
+            c.execute(
+                """
+                SELECT * FROM payment_orders
+                WHERE order_id = ? AND status IN ('PENDING', 'EXPIRED')
+                """,
+                (order_id,),
+            )
+            order = c.fetchone()
+            if not order:
+                raise ValueError("Target pending/expired order not found")
 
-        new_expires_str = _compute_extended_expiry_iso(c, user_id, duration_days, now_dt)
-        audit_note = notes.strip() or f"Linked unmatched #{unmatched_id} to order {order_id}"
+            user_id = int(order["user_id"])
+            plan_id = order["plan_id"]
+            plan_name = order["plan_name"]
+            duration_days = int(order["duration_days"])
+            amount_uzs = int(unmatched["amount_uzs"])
+            card_suffix = unmatched["card_suffix"]
+            event_id = unmatched["event_id"]
 
-        execute_batch(
-            conn,
-            [
-                (
-                    """
-                    UPDATE unmatched_payments
-                    SET status = 'RESOLVED_LINKED', resolution_notes = ?, resolved_by_admin = ?, resolved_at = ?
-                    WHERE id = ? AND status = 'UNRESOLVED'
-                    """,
-                    [audit_note, admin_username, now_str, unmatched_id],
-                ),
-                (
-                    "UPDATE payment_orders SET status = 'PAID', paid_at = ? WHERE order_id = ?",
-                    [now_str, order_id],
-                ),
-                (
-                    "UPDATE payment_events SET status = 'MATCHED', matched_order_id = ? WHERE id = ?",
-                    [order_id, event_id],
-                ),
-                (
-                    """
-                    INSERT INTO payment_transactions (
-                        order_id, user_id, event_id, amount_uzs, plan_id, card_suffix, payment_timestamp, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    [order_id, user_id, event_id, amount_uzs, plan_id, card_suffix, now_str, now_str],
-                ),
-                (
-                    """
-                    UPDATE telegram_users
-                    SET is_pro = 1, subscription_tier = ?, subscription_expires_at = ?
-                    WHERE user_id = ?
-                    """,
-                    [plan_id, new_expires_str, user_id],
-                ),
-                (
-                    """
-                    INSERT INTO user_subscriptions (
-                        user_id, plan_id, plan_name, duration_days, price_uzs, status, created_at, expires_at
-                    ) VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
-                    """,
-                    [user_id, plan_id, plan_name, duration_days, amount_uzs, now_str, new_expires_str],
-                ),
-                (
-                    """
-                    INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
-                    VALUES (?, 'UNMATCHED_PAYMENT_LINKED', ?, ?)
-                    """,
-                    [admin_id, f"Unmatched: {unmatched_id}, Order: {order_id}, User: {user_id}, Notes: {audit_note}", now_str],
-                ),
-            ],
-        )
+            new_expires_str = _compute_extended_expiry_iso(c, user_id, duration_days, now_dt)
+            audit_note = notes.strip() or f"Linked unmatched #{unmatched_id} to order {order_id}"
+
+            execute_batch(
+                conn,
+                [
+                    (
+                        """
+                        UPDATE unmatched_payments
+                        SET status = 'RESOLVED_LINKED', resolution_notes = ?, resolved_by_admin = ?, resolved_at = ?
+                        WHERE id = ? AND status = 'LINKING'
+                        """,
+                        [audit_note, admin_username, now_str, unmatched_id],
+                    ),
+                    (
+                        "UPDATE payment_orders SET status = 'PAID', paid_at = ? WHERE order_id = ? AND status IN ('PENDING', 'EXPIRED')",
+                        [now_str, order_id],
+                    ),
+                    (
+                        "UPDATE payment_events SET status = 'MATCHED', matched_order_id = ? WHERE id = ?",
+                        [order_id, event_id],
+                    ),
+                    (
+                        """
+                        INSERT INTO payment_transactions (
+                            order_id, user_id, event_id, amount_uzs, plan_id, card_suffix, payment_timestamp, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        [order_id, user_id, event_id, amount_uzs, plan_id, card_suffix, now_str, now_str],
+                    ),
+                    (
+                        """
+                        UPDATE telegram_users
+                        SET is_pro = 1, subscription_tier = ?, subscription_expires_at = ?
+                        WHERE user_id = ?
+                        """,
+                        [plan_id, new_expires_str, user_id],
+                    ),
+                    (
+                        """
+                        INSERT INTO user_subscriptions (
+                            user_id, plan_id, plan_name, duration_days, price_uzs, status, created_at, expires_at
+                        ) VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
+                        """,
+                        [user_id, plan_id, plan_name, duration_days, amount_uzs, now_str, new_expires_str],
+                    ),
+                    (
+                        """
+                        INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
+                        VALUES (?, 'UNMATCHED_PAYMENT_LINKED', ?, ?)
+                        """,
+                        [admin_id, f"Unmatched: {unmatched_id}, Order: {order_id}, User: {user_id}, Notes: {audit_note}", now_str],
+                    ),
+                ],
+            )
+        except Exception:
+            try:
+                conn.execute(
+                    "UPDATE unmatched_payments SET status = 'UNRESOLVED' WHERE id = ? AND status = 'LINKING'",
+                    (unmatched_id,),
+                )
+                conn.commit()
+            except Exception:
+                pass
+            raise
 
     try:
         from src.api.deps import invalidate_user_cache
