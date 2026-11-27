@@ -1,4 +1,6 @@
 import json
+import re
+import sqlite3
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 from src.db_adapter import get_db_connection
@@ -20,8 +22,35 @@ def normalize_lang(language: Optional[str]) -> str:
         return "uz_cyrl"
     return "uz_latn"
 
+_PROVENANCE_CACHE: Dict[Tuple[str, str], str] = {}
+
+
+def _resolve_db_cache_key(conn: Any, alias: str) -> Optional[Tuple[str, str]]:
+    """
+    Returns stable cache key per physical DB file or '__turso__'; skips ephemeral
+    '' or ':memory:' SQLite connections so tests using temporary schemas stay safe.
+    """
+    if not isinstance(conn, sqlite3.Connection):
+        return ("__turso__", alias)
+    try:
+        rows = conn.execute("PRAGMA database_list").fetchall()
+        for r in rows:
+            name = r[1] if isinstance(r, tuple) else r["name"]
+            db_file = (r[2] if isinstance(r, tuple) else r["file"]) or ""
+            if name == "main":
+                if not db_file or db_file == ":memory:":
+                    return None
+                return (db_file, alias)
+    except Exception:
+        return None
+    return None
+
+
 def get_provenance_select_sql(conn: Any, alias: str = "cq") -> str:
-    """Returns safe SELECT column expressions for legal provenance across v1/v2 schemas."""
+    """Returns cached SELECT column expressions for legal provenance across v1/v2 schemas."""
+    cache_key = _resolve_db_cache_key(conn, alias)
+    if cache_key and cache_key in _PROVENANCE_CACHE:
+        return _PROVENANCE_CACHE[cache_key]
     try:
         c = conn.cursor()
         c.execute("PRAGMA table_info(canonical_questions)")
@@ -34,7 +63,10 @@ def get_provenance_select_sql(conn: Any, alias: str = "cq") -> str:
             exprs.append(f"{alias}.{col}")
         else:
             exprs.append(f"NULL AS {col}")
-    return ", ".join(exprs)
+    sql_expr = ", ".join(exprs)
+    if cache_key and existing:
+        _PROVENANCE_CACHE[cache_key] = sql_expr
+    return sql_expr
 
 def format_legal_provenance_payload(row: Dict[str, Any]) -> Dict[str, Any]:
     """Formats legal verification metadata and prevents unverified VMQ citations."""
@@ -67,20 +99,38 @@ def format_legal_provenance_payload(row: Dict[str, Any]) -> Dict[str, Any]:
         "legal_guardrail_note": note,
     }
 
+def _normalize_apostrophes(text: str) -> str:
+    """Unifies all Uzbek apostrophe variants (' ‘ ’ ʻ ʼ `) to ASCII ' for tolerant search."""
+    return re.sub(r"[\u2018\u2019\u02bb\u02bc`]", "'", text or "").strip()
+
+
+def _sql_apostrophe_norm(col_expr: str) -> str:
+    return (
+        f"REPLACE(REPLACE(REPLACE(REPLACE(LOWER({col_expr}), "
+        f"CHAR(8216), CHAR(39)), CHAR(8217), CHAR(39)), CHAR(699), CHAR(39)), CHAR(700), CHAR(39))"
+    )
+
+
 def tool_search_questions(
     query: str,
     category_id: Optional[int] = None,
     limit: int = 3,
     language: str = "uz_latn"
 ) -> Dict[str, Any]:
-    """1327 ta savol ichidan qidirish (savol matni, izohi yoki qonuniy havolasi bo‘yicha)."""
+    """1327 ta savol ichidan qidirish (apostrof va imlo variantlariga chidamli)."""
     with get_db_connection() as conn:
         c = conn.cursor()
         
         lang = normalize_lang(language)
         col_text = f"text_{lang}"
-        q_pattern = f"%{query}%"
+        norm_query = _normalize_apostrophes(query).lower()
+        q_pattern = f"%{norm_query}%"
         prov_sql = get_provenance_select_sql(conn, "cq")
+
+        q_norm_sql = _sql_apostrophe_norm("ct.question_text")
+        e_norm_sql = _sql_apostrophe_norm("COALESCE(ct.explanation, '')")
+        l_norm_sql = _sql_apostrophe_norm("COALESCE(cq.legal_reference, '')")
+        where_match = f"({q_norm_sql} LIKE ? OR {e_norm_sql} LIKE ? OR {l_norm_sql} LIKE ?)"
         
         cat_sql = ""
         params = [lang, q_pattern, q_pattern, q_pattern]
@@ -96,7 +146,7 @@ def tool_search_questions(
                ct.question_text, ct.explanation
         FROM canonical_questions cq
         JOIN canonical_translations ct ON cq.canonical_id = ct.canonical_id AND ct.language = ?
-        WHERE (ct.question_text LIKE ? OR ct.explanation LIKE ? OR cq.legal_reference LIKE ?)
+        WHERE {where_match}
         {cat_sql}
         LIMIT ?
         """
@@ -218,7 +268,7 @@ def tool_get_user_mistakes(user_id: int, limit: int = 5, language: str = "uz_lat
         FROM user_mistakes um
         JOIN canonical_questions cq ON um.canonical_id = cq.canonical_id
         JOIN canonical_translations ct ON um.canonical_id = ct.canonical_id AND ct.language = ?
-        WHERE um.user_id = ?
+        WHERE um.user_id = ? AND COALESCE(um.is_resolved, 0) = 0
         ORDER BY um.mistake_count DESC, um.last_mistake_at DESC
         LIMIT ?
         """, (lang, user_id, min(limit, 10)))
@@ -280,7 +330,7 @@ def tool_get_user_statistics(user_id: int, language: str = "uz_latn") -> Dict[st
         bm_count = c.fetchone()["total_bookmarks"]
         
         c.execute("""
-        SELECT COUNT(*) as total_mistakes FROM user_mistakes WHERE user_id = ?
+        SELECT COUNT(*) as total_mistakes FROM user_mistakes WHERE user_id = ? AND COALESCE(is_resolved, 0) = 0
         """, (user_id,))
         mistake_count = c.fetchone()["total_mistakes"]
 
@@ -393,7 +443,7 @@ def tool_analyze_weak_patterns(user_id: int, language: str = "uz_latn") -> Dict[
                    cq.category_name,
                    COUNT(sa.id) AS total_attempts,
                    COALESCE(SUM(sa.is_correct), 0) AS correct_attempts,
-                   COUNT(DISTINCT CASE WHEN um.is_resolved = 0 THEN um.canonical_id END) AS active_mistakes
+                   COUNT(DISTINCT CASE WHEN COALESCE(um.is_resolved, 0) = 0 THEN um.canonical_id END) AS active_mistakes
             FROM session_answers sa
             JOIN user_sessions us ON sa.session_id = us.session_id
             LEFT JOIN canonical_questions cq ON sa.canonical_id = cq.canonical_id
@@ -471,6 +521,139 @@ def tool_generate_study_plan(user_id: int, days: int = 7, language: str = "uz_la
             "weak_topics_top3": weak_cats[:3],
         },
         "plan": plan,
+    }
+
+
+def tool_lookup_vmq_law(
+    query: str = "",
+    chapter_code: Optional[str] = None,
+    clause_num: Optional[str] = None,
+    language: str = "uz_latn",
+) -> Dict[str, Any]:
+    """
+    O'zbekiston Respublikasi VMQ No. 172 (YHQ, VMQ No. 140 tahriri bilan) rasmiy bob, band
+    va ilova matnlarini (1–29 bob, 17-1 bob, 1–4 ilovalar) bazadan aniq qidirib olish.
+    """
+    lang = normalize_lang(language)
+    text_col = "text_ru" if lang == "ru" else "text_uz"
+    title_col = "title_ru" if lang == "ru" else "title_uz"
+    url_col = "doc_url_ru" if lang == "ru" else "doc_url_uz"
+
+    norm_clause = (clause_num or "").strip().replace("¹", "-1").replace("²", "-2")
+    norm_chapter = (chapter_code or "").strip().replace("¹", "-1").replace("²", "-2")
+    norm_query = _normalize_apostrophes(query).strip()
+
+    # Auto-extract clause or sign code from free-text query when explicit args are omitted
+    if not norm_clause and norm_query:
+        m_cl = re.search(r"\b(\d+(?:[¹²]|-\d+)?)\s*[-–]?\s*(?:band|банд|пункт|п\.)\b", norm_query, re.I)
+        m_sg = re.search(r"\b([1-7]\.\d{1,2}(?:\.\d{1,2})?)\b", norm_query)
+        if m_cl:
+            norm_clause = m_cl.group(1).replace("¹", "-1").replace("²", "-2")
+        elif m_sg:
+            norm_clause = m_sg.group(1)
+
+    articles_out: List[Dict[str, Any]] = []
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            rows = []
+            if norm_clause:
+                c.execute(
+                    f"""
+                    SELECT article_key, entry_type, chapter_code, clause_num,
+                           {title_col} AS title, {text_col} AS article_text,
+                           {url_col} AS doc_url, effective_date
+                    FROM vmq_articles
+                    WHERE clause_num = ? AND entry_type != 'chapter_header'
+                    ORDER BY clause_sort
+                    LIMIT 5
+                    """,
+                    (norm_clause,),
+                )
+                rows = c.fetchall()
+            elif norm_chapter:
+                c.execute(
+                    f"""
+                    SELECT article_key, entry_type, chapter_code, clause_num,
+                           {title_col} AS title, {text_col} AS article_text,
+                           {url_col} AS doc_url, effective_date
+                    FROM vmq_articles
+                    WHERE chapter_code = ? AND entry_type != 'chapter_header'
+                    ORDER BY clause_sort
+                    LIMIT 6
+                    """,
+                    (norm_chapter,),
+                )
+                rows = c.fetchall()
+
+            if not rows and norm_query:
+                q_pat = f"%{norm_query.lower()}%"
+                t_norm = _sql_apostrophe_norm(text_col)
+                h_norm = _sql_apostrophe_norm(title_col)
+                c.execute(
+                    f"""
+                    SELECT article_key, entry_type, chapter_code, clause_num,
+                           {title_col} AS title, {text_col} AS article_text,
+                           {url_col} AS doc_url, effective_date
+                    FROM vmq_articles
+                    WHERE entry_type != 'chapter_header'
+                      AND ({t_norm} LIKE ? OR {h_norm} LIKE ? OR clause_num = ?)
+                    ORDER BY clause_sort
+                    LIMIT 5
+                    """,
+                    (q_pat, q_pat, norm_query),
+                )
+                rows = c.fetchall()
+
+            for r in rows:
+                rd = dict(r)
+                articles_out.append({
+                    "article_key": rd.get("article_key"),
+                    "entry_type": rd.get("entry_type"),
+                    "chapter_code": rd.get("chapter_code"),
+                    "clause_num": rd.get("clause_num"),
+                    "title": rd.get("title"),
+                    "text": rd.get("article_text"),
+                    "doc_url": rd.get("doc_url"),
+                    "effective_date": rd.get("effective_date"),
+                })
+    except Exception:
+        articles_out = []
+
+    # Fallback to bundled statutory corpus when queried DB lacks vmq_articles table
+    if not articles_out:
+        from src.db.vmq172_law import find_clause, find_sign_or_marking, get_chapter_title
+        hit = None
+        if norm_clause:
+            hit = find_clause(norm_clause) or find_sign_or_marking(norm_clause)
+        if hit:
+            articles_out.append({
+                "article_key": hit.get("article_key"),
+                "entry_type": hit.get("entry_type"),
+                "chapter_code": hit.get("chapter_code"),
+                "clause_num": hit.get("clause_num"),
+                "title": hit.get("title_ru" if lang == "ru" else "title_uz"),
+                "text": hit.get("text_ru" if lang == "ru" else "text_uz"),
+                "doc_url": hit.get("doc_url_ru" if lang == "ru" else "doc_url_uz"),
+                "effective_date": hit.get("effective_date"),
+            })
+        elif norm_chapter:
+            articles_out.append({
+                "article_key": f"header:{norm_chapter}",
+                "entry_type": "chapter_header",
+                "chapter_code": norm_chapter,
+                "clause_num": None,
+                "title": get_chapter_title(norm_chapter, lang),
+                "text": get_chapter_title(norm_chapter, lang),
+                "doc_url": f"https://propdd.uz/theory/{norm_chapter}-bob",
+                "effective_date": "2022-05-01",
+            })
+
+    return {
+        "ok": True,
+        "count": len(articles_out),
+        "source_act": "VMQ № 172 (12.04.2022, amaldagi tahrir / VMQ № 140)",
+        "articles": articles_out,
     }
 
 # Gemini Function Declarations Schema
@@ -564,6 +747,27 @@ GEMINI_TOOLS_DECLARATIONS = [
                 }
             }
         }
+    },
+    {
+        "name": "lookup_vmq_law",
+        "description": "O'zbekiston VMQ 172 (Yo'l harakati qoidalari va 1-4 ilovalar, jumladan VMQ 140 tahriri va 17-1 bob) rasmiy bandi, bobi yoki yo'l belgisining aniq qonuniy matnini olish.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "query": {
+                    "type": "STRING",
+                    "description": "Qidiruv so'zi yoki qoida mazmuni (masalan: '60 km', 'avtomagistral', '3.27')"
+                },
+                "chapter_code": {
+                    "type": "STRING",
+                    "description": "Bob raqami: '1'..'29', '17-1', 'annex-1'..'annex-4'"
+                },
+                "clause_num": {
+                    "type": "STRING",
+                    "description": "Aniq band yoki belgi raqami (masalan: '78', '115-1', '105', '3.24')"
+                }
+            }
+        }
     }
 ]
 
@@ -575,4 +779,5 @@ TOOL_MAPPING = {
     "get_srs_review_queue": lambda args, uid, lang="uz_latn": tool_get_srs_review_queue(uid, args.get("limit", 5), language=lang),
     "analyze_weak_patterns": lambda args, uid, lang="uz_latn": tool_analyze_weak_patterns(uid, language=lang),
     "generate_study_plan": lambda args, uid, lang="uz_latn": tool_generate_study_plan(uid, args.get("days", 7), language=lang),
+    "lookup_vmq_law": lambda args, uid, lang="uz_latn": tool_lookup_vmq_law(args.get("query", ""), args.get("chapter_code"), args.get("clause_num"), language=lang),
 }

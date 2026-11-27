@@ -16,6 +16,8 @@
     starsCache: [],
     usersCache: [],
     stagedCache: [],
+    cardsCache: [],
+    plansCache: [],
     selectedEditorialIds: new Set(),
     editorial: {
       status: 'PENDING_EDITORIAL_REVIEW',
@@ -923,16 +925,41 @@
         try {
           const cardRes = await apiFetch('/api/admin/cards');
           const cards = cardRes.cards || [];
+          state.cardsCache = cards;
+          const cardsListEl = document.getElementById('cards-list-container');
+          if (cardsListEl) {
+            cardsListEl.innerHTML = cards.length
+              ? cards.map(card => `
+                <div class="mobile-card-row" style="padding:8px 10px;">
+                  <div class="flex items-center justify-between gap-2 flex-wrap">
+                    <div>
+                      <div class="text-xs font-bold text-slate-200">${escapeHtml(card.display_name || card.card_type || 'Karta')} • <span class="font-mono text-emerald">${escapeHtml(card.card_number_masked || '')}</span></div>
+                      <div class="text-[11px] text-muted">${escapeHtml(card.cardholder_name || '')} • ${escapeHtml(card.card_type || 'HUMO')}</div>
+                    </div>
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                      ${card.is_monitoring ? '<span class="badge badge-emerald text-[10px]">ASOSIY / MONITORING</span>' : (card.is_active ? '<span class="badge badge-blue text-[10px]">FAOL</span>' : '<span class="badge badge-red text-[10px]">NOFAOL</span>')}
+                      <button type="button" class="btn btn-secondary btn-sm" data-action="select-card-edit" data-card-id="${escapeHtml(card.id)}">Tahrir</button>
+                      ${!card.is_monitoring ? `<button type="button" class="btn btn-emerald btn-sm" data-action="activate-card" data-card-id="${escapeHtml(card.id)}">Asosiy qilish</button>` : ''}
+                      ${card.is_active ? `<button type="button" class="btn btn-danger btn-sm" data-action="disable-card" data-card-id="${escapeHtml(card.id)}">Nofaol</button>` : ''}
+                    </div>
+                  </div>
+                </div>
+              `).join('')
+              : '<div class="text-xs text-muted">Karta qo‘shilmagan.</div>';
+          }
           if (cards.length) {
-            const c = cards[0];
+            const c = cards.find(x => x.is_active && x.is_monitoring) || cards[0];
             const editId = document.getElementById('edit-card-id');
             if (editId) editId.value = c.id;
+            setText('card-form-title', `To‘lov kartasini yangilash (#${c.id}):`);
             setText('disp-card-number', c.card_number_masked || '•••• •••• •••• ••••');
             setText('disp-card-holder', c.cardholder_name || 'KARTA EGASI');
             setText('disp-card-type', (c.card_type || 'HUMO') + ' CARD');
-            setText('acc-card-summary', `${c.card_type || 'HUMO'} •••• ${c.card_suffix || c.suffix_digits || '****'}`);
+            setText('acc-card-summary', `${cards.length} ta karta • ${c.card_type || 'HUMO'} •••• ${c.card_suffix || '****'}`);
+            const inpDisp = document.getElementById('inp-card-display-name');
             const inpHolder = document.getElementById('inp-card-holder');
             const inpType = document.getElementById('inp-card-type');
+            if (inpDisp) inpDisp.value = c.display_name || '';
             if (inpHolder) inpHolder.value = c.cardholder_name || '';
             if (inpType) inpType.value = c.card_type || 'HUMO';
           }
@@ -943,18 +970,20 @@
         try {
           const planRes = await apiFetch('/api/admin/plans');
           const plans = planRes.plans || [];
+          state.plansCache = plans;
           const planContainer = document.getElementById('plans-pricing-container');
           if (planContainer) {
             planContainer.innerHTML = plans.map(p => `
               <div class="mobile-card-row">
-                <div class="flex items-center justify-between">
+                <div class="flex items-center justify-between gap-2">
                   <div>
-                    <div class="font-bold text-slate-100 text-sm">${escapeHtml(p.name)}</div>
-                    <div class="text-xs text-muted font-mono">${escapeHtml(p.duration_days)} kunlik muddat</div>
+                    <div class="font-bold text-slate-100 text-sm">${escapeHtml(p.name)} ${p.is_active ? '<span class="badge badge-emerald text-[10px]">FAOL</span>' : '<span class="badge badge-red text-[10px]">NOFAOL</span>'}</div>
+                    <div class="text-xs text-muted font-mono">${escapeHtml(p.id)} • ${escapeHtml(p.duration_days)} kunlik muddat</div>
+                    ${p.description ? `<div class="text-[11px] text-slate-400 mt-0.5">${escapeHtml(p.description)}</div>` : ''}
                   </div>
                   <div class="flex items-center gap-3">
                     <span class="font-mono text-emerald font-bold text-sm">${escapeHtml(formatMoney(p.base_price_uzs))}</span>
-                    <button type="button" class="btn btn-secondary btn-sm" data-action="edit-plan-price" data-plan-id="${escapeHtml(p.id)}" data-plan-name="${escapeHtml(p.name)}" data-plan-price="${escapeHtml(p.base_price_uzs)}">O‘zgartirish</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-action="edit-plan-price" data-plan-id="${escapeHtml(p.id)}">O‘zgartirish</button>
                   </div>
                 </div>
               </div>
@@ -973,7 +1002,7 @@
     if (hasRole('MODERATOR')) {
       document.getElementById('acc-sync')?.style.removeProperty('display');
       document.getElementById('acc-editorial')?.style.removeProperty('display');
-      loaders.push(loadQuestionSyncStatus(), loadEditorialQueue(state.editorial.page));
+      loaders.push(loadQuestionSyncStatus(), loadEditorialQueue(state.editorial.page), loadCatalogStatus());
     } else {
       const accSync = document.getElementById('acc-sync');
       const accEd = document.getElementById('acc-editorial');
@@ -1139,12 +1168,24 @@
     openModal('modal-edit-staged');
   }
 
+  async function loadCatalogStatus() {
+    try {
+      const res = await apiFetch('/api/admin/questions/catalog/status');
+      const pill = document.getElementById('catalog-status-pill');
+      if (pill) {
+        pill.textContent = `v${res.catalog_version || 0} • ${res.canonical_verified_law || 0}/${res.canonical_total || 0} VMQ`;
+      }
+    } catch {}
+  }
+
   // ================= 4.2 EDITORIAL PROVENANCE & BULK APPROVAL =================
   function updateEditorialSelectionUi() {
     const count = state.selectedEditorialIds.size;
     setText('ed-selected-count', String(count));
     const bulkBtn = document.getElementById('btn-ed-bulk-approve');
     if (bulkBtn) bulkBtn.disabled = count === 0;
+    const bulkRejBtn = document.getElementById('btn-ed-bulk-reject');
+    if (bulkRejBtn) bulkRejBtn.disabled = count === 0;
     const selectAll = document.getElementById('ed-select-all');
     if (selectAll && state.editorial.items.length) {
       selectAll.checked = state.editorial.items.every(i => state.selectedEditorialIds.has(Number(i.id)));
@@ -1162,6 +1203,7 @@
     const offset = (page - 1) * state.editorial.limit;
     const qVal = (document.getElementById('ed-filter-q')?.value || '').trim();
     const flagVal = (document.getElementById('ed-filter-flag')?.value || '').trim();
+    const sourceVal = (document.getElementById('ed-filter-source')?.value || '').trim();
 
     const params = new URLSearchParams({
       status: state.editorial.status,
@@ -1170,6 +1212,7 @@
     });
     if (qVal) params.set('q', qVal);
     if (flagVal) params.set('issue_flag', flagVal);
+    if (sourceVal) params.set('source_type', sourceVal);
 
     try {
       const res = await apiFetch(`/api/admin/questions/editorial?${params.toString()}`);
@@ -1344,6 +1387,23 @@
         })
       });
       showToast(`Tasdiqlandi: ${(res.approved || []).length} ta, Xato: ${(res.failed || []).length} ta`, 'success');
+      await Promise.allSettled([loadEditorialQueue(state.editorial.page), loadCatalogStatus()]);
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
+  }
+
+  async function bulkRejectSelectedEditorial() {
+    const ids = Array.from(state.selectedEditorialIds);
+    if (!ids.length) return;
+    const reason = prompt(`${ids.length} ta tanlangan elementni rad etish sababi:`, 'Admin ommaviy rad etdi');
+    if (!reason) return;
+    try {
+      const res = await apiFetch('/api/admin/questions/editorial/bulk-reject', {
+        method: 'POST',
+        body: JSON.stringify({ queue_ids: ids, reason })
+      });
+      showToast(`Rad etildi: ${(res.rejected || []).length} ta, Xato: ${(res.failed || []).length} ta`, 'info');
       await loadEditorialQueue(state.editorial.page);
     } catch (e) {
       showToast(e.message, 'error');
@@ -1655,11 +1715,58 @@
         else if (action === 'revoke-sub') revokeUserSubscription(actionEl.getAttribute('data-user-id'), actionEl.getAttribute('data-user-label'));
         else if (action === 'toggle-block') toggleUserBlock(actionEl.getAttribute('data-user-id'), actionEl.getAttribute('data-block') === '1');
         else if (action === 'edit-plan-price') {
-          document.getElementById('edit-plan-id').value = actionEl.getAttribute('data-plan-id');
-          setText('edit-plan-name', actionEl.getAttribute('data-plan-name'));
-          document.getElementById('edit-plan-price').value = actionEl.getAttribute('data-plan-price');
+          const planId = actionEl.getAttribute('data-plan-id');
+          const planObj = (state.plansCache || []).find(x => String(x.id) === String(planId)) || {};
+          document.getElementById('edit-plan-id').value = planId;
+          setText('edit-plan-name', planObj.name || '');
+          document.getElementById('edit-plan-title-inp').value = planObj.name || '';
+          document.getElementById('edit-plan-price').value = planObj.base_price_uzs || 14000;
+          document.getElementById('edit-plan-duration').value = planObj.duration_days || 14;
+          document.getElementById('edit-plan-desc').value = planObj.description || '';
+          document.getElementById('edit-plan-active').checked = planObj.is_active !== 0 && planObj.is_active !== false;
           document.getElementById('edit-plan-reason').value = '';
+          const histBox = document.getElementById('plan-price-history-box');
+          if (histBox) {
+            histBox.textContent = 'Narx tarixi yuklanmoqda...';
+            apiFetch(`/api/admin/plans/${encodeURIComponent(planId)}/price-history`).then(hr => {
+              const items = hr.history || [];
+              histBox.innerHTML = items.length
+                ? items.slice(0, 5).map(h => `<div>${escapeHtml(String(h.changed_at).slice(0, 10))}: ${escapeHtml(formatMoney(h.old_price_uzs))} → <b>${escapeHtml(formatMoney(h.new_price_uzs))}</b> (${escapeHtml(h.reason || '')})</div>`).join('')
+                : 'Hali narx o‘zgarishlari yo‘q.';
+            }).catch(() => { histBox.textContent = ''; });
+          }
           openModal('modal-edit-price');
+        }
+        else if (action === 'select-card-edit') {
+          const cid = actionEl.getAttribute('data-card-id');
+          const cardObj = (state.cardsCache || []).find(x => String(x.id) === String(cid));
+          if (cardObj) {
+            document.getElementById('edit-card-id').value = cardObj.id;
+            setText('card-form-title', `To‘lov kartasini yangilash (#${cardObj.id}):`);
+            document.getElementById('inp-card-display-name').value = cardObj.display_name || '';
+            document.getElementById('inp-card-holder').value = cardObj.cardholder_name || '';
+            document.getElementById('inp-card-type').value = cardObj.card_type || 'HUMO';
+            document.getElementById('inp-card-number').value = '';
+          }
+        }
+        else if (action === 'activate-card') {
+          const cid = actionEl.getAttribute('data-card-id');
+          apiFetch(`/api/admin/cards/${encodeURIComponent(cid)}/activate`, {
+            method: 'POST',
+            body: JSON.stringify({ make_exclusive: true, is_monitoring: true })
+          }).then(res => {
+            showToast(res.message || 'Karta faollashtirildi!', 'success');
+            loadSettings();
+          }).catch(err => showToast(err.message, 'error'));
+        }
+        else if (action === 'disable-card') {
+          const cid = actionEl.getAttribute('data-card-id');
+          if (confirm(`Karta #${cid} ni nofaol qilmoqchimisiz?`)) {
+            apiFetch(`/api/admin/cards/${encodeURIComponent(cid)}`, { method: 'DELETE' }).then(res => {
+              showToast(res.message || 'Karta o‘chirildi', 'info');
+              loadSettings();
+            }).catch(err => showToast(err.message, 'error'));
+          }
         }
         else if (action === 'approve-staged') approveStagedQuestion(actionEl.getAttribute('data-staged-id'));
         else if (action === 'edit-staged') openEditStagedModal(actionEl.getAttribute('data-staged-id'));
@@ -1713,7 +1820,18 @@
       loadEditorialQueue(1);
     });
     document.getElementById('ed-filter-flag')?.addEventListener('change', () => loadEditorialQueue(1));
+    document.getElementById('ed-filter-source')?.addEventListener('change', () => loadEditorialQueue(1));
     document.getElementById('btn-ed-search')?.addEventListener('click', () => loadEditorialQueue(1));
+    document.getElementById('btn-catalog-rebuild')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-catalog-rebuild');
+      if (btn) btn.disabled = true;
+      try {
+        const res = await apiFetch('/api/admin/questions/catalog/rebuild', { method: 'POST' });
+        showToast(`Katalog bundle yangilandi (${res.bundle?.canonical_count || 0} savol).`, 'success');
+        await loadCatalogStatus();
+      } catch (e) { showToast(e.message, 'error'); }
+      finally { if (btn) btn.disabled = false; }
+    });
     document.getElementById('btn-editorial-audit-seed')?.addEventListener('click', async () => {
       const btn = document.getElementById('btn-editorial-audit-seed');
       if (btn) btn.disabled = true;
@@ -1745,6 +1863,7 @@
     });
 
     document.getElementById('btn-ed-bulk-approve')?.addEventListener('click', bulkApproveSelectedEditorial);
+    document.getElementById('btn-ed-bulk-reject')?.addEventListener('click', bulkRejectSelectedEditorial);
     document.getElementById('btn-ed-modal-ai-draft')?.addEventListener('click', () => {
       const qid = document.getElementById('ed-modal-queue-id')?.value;
       if (qid) requestAiDraft(qid, true);
@@ -1862,17 +1981,54 @@
     document.getElementById('form-edit-price')?.addEventListener('submit', async e => {
       e.preventDefault();
       const planId = document.getElementById('edit-plan-id').value;
-      const newPrice = parseInt(document.getElementById('edit-plan-price').value, 10);
-      const reason = document.getElementById('edit-plan-reason').value;
+      const body = {
+        name: (document.getElementById('edit-plan-title-inp')?.value || '').trim(),
+        description: (document.getElementById('edit-plan-desc')?.value || '').trim(),
+        duration_days: parseInt(document.getElementById('edit-plan-duration')?.value, 10),
+        base_price_uzs: parseInt(document.getElementById('edit-plan-price').value, 10),
+        is_active: Boolean(document.getElementById('edit-plan-active')?.checked),
+        reason: (document.getElementById('edit-plan-reason')?.value || '').trim() || 'Admin tarif tahriri'
+      };
       try {
-        await apiFetch(`/api/admin/plans/${encodeURIComponent(planId)}/price`, {
-          method: 'POST',
-          body: JSON.stringify({ new_price_uzs: newPrice, reason })
+        await apiFetch(`/api/admin/plans/${encodeURIComponent(planId)}`, {
+          method: 'PUT',
+          body: JSON.stringify(body)
         });
-        showToast('Tarif narxi yangilandi!');
+        showToast('Tarif ma’lumotlari yangilandi!');
         closeModal('modal-edit-price');
         loadSettings();
       } catch (err) { showToast(err.message, 'error'); }
+    });
+
+    document.getElementById('btn-new-plan-modal')?.addEventListener('click', () => openModal('modal-create-plan'));
+
+    document.getElementById('form-create-plan')?.addEventListener('submit', async e => {
+      e.preventDefault();
+      const body = {
+        id: (document.getElementById('new-plan-id').value || '').trim().toLowerCase(),
+        name: (document.getElementById('new-plan-name').value || '').trim(),
+        duration_days: parseInt(document.getElementById('new-plan-duration').value, 10),
+        base_price_uzs: parseInt(document.getElementById('new-plan-price').value, 10),
+        description: (document.getElementById('new-plan-desc').value || '').trim()
+      };
+      try {
+        const res = await apiFetch('/api/admin/plans', { method: 'POST', body: JSON.stringify(body) });
+        showToast(res.message || 'Yangi tarif yaratildi!', 'success');
+        closeModal('modal-create-plan');
+        loadSettings();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
+
+    document.getElementById('btn-new-card-mode')?.addEventListener('click', () => {
+      const idEl = document.getElementById('edit-card-id');
+      if (idEl) idEl.value = '';
+      setText('card-form-title', 'Yangi qabul qiluvchi karta qo‘shish:');
+      const numEl = document.getElementById('inp-card-number');
+      const dispEl = document.getElementById('inp-card-display-name');
+      const holdEl = document.getElementById('inp-card-holder');
+      if (numEl) { numEl.value = ''; numEl.focus(); }
+      if (dispEl) dispEl.value = '';
+      if (holdEl) holdEl.value = '';
     });
 
     document.getElementById('inp-card-number')?.addEventListener('input', e => {
@@ -1882,20 +2038,28 @@
 
     document.getElementById('form-edit-card')?.addEventListener('submit', async e => {
       e.preventDefault();
-      let cardId = parseInt(document.getElementById('edit-card-id')?.value, 10);
-      if (isNaN(cardId) || cardId <= 0) cardId = 1;
+      const rawCardId = (document.getElementById('edit-card-id')?.value || '').trim();
+      const cardId = rawCardId ? parseInt(rawCardId, 10) : null;
       const rawNum = (document.getElementById('inp-card-number')?.value || '').replace(/\s+/g, '');
       const cardHolder = (document.getElementById('inp-card-holder')?.value || '').trim();
+      const cardDisplay = (document.getElementById('inp-card-display-name')?.value || '').trim();
       const cardType = document.getElementById('inp-card-type')?.value || 'HUMO';
       if (rawNum && !/^\d{16}$/.test(rawNum)) {
         showToast('Karta raqami aniq 16 xonali bo‘lishi shart!', 'error');
         return;
       }
+      if (!cardId && !rawNum) {
+        showToast('Yangi karta uchun 16 xonali karta raqamini kiriting!', 'error');
+        return;
+      }
       const body = { cardholder_name: cardHolder, card_type: cardType };
+      if (cardDisplay) body.display_name = cardDisplay;
       if (rawNum) body.card_number = rawNum;
       try {
-        const res = await apiFetch(`/api/admin/cards/${cardId}`, { method: 'PUT', body: JSON.stringify(body) });
-        showToast(res.message || 'Karta yangilandi!');
+        const res = cardId
+          ? await apiFetch(`/api/admin/cards/${cardId}`, { method: 'PUT', body: JSON.stringify(body) })
+          : await apiFetch('/api/admin/cards', { method: 'POST', body: JSON.stringify({ ...body, display_name: cardDisplay || `${cardType} karta` }) });
+        showToast(res.message || 'Karta saqlandi!');
         document.getElementById('inp-card-number').value = '';
         await loadSettings();
       } catch (err) { showToast(err.message, 'error'); }

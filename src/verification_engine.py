@@ -17,6 +17,12 @@ import csv
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 
+from src.db.vmq172_law import (
+    NUMBERED_CHAPTERS_RU,
+    NUMBERED_CHAPTERS_UZ_LATN,
+    get_road_signs_canonical_map,
+)
+
 # Cabinet of Ministers Resolution No. 172 of April 12, 2022
 LEGAL_ACT_TITLE_UZ = "Yo'l harakati qoidalarini tasdiqlash to'g'risida"
 LEGAL_ACT_TITLE_RU = "Об утверждении Правил дорожного движения"
@@ -24,68 +30,14 @@ RESOLUTION_NUMBER = "Vazirlar Mahkamasining 2022-yil 12-apreldagi 172-son qarori
 LEX_URL_UZ = "https://lex.uz/docs/5963102"
 LEX_URL_RU = "https://lex.uz/ru/docs/5963102"
 
-YHQ_CHAPTERS_UZ = {
-    1: "Umumiy qoidalar",
-    2: "Haydovchilarning umumiy majburiyatlari",
-    3: "Piyodalarning majburiyatlari",
-    4: "Yo'lovchilarning majburiyatlari",
-    5: "Maxsus signallarning qo'llanilishi",
-    6: "Ogohlantiruvchi va yo'naltiruvchi signallar",
-    7: "Yo'l harakatini tartibga solish",
-    8: "Harakatlanishni boshlash, yo'nalishni o'zgartirish",
-    9: "Yo'l harakati qatnov qismida transport vositalarining joylashuvi",
-    10: "Harakatlanish tezligi",
-    11: "Quvib o'tish",
-    12: "To'xtash va to'xtab turish",
-    13: "Chorrahalarda harakatlanish",
-    14: "Piyodalar o'tish joylari va to'xtash bekatlari",
-    15: "Temir yo'l kesishmalari orqali harakatlanish",
-    16: "Avtomagistrallarda harakatlanish",
-    17: "Turar joy daxalarida harakatlanish",
-    18: "Marshrutli transport vositalarining imtiyozlari",
-    19: "Tashqi yoritish asboblaridan foydalanish",
-    20: "Mexanik transport vositalarini shatakka olish",
-    21: "Boshqarishni o'rgatish",
-    22: "Odam tashish",
-    23: "Yuk tashish",
-    24: "Velosiped, moped va aravachalar harakati",
-    25: "Transport vositalaridan foydalanishni taqiqlovchi shartlar",
-    26: "Mansabdor shaxslarning majburiyatlari",
-    27: "Harakat xavfsizligini ta'minlash",
-    28: "Yo'l belgilari (1-ilova)",
-    29: "Yo'l chiziqlari (2-ilova)"
+YHQ_CHAPTERS_UZ: Dict[Any, str] = {
+    **NUMBERED_CHAPTERS_UZ_LATN,
+    "17-1": "Yo‘nalishli transport vositalari uchun alohida ajratilgan tasmasi bor yo‘l orqali harakatlanish",
 }
 
-YHQ_CHAPTERS_RU = {
-    1: "Общие положения",
-    2: "Общие обязанности водителей",
-    3: "Обязанности пешеходов",
-    4: "Обязанности пассажиров",
-    5: "Применение специальных сигналов",
-    6: "Предупреждающие и ориентирующие сигналы",
-    7: "Регулирование дорожного движения",
-    8: "Начало движения, маневрирование",
-    9: "Расположение транспортных средств на проезжей части",
-    10: "Скорость движения",
-    11: "Обгон",
-    12: "Остановка и стоянка",
-    13: "Проезд перекрестков",
-    14: "Пешеходные переходы и места остановок маршрутных ТС",
-    15: "Движение через железнодорожные пути",
-    16: "Движение по автомагистралям",
-    17: "Движение в жилых зонах",
-    18: "Приоритет маршрутных транспортных средств",
-    19: "Пользование внешними световыми приборами",
-    20: "Буксировка механических транспортных средств",
-    21: "Учебная езда",
-    22: "Перевозка людей",
-    23: "Перевозка грузов",
-    24: "Дополнительные требования к движению велосипедов и мопедов",
-    25: "Условия, при которых запрещается эксплуатация транспортных средств",
-    26: "Обязанности должностных лиц",
-    27: "Обеспечение безопасности дорожного движения",
-    28: "Дорожные знаки (Приложение 1)",
-    29: "Дорожная разметка (Приложение 2)"
+YHQ_CHAPTERS_RU: Dict[Any, str] = {
+    **NUMBERED_CHAPTERS_RU,
+    "17-1": "Движение по дороге с полосой, выделенной для маршрутных транспортных средств",
 }
 
 # Standard Road Sign Canonical Titles from Resolution No. 172 (Annex 1)
@@ -130,9 +82,10 @@ ROAD_SIGNS_CANONICAL = {
     "5.3": ("Avtomobillar uchun mo'ljallangan yo'l", "Дорога для автомобилей"),
     "5.5": ("Bir tomonlama harakatlangan yo'l", "Дорога с односторонним движением"),
     "5.16.1": ("Piyodalar o'tish joyi", "Пешеходный переход"),
-    "5.19.1": ("Piyodalar o'tish joyi", "Пешеходный переход"),
+    "5.19.1": ("Oxiri berk yo'l", "Тупик"),
     "6.1": ("Tibbiy yordam ko'rsatish punkti", "Пункт первой медицинской помощи")
 }
+ROAD_SIGNS_CANONICAL = {**ROAD_SIGNS_CANONICAL, **get_road_signs_canonical_map()}
 
 class RemediatedVerificationEngine:
     def __init__(self, conn: sqlite3.Connection):
@@ -175,25 +128,31 @@ class RemediatedVerificationEngine:
         excerpt = None
 
         if lang in ("uz_latn", "uz_cyrl"):
-            # Patterns for Uzbek
-            ch_match = re.search(r"(\d+)-(?:bob|боб)", explanation, re.IGNORECASE)
-            cl_match = re.search(r"(\d+)-(?:band|банд)", explanation, re.IGNORECASE)
+            # Patterns for Uzbek (supporting 17¹-bob / 17-1-bob and avoiding dates like 15.05.2025)
+            ch_match = re.search(r"(\d+(?:[¹²]|-\d+)?)-(?:bob|боб)", explanation, re.IGNORECASE)
+            cl_match = re.search(r"(\d+(?:[¹²]|-\d+)?)-(?:band|банд)", explanation, re.IGNORECASE)
             an_match = re.search(r"(\d+)-(?:ilova|илова)", explanation, re.IGNORECASE)
-            sgn_match = re.search(r"(?:belgi|chiziq|chizig'i|belgisi)?\s*(\d+\.\d+(?:\.\d+)?)", explanation, re.IGNORECASE)
+            sgn_match = re.search(
+                r"(?:belgi(?:si)?|chiziq|chizig'i|chizig‘i|белги(?:си)?|чизиғи)?\s*\b([1-7]\.\d{1,2}(?:\.\d{1,2})?)\b(?!\.\d|\s*(?:yil|y\.|йил|й\.|m\b|метр))",
+                explanation,
+                re.IGNORECASE,
+            )
 
             if ch_match:
                 try:
-                    c_num = int(ch_match.group(1))
-                    c_name = YHQ_CHAPTERS_UZ.get(c_num, f"{c_num}-bob")
-                    refs.append(f"Resolution 172, Chapter {c_num} ({c_name})")
-                    best_ref_key = f"Chapter {c_num}"
-                    excerpt = f"YHQ {c_num}-bob ({c_name}) talablari"
+                    raw_c = ch_match.group(1).replace("¹", "-1").replace("²", "-2")
+                    c_key: Any = int(raw_c) if raw_c.isdigit() else raw_c
+                    c_name = YHQ_CHAPTERS_UZ.get(c_key) or YHQ_CHAPTERS_UZ.get(str(c_key), f"{ch_match.group(1)}-bob")
+                    refs.append(f"Resolution 172, Chapter {raw_c} ({c_name})")
+                    best_ref_key = f"Chapter {raw_c}"
+                    excerpt = f"YHQ {raw_c}-bob ({c_name}) talablari"
                 except Exception:
                     pass
             if cl_match:
-                refs.append(f"Clause {cl_match.group(1)}")
+                norm_cl = cl_match.group(1).replace("¹", "-1").replace("²", "-2")
+                refs.append(f"Clause {norm_cl}")
                 if not best_ref_key:
-                    best_ref_key = f"Clause {cl_match.group(1)}"
+                    best_ref_key = f"Clause {norm_cl}"
             if an_match:
                 refs.append(f"Annex {an_match.group(1)}")
                 if not best_ref_key:
@@ -206,25 +165,31 @@ class RemediatedVerificationEngine:
                 if s_code in ROAD_SIGNS_CANONICAL:
                     excerpt = f"Annex 1/2 #{s_code}: '{ROAD_SIGNS_CANONICAL[s_code][0]}'"
 
-        else: # Russian
-            ch_match = re.search(r"глав[аые]\s*(\d+)", explanation, re.IGNORECASE)
-            cl_match = re.search(r"пункт[ае]?\s*(\d+)", explanation, re.IGNORECASE)
+        else:  # Russian
+            ch_match = re.search(r"глав[аые]\s*(\d+(?:[¹²]|-\d+)?)", explanation, re.IGNORECASE)
+            cl_match = re.search(r"пункт[ае]?\s*(\d+(?:[¹²]|-\d+)?)", explanation, re.IGNORECASE)
             an_match = re.search(r"приложени[еяи]\s*(\d+)", explanation, re.IGNORECASE)
-            sgn_match = re.search(r"(?:знак[ае]?|разметк[аеи]?)?\s*(\d+\.\d+(?:\.\d+)?)", explanation, re.IGNORECASE)
+            sgn_match = re.search(
+                r"(?:знак[ае]?|разметк[аеи]?)?\s*\b([1-7]\.\d{1,2}(?:\.\d{1,2})?)\b(?!\.\d|\s*(?:год|г\.|м\b|метр))",
+                explanation,
+                re.IGNORECASE,
+            )
 
             if ch_match:
                 try:
-                    c_num = int(ch_match.group(1))
-                    c_name = YHQ_CHAPTERS_RU.get(c_num, f"Глава {c_num}")
-                    refs.append(f"Resolution 172, Chapter {c_num} ({c_name})")
-                    best_ref_key = f"Chapter {c_num}"
-                    excerpt = f"ПДД Глава {c_num} ({c_name})"
+                    raw_c = ch_match.group(1).replace("¹", "-1").replace("²", "-2")
+                    c_key_r: Any = int(raw_c) if raw_c.isdigit() else raw_c
+                    c_name = YHQ_CHAPTERS_RU.get(c_key_r) or YHQ_CHAPTERS_RU.get(str(c_key_r), f"Глава {raw_c}")
+                    refs.append(f"Resolution 172, Chapter {raw_c} ({c_name})")
+                    best_ref_key = f"Chapter {raw_c}"
+                    excerpt = f"ПДД Глава {raw_c} ({c_name})"
                 except Exception:
                     pass
             if cl_match:
-                refs.append(f"Clause {cl_match.group(1)}")
+                norm_cl = cl_match.group(1).replace("¹", "-1").replace("²", "-2")
+                refs.append(f"Clause {norm_cl}")
                 if not best_ref_key:
-                    best_ref_key = f"Clause {cl_match.group(1)}"
+                    best_ref_key = f"Clause {norm_cl}"
             if an_match:
                 refs.append(f"Annex {an_match.group(1)}")
                 if not best_ref_key:

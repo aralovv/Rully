@@ -3,6 +3,7 @@ Bot Database Repository & Data Access Layer for Telegram User Sessions,
 Answers, Mistake Tracking, and Admin Analytics.
 """
 import os
+import secrets
 import sqlite3
 import json
 import logging
@@ -928,7 +929,7 @@ class BotDatabase:
                        category_id: Optional[int] = None,
                        show_answer: bool = True,
                        show_explanation: bool = True) -> Dict[str, Any]:
-        session_id = f"SES-{int(time.time() * 1000)}-{user_id}"
+        session_id = f"SES-{int(time.time() * 1000)}-{user_id}-{secrets.token_hex(2)}"
         now_ts = datetime.utcnow().isoformat()
         start_t = time.time()
         deadline = (start_t + time_limit_seconds) if time_limit_seconds > 0 else None

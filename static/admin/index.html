@@ -494,12 +494,23 @@
                   </div>
                 </div>
 
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-xs font-bold text-slate-300">Barcha bank kartalari:</span>
+                  <button type="button" id="btn-new-card-mode" class="btn btn-secondary btn-sm">+ Yangi karta</button>
+                </div>
+                <div id="cards-list-container" class="space-y-2 mb-3"></div>
+
                 <form id="form-edit-card" class="space-y-3 p-3 bg-slate-900 rounded-lg border border-slate-800">
                   <input type="hidden" id="edit-card-id" value="1">
-                  <h4 class="font-bold text-xs text-slate-300 mb-1">To‘lov kartasini yangilash:</h4>
+                  <h4 id="card-form-title" class="font-bold text-xs text-slate-300 mb-1">To‘lov kartasini yangilash:</h4>
 
                   <div class="form-group">
-                    <label class="form-label text-xs" for="inp-card-number">Yangi Karta Raqami (16 xonali)</label>
+                    <label class="form-label text-xs" for="inp-card-display-name">Karta nomi (Display):</label>
+                    <input type="text" id="inp-card-display-name" class="form-input text-xs" placeholder="Asosiy HUMO karta">
+                  </div>
+
+                  <div class="form-group">
+                    <label class="form-label text-xs" for="inp-card-number">Karta Raqami (16 xonali)</label>
                     <input type="text" id="inp-card-number" class="form-input font-mono text-xs" placeholder="9860 0000 0000 0000" maxlength="19">
                   </div>
 
@@ -538,6 +549,10 @@
               </div>
 
               <div class="accordion-content">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-xs text-muted">Faol va nofaol tariflar</span>
+                  <button type="button" id="btn-new-plan-modal" class="btn btn-secondary btn-sm">+ Yangi tarif</button>
+                </div>
                 <div class="space-y-2.5" id="plans-pricing-container">
                   <div class="text-xs text-muted">Yuklanmoqda...</div>
                 </div>
@@ -660,7 +675,12 @@
                 </div>
 
                 <div class="editorial-filters-bar mb-3">
-                  <input type="text" id="ed-filter-q" class="form-input text-xs" placeholder="CANON-YHQ-... yoki savol matni bo‘yicha qidirish">
+                  <input type="text" id="ed-filter-q" class="form-input text-xs" placeholder="CANON-YHQ-... yoki savol matni (UZ/RU) bo‘yicha qidirish">
+                  <select id="ed-filter-source" class="form-input text-xs" style="max-width:170px;">
+                    <option value="">Barcha manbalar</option>
+                    <option value="AUDIT_FLAG">Audit Flag</option>
+                    <option value="AI_DRAFT">AI Qoralama</option>
+                  </select>
                   <select id="ed-filter-flag" class="form-input text-xs">
                     <option value="">Barcha sifat belgilari</option>
                     <option value="LANGUAGE_BLEED_UZ_IN_RU">Rus tilida o‘zbekcha matn (LANGUAGE_BLEED_UZ_IN_RU)</option>
@@ -675,9 +695,11 @@
                   </select>
                   <button type="button" id="btn-ed-search" class="btn btn-secondary btn-sm">🔍 Izlash</button>
                   <button type="button" id="btn-editorial-audit-seed" class="btn btn-ghost btn-sm">🛡️ Auditni Yangilash</button>
+                  <button type="button" id="btn-catalog-rebuild" class="btn btn-ghost btn-sm">🔄 Katalog Rebuild</button>
+                  <span id="catalog-status-pill" class="badge badge-neutral text-[10px]">v—</span>
                 </div>
 
-                <!-- BULK APPROVE EDITORIAL TOOLBAR -->
+                <!-- BULK APPROVE / REJECT EDITORIAL TOOLBAR -->
                 <div class="editorial-bulk-toolbar mb-3" id="editorial-bulk-bar">
                   <label class="flex items-center gap-2 text-xs text-slate-200 cursor-pointer">
                     <input type="checkbox" id="ed-select-all">
@@ -691,6 +713,9 @@
                     <input type="text" id="ed-bulk-clause" class="form-input text-xs" style="width:140px;" placeholder="Band (masalan 19-band)">
                     <button type="button" id="btn-ed-bulk-approve" class="btn btn-emerald btn-sm" disabled>
                       ⚖️ Tanlanganlarni Tasdiqlash
+                    </button>
+                    <button type="button" id="btn-ed-bulk-reject" class="btn btn-danger btn-sm" disabled>
+                      ❌ Tanlanganlarni Rad etish
                     </button>
                   </div>
                 </div>
@@ -840,28 +865,80 @@
     </div>
   </div>
 
-  <!-- ================= PLAN PRICE CHANGE MODAL ================= -->
+  <!-- ================= PLAN EDIT / CREATE MODALS ================= -->
   <div id="modal-edit-price" class="modal-overlay" style="display:none;">
     <div class="modal-card">
       <div class="modal-header">
-        <h3 class="modal-title">Tarif Narxini O‘zgartirish</h3>
+        <h3 class="modal-title">Tarifni Tahrirlash va Narx</h3>
         <button type="button" class="modal-close" data-close-modal="modal-edit-price">&times;</button>
       </div>
-      <form id="form-edit-price" class="space-y-4 p-4">
+      <form id="form-edit-price" class="space-y-3 p-4">
         <input type="hidden" id="edit-plan-id">
         <div class="form-group">
-          <label class="form-label text-xs">Tarif nomi:</label>
-          <div id="edit-plan-name" class="font-bold text-slate-200">—</div>
+          <label class="form-label text-xs" for="edit-plan-title-inp">Tarif nomi:</label>
+          <div id="edit-plan-name" class="text-[11px] text-muted mb-1">—</div>
+          <input type="text" id="edit-plan-title-inp" class="form-input text-xs" required>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div class="form-group">
+            <label class="form-label text-xs" for="edit-plan-price">Yangi narx (UZS):</label>
+            <input type="number" id="edit-plan-price" class="form-input font-mono text-xs" step="1000" min="1000" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label text-xs" for="edit-plan-duration">Muddat (kun):</label>
+            <input type="number" id="edit-plan-duration" class="form-input font-mono text-xs" min="1" required>
+          </div>
         </div>
         <div class="form-group">
-          <label class="form-label text-xs" for="edit-plan-price">Yangi narx (UZS):</label>
-          <input type="number" id="edit-plan-price" class="form-input font-mono" step="1000" min="1000" required>
+          <label class="form-label text-xs" for="edit-plan-desc">Tavsif:</label>
+          <input type="text" id="edit-plan-desc" class="form-input text-xs" placeholder="Tarif tavsifi">
         </div>
+        <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+          <input type="checkbox" id="edit-plan-active" checked>
+          <span>Faol tarif (foydalanuvchilarga ko‘rinadi)</span>
+        </label>
         <div class="form-group">
-          <label class="form-label text-xs" for="edit-plan-reason">O‘zgartirish sababi:</label>
-          <input type="text" id="edit-plan-reason" class="form-input text-xs" placeholder="Masalan: Aksiya, Narx yangilanishi" required>
+          <label class="form-label text-xs" for="edit-plan-reason">O‘zgartirish sababi (Audit):</label>
+          <input type="text" id="edit-plan-reason" class="form-input text-xs" placeholder="Masalan: Aksiya, Narx yangilanishi">
         </div>
+        <div id="plan-price-history-box" class="text-[11px] text-muted bg-slate-900/60 p-2 rounded border border-slate-800 max-h-24 overflow-y-auto"></div>
         <button type="submit" class="btn btn-primary btn-block">Saqlash</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="modal-create-plan" class="modal-overlay" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">Yangi PRO Tarif Qo‘shish</h3>
+        <button type="button" class="modal-close" data-close-modal="modal-create-plan">&times;</button>
+      </div>
+      <form id="form-create-plan" class="space-y-3 p-4">
+        <div class="grid grid-cols-2 gap-2">
+          <div class="form-group">
+            <label class="form-label text-xs" for="new-plan-id">ID (masalan pro_60):</label>
+            <input type="text" id="new-plan-id" class="form-input font-mono text-xs" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label text-xs" for="new-plan-name">Nomi:</label>
+            <input type="text" id="new-plan-name" class="form-input text-xs" required>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div class="form-group">
+            <label class="form-label text-xs" for="new-plan-duration">Muddat (kun):</label>
+            <input type="number" id="new-plan-duration" class="form-input font-mono text-xs" min="1" value="60" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label text-xs" for="new-plan-price">Narx (UZS):</label>
+            <input type="number" id="new-plan-price" class="form-input font-mono text-xs" min="1000" step="1000" value="45000" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label text-xs" for="new-plan-desc">Tavsif:</label>
+          <input type="text" id="new-plan-desc" class="form-input text-xs">
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Yaratish</button>
       </form>
     </div>
   </div>
@@ -1059,6 +1136,6 @@
   <!-- TOAST NOTIFICATION CONTAINER -->
   <div id="toast-container" class="toast-container"></div>
 
-  <script src="/static/admin/admin.js?v=2.9.0"></script>
+  <script src="/static/admin/admin.js?v=3.0.0"></script>
 </body>
 </html>

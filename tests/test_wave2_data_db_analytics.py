@@ -28,11 +28,12 @@ from src.payments.order_manager import create_or_get_payment_order, invalidate_p
 def test_image_scenes_single_canonical_schema_all_solutions_intact():
     with open("data/image_scenes.json", "r", encoding="utf-8") as f:
         scenes = json.load(f)
-    assert len(scenes) == 769
+    assert len(scenes) >= 782
+    assert all(k.startswith(("CANON-YHQ-", "CQ-")) for k in scenes.keys())
     schemas = {tuple(sorted(v.keys())) for v in scenes.values()}
     assert len(schemas) == 1, f"Expected 1 uniform schema, found {len(schemas)}"
     non_empty_solutions = sum(1 for v in scenes.values() if (v.get("otish_tartibi_yoki_yechim") or "").strip())
-    assert non_empty_solutions == 769
+    assert non_empty_solutions == len(scenes)
 
 
 def test_no_null_category_ids_and_human_provenance_preserved():

@@ -46,6 +46,9 @@ class PlanCreateRequest(BaseModel):
 class PlanUpdateRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    duration_days: Optional[int] = Field(None, ge=1)
+    base_price_uzs: Optional[int] = Field(None, ge=1000)
+    reason: Optional[str] = None
     is_active: Optional[bool] = None
     display_order: Optional[int] = None
 
@@ -101,14 +104,16 @@ def update_subscription_plan(
     req: PlanUpdateRequest,
     current_admin: dict = Depends(get_current_admin)
 ):
-    """Updates non-monetary plan details (name, description, active status)."""
+    """Updates plan metadata and, if base_price_uzs changes, writes an atomic price audit entry."""
     now_str = datetime.utcnow().isoformat()
+    admin_name = current_admin["username"]
     with _get_connection() as conn:
         c = conn.cursor()
         c.execute("SELECT * FROM subscription_plans WHERE id = ?", (plan_id,))
         plan = c.fetchone()
         if not plan:
             raise HTTPException(status_code=404, detail="Plan not found")
+        plan_dict = dict(plan)
 
         updates = []
         params = []
@@ -118,6 +123,9 @@ def update_subscription_plan(
         if req.description is not None:
             updates.append("description = ?")
             params.append(req.description.strip())
+        if req.duration_days is not None:
+            updates.append("duration_days = ?")
+            params.append(req.duration_days)
         if req.is_active is not None:
             updates.append("is_active = ?")
             params.append(1 if req.is_active else 0)
@@ -125,12 +133,47 @@ def update_subscription_plan(
             updates.append("display_order = ?")
             params.append(req.display_order)
 
+        price_changed = (
+            req.base_price_uzs is not None
+            and int(req.base_price_uzs) != int(plan_dict["base_price_uzs"])
+        )
+        if price_changed:
+            updates.append("base_price_uzs = ?")
+            params.append(int(req.base_price_uzs))
+
         if updates:
             updates.append("updated_at = ?")
             params.append(now_str)
             params.append(plan_id)
-            c.execute(f"UPDATE subscription_plans SET {', '.join(updates)} WHERE id = ?", params)
-            conn.commit()
+            stmts: List[Any] = [(f"UPDATE subscription_plans SET {', '.join(updates)} WHERE id = ?", params)]
+            if price_changed:
+                old_p = int(plan_dict["base_price_uzs"])
+                new_p = int(req.base_price_uzs)
+                reason_txt = (req.reason or "Admin tarif tahriri").strip()
+                stmts.append((
+                    """
+                    INSERT INTO subscription_price_history (
+                        plan_id, old_price_uzs, new_price_uzs, changed_by_admin, reason, changed_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    [plan_id, old_p, new_p, admin_name, reason_txt, now_str],
+                ))
+                stmts.append((
+                    """
+                    INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
+                    VALUES (?, 'PLAN_PRICE_CHANGED', ?, ?)
+                    """,
+                    [current_admin["id"], f"Plan: {plan_id}, Old: {old_p} UZS, New: {new_p} UZS, Reason: {reason_txt}", now_str],
+                ))
+            else:
+                stmts.append((
+                    """
+                    INSERT INTO admin_audit_logs (admin_id, action, details, performed_at)
+                    VALUES (?, 'SUBSCRIPTION_PLAN_UPDATED', ?, ?)
+                    """,
+                    [current_admin["id"], f"Plan: {plan_id} updated", now_str],
+                ))
+            execute_batch(conn, stmts)
             invalidate_payment_cache()
 
     return {"ok": True, "message": "Tarif ma’lumotlari yangilandi."}

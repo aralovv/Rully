@@ -287,7 +287,7 @@ def test_admin_ui_observability_panel_and_js_syntax():
     assert "acc-observability" in admin_html
     assert "obs-latency-val" in admin_html
     assert "obs-audit-logs-list" in admin_html
-    assert "/static/admin/admin.js?v=2.9.0" in admin_html
+    assert "/static/admin/admin.js?v=3.0.0" in admin_html
     assert "/static/admin/admin.css?v=2.8.0" in admin_html
 
     chk = subprocess.run(["node", "--check", "static/admin/admin.js"], capture_output=True, text=True)

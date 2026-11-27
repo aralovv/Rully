@@ -92,8 +92,13 @@ _LEGAL_GUARDRAIL_PROMPTS = {
 
 def get_system_prompt(language: str = "uz_latn") -> str:
     lang = (language or "uz_latn").lower()
+    tool_hint = {
+        "ru": "ИНСТРУМЕНТ ЗАКОНА: при вопросах о конкретных пунктах, главах ПДД (ПКМ №172/№140), скорости или дорожных знаках обязательно вызывай `lookup_vmq_law` и цитируй официальный текст статьи.",
+        "uz_cyrl": "ҚОНУН ВОСИТАСИ: ЙҲҚ (ВМҚ №172/№140) моддалари, боблари, тезлик меъёрлари ёки йўл белгилари сўралганда албатта `lookup_vmq_law` воситасини чақириб расмий матндан иқтибос келтир.",
+        "uz_latn": "QONUN VOSITASI: YHQ (VMQ №172/№140) bandlari, boblari, tezlik me'yorlari yoki yo'l belgilari so'ralganda albatta `lookup_vmq_law` vositasini chaqirib rasmiy matndan iqtibos keltir.",
+    }
     if lang == "ru":
-        return f"{SYSTEM_PROMPT_RU.rstrip()}\n\n{_LEGAL_GUARDRAIL_PROMPTS['ru']}"
+        return f"{SYSTEM_PROMPT_RU.rstrip()}\n\n{tool_hint['ru']}\n\n{_LEGAL_GUARDRAIL_PROMPTS['ru']}"
     elif lang in ("uz_cyrl", "cyrl"):
-        return f"{SYSTEM_PROMPT_UZ_CYRL.rstrip()}\n\n{_LEGAL_GUARDRAIL_PROMPTS['uz_cyrl']}"
-    return f"{SYSTEM_PROMPT_UZ_LATN.rstrip()}\n\n{_LEGAL_GUARDRAIL_PROMPTS['uz_latn']}"
+        return f"{SYSTEM_PROMPT_UZ_CYRL.rstrip()}\n\n{tool_hint['uz_cyrl']}\n\n{_LEGAL_GUARDRAIL_PROMPTS['uz_cyrl']}"
+    return f"{SYSTEM_PROMPT_UZ_LATN.rstrip()}\n\n{tool_hint['uz_latn']}\n\n{_LEGAL_GUARDRAIL_PROMPTS['uz_latn']}"

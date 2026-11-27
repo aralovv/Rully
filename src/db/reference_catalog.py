@@ -9,6 +9,7 @@ Read-only statutory metadata; zero runtime database mutations.
 """
 
 from typing import Any, Dict, List
+from src.db.vmq172_law import VMQ172_CHAPTERS_DATA
 
 
 SUPPORTED_LANGS = ("uz_latn", "uz_cyrl", "ru")
@@ -532,297 +533,43 @@ SIGNS_CATALOG: List[Dict[str, Any]] = [
 # ---------------------------------------------------------------------------
 # Complete 29 Chapters of Cabinet of Ministers Resolution No. 172 (12.04.2022)
 # ---------------------------------------------------------------------------
+# Generated from Single Source of Truth (src/db/vmq172_law.py): exact 29 numbered chapters of VMQ No. 172
 VMQ172_CHAPTERS: List[Dict[str, Any]] = [
     {
-        "chapter": 1,
-        "category_ids": [0, 39, 41],
-        "title": {"uz_latn": "Umumiy qoidalar", "uz_cyrl": "Умумий қоидалар", "ru": "Общие положения"},
-        "summary": {
-            "uz_latn": "Asosiy atamalar: to‘xtash (<5 daq), to‘xtab turish, asosiy yo‘l, ustunlik, yo‘l berish, mexanik transport va tirkamalar taʼriflari.",
-            "uz_cyrl": "Асосий атамалар: тўхташ (<5 дақ), тўхтаб туриш, асосий йўл, устунлик, йўл бериш, механик транспорт ва тиркамалар таърифлари.",
-            "ru": "Базовые термины: остановка (<5 мин), стоянка, главная дорога, преимущество, механические ТС.",
+        "chapter": ch["chapter_num"],
+        "category_ids": ch["category_ids"],
+        "title": {
+            "uz_latn": ch["uz_latn"],
+            "uz_cyrl": ch["uz_cyrl"],
+            "ru": ch["ru"],
         },
-    },
+        "summary": {
+            "uz_latn": ch["summary_uz"],
+            "uz_cyrl": ch["summary_uz_cyrl"],
+            "ru": ch["summary_ru"],
+        },
+    }
+    for ch in VMQ172_CHAPTERS_DATA
+    if ch["code"].isdigit()
+]
+
+VMQ172_SUPPLEMENTAL_SECTIONS: List[Dict[str, Any]] = [
     {
-        "chapter": 2,
-        "category_ids": [16],
-        "title": {"uz_latn": "Haydovchilarning umumiy majburiyatlari", "uz_cyrl": "Ҳайдовчиларнинг умумий мажбуриятлари", "ru": "Общие обязанности водителей"},
-        "summary": {
-            "uz_latn": "Hujjatlar (guvohnoma, texpassport, sug‘urta), xavfsizlik kamari majburiyati, mast holat (0.0‰) taqiqi va YTH sodir bo‘lganda harakatlar.",
-            "uz_cyrl": "Ҳужжатлар (гувоҳнома, техпаспорт, суғурта), хавфсизлик камари мажбурияти, маст ҳолат (0.0‰) тақиқи ва ЙТҲ содир бўлганда ҳаракатлар.",
-            "ru": "Обязательные документы, ремень безопасности, полный запрет алкоголя и действия при ДТП.",
+        "code": ch["code"],
+        "category_ids": ch["category_ids"],
+        "title": {
+            "uz_latn": ch["uz_latn"],
+            "uz_cyrl": ch["uz_cyrl"],
+            "ru": ch["ru"],
         },
-    },
-    {
-        "chapter": 3,
-        "category_ids": [28],
-        "title": {"uz_latn": "Piyodalarning majburiyatlari", "uz_cyrl": "Пиёдаларнинг мажбуриятлари", "ru": "Обязанности пешеходов"},
         "summary": {
-            "uz_latn": "Trotuarlar bo‘ylab harakatlanish, aholi punktidan tashqarida qatnov qismi chetidan transport oqimiga qarama-qarshi yurish.",
-            "uz_cyrl": "Тротуарлар бўйлаб ҳаракатланиш, аҳоли пунктидан ташқарида қатнов қисми четидан транспорт оқимига қарама-қарши юриш.",
-            "ru": "Движение по тротуарам и навстречу потоку ТС за городом, правила перехода проезжей части.",
+            "uz_latn": ch["summary_uz"],
+            "uz_cyrl": ch["summary_uz_cyrl"],
+            "ru": ch["summary_ru"],
         },
-    },
-    {
-        "chapter": 4,
-        "category_ids": [40],
-        "title": {"uz_latn": "Yo‘lovchilarning majburiyatlari", "uz_cyrl": "Йўловчиларнинг мажбуриятлари", "ru": "Обязанности пассажиров"},
-        "summary": {
-            "uz_latn": "To‘liq to‘xtagandan so‘ng trotuar tomondan chiqish/tushish, xavfsizlik kamarini taqish va haydovchini chalg‘itmaslik.",
-            "uz_cyrl": "Тўлиқ тўхтагандан сўнг тротуар томондан чиқиш/тушиш, хавфсизлик камарини тақиш ва ҳайдовчини чалғитмаслик.",
-            "ru": "Посадка и высадка со стороны тротуара после полной остановки, обязательность ремня.",
-        },
-    },
-    {
-        "chapter": 5,
-        "category_ids": [11],
-        "title": {"uz_latn": "Maxsus signallarning qo‘llanilishi", "uz_cyrl": "Махсус сигналларнинг қўлланилиши", "ru": "Применение специальных сигналов"},
-        "summary": {
-            "uz_latn": "Ko‘k/qizil miltillovchi chiroq va tovush signali yoqilgan tezkor xizmatlarga to‘siqsiz yo‘l berish shartlari; to‘q sariq chiroqning cheklovlari.",
-            "uz_cyrl": "Кўк/қизил милтилловчи чироқ ва товуш сигнали ёқилган тезкор хизматларга тўсиқсиз йўл бериш шартлари; тўқ сариқ чироқнинг чекловлари.",
-            "ru": "Приоритет спецтранспорта с синим/красным маячком и сиреной; правила жёлтого проблескового маячка.",
-        },
-    },
-    {
-        "chapter": 6,
-        "category_ids": [29],
-        "title": {"uz_latn": "Ogohlantiruvchi va avariya ishoralari", "uz_cyrl": "Огоҳлантирувчи ва авария ишоралари", "ru": "Предупреждающие и аварийные сигналы"},
-        "summary": {
-            "uz_latn": "Burilish chiroqlarini oldindan yoqish, qo‘l bilan signal berish usullari va avariya uchburchagini o‘rnatish (15 m / 30 m).",
-            "uz_cyrl": "Бурилиш чироқларини олдиндан ёқиш, қўл билан сигнал бериш усуллари ва авария учбурчагини ўрнатиш (15 м / 30 м).",
-            "ru": "Сигналы поворота рукой и указателями, установка знака аварийной остановки (15 м / 30 м).",
-        },
-    },
-    {
-        "chapter": 7,
-        "category_ids": [5, 34],
-        "title": {"uz_latn": "Yo‘l harakatini tartibga solish", "uz_cyrl": "Йўл ҳаракатини тартибга солиш", "ru": "Регулирование дорожного движения"},
-        "summary": {
-            "uz_latn": "Svetofor signallari, qo‘shimcha yashil strelka qoidalari va Tartibga soluvchining (regulyirovshik) 3 asosiy holati hamda ustunligi.",
-            "uz_cyrl": "Светофор сигналлари, қўшимча яшил стрелка қоидалари ва Тартибга солувчининг (регулировщик) 3 асосий ҳолати ҳамда устунлиги.",
-            "ru": "Сигналы светофора, доп. секции и 3 ключевых положения регулировщика (приоритет над знаками).",
-        },
-    },
-    {
-        "chapter": 8,
-        "category_ids": [8],
-        "title": {"uz_latn": "Harakatlanishni boshlash, yo‘nalishni o‘zgartirish", "uz_cyrl": "Ҳаракатланишни бошлаш, йўналишни ўзгартириш", "ru": "Начало движения и маневрирование"},
-        "summary": {
-            "uz_latn": "Bir vaqtda qayta tizilishda o‘ng qo‘l qoidasi, chekka bo‘lakni egallash, tramvay izlaridan burilish va qayrilish taqiqlangan joylar.",
-            "uz_cyrl": "Бир вақтда қайта тизилишда ўнг қўл қоидаси, чекка бўлакни эгаллаш, трамвай изларидан бурилиш ва қайрилиш тақиқланган жойлар.",
-            "ru": "Перестроение («помеха справа»), крайнее положение перед поворотом, запрещённые места для разворота.",
-        },
-    },
-    {
-        "chapter": 9,
-        "category_ids": [14],
-        "title": {"uz_latn": "Qatnov qismida transport vositalarining joylashuvi", "uz_cyrl": "Қатнов қисмида транспорт воситаларининг жойлашуви", "ru": "Расположение ТС на проезжей части"},
-        "summary": {
-            "uz_latn": "3+ bo‘lakli yo‘llarda chekka chap bo‘lakdan foydalanish, 3.5 t yuk mashinalari cheklovi va tramvay izlariga chiqish tartibi.",
-            "uz_cyrl": "3+ бўлакли йўлларда чекка чап бўлакдан фойдаланиш, 3.5 т юк машиналари чеклови ва трамвай изларига чиқиш тартиби.",
-            "ru": "Запрет левой полосы при свободных правых, трамвайные пути попутного направления.",
-        },
-    },
-    {
-        "chapter": 10,
-        "category_ids": [26],
-        "title": {"uz_latn": "Harakatlanish tezligi", "uz_cyrl": "Ҳаракатланиш тезлиги", "ru": "Скорость движения"},
-        "summary": {
-            "uz_latn": "Turar joy dahasi 20, maktab 30, aholi punkti 60, shatakka olish 50, tashqarida 70/100, avtomagistralda 110 km/soat meʼyorlari.",
-            "uz_cyrl": "Турар жой даҳаси 20, мактаб 30, аҳоли пункти 60, шатакка олиш 50, ташқарида 70/100, автомагистралда 110 км/соат меъёрлари.",
-            "ru": "Лимиты: 20 жилая зона, 30 у школ, 60 город, 50 буксировка, 100 трасса, 110 автомагистраль.",
-        },
-    },
-    {
-        "chapter": 11,
-        "category_ids": [33],
-        "title": {"uz_latn": "Quvib o‘tish", "uz_cyrl": "Қувиб ўтиш", "ru": "Обгон"},
-        "summary": {
-            "uz_latn": "Quvib o‘tish taqiqlangan barcha 7 holat (chorraha, temir yo‘ldan 100m, ko‘prik/tunnel, piyoda o‘tish joyi, ko‘rinish cheklangan joylar).",
-            "uz_cyrl": "Қувиб ўтиш тақиқланган барча 7 ҳолат (чорраҳа, темир йўлдан 100м, кўприк/туннель, пиёда ўтиш жойи, кўриниш чекланган жойлар).",
-            "ru": "Запрещённые зоны обгона (перекрёстки, 100 м до переезда, мосты, тоннели, переходы).",
-        },
-    },
-    {
-        "chapter": 12,
-        "category_ids": [7],
-        "title": {"uz_latn": "To‘xtash va to‘xtab turish", "uz_cyrl": "Тўхташ ва тўхтаб туриш", "ru": "Остановка и стоянка"},
-        "summary": {
-            "uz_latn": "Masofa cheklovlari: 3 m uzluksiz chiziqdan, 5 m piyodalar o‘tish joyi va chorrahadan, 15 m bekatdan, 50 m temir yo‘l kesishmasidan.",
-            "uz_cyrl": "Масофа чекловлари: 3 м узлуксиз чизиқдан, 5 м пиёдалар ўтиш жойи ва чорраҳадан, 15 м бекатдан, 50 м темир йўл кесишмасидан.",
-            "ru": "Нормы дистанции: 3 м от сплошной, 5 м от перехода/перекрёстка, 15 м от остановки, 50 м до переезда.",
-        },
-    },
-    {
-        "chapter": 13,
-        "category_ids": [4, 6, 25, 31, 38],
-        "title": {"uz_latn": "Chorrahalarda harakatlanish", "uz_cyrl": "Чорраҳаларда ҳаракатланиш", "ru": "Проезд перекрёстков"},
-        "summary": {
-            "uz_latn": "Tartibga solingan va solinmagan chorrahalar, tramvayning doimiy ustunligi, o‘ng qo‘l qoidasi va yashil strelka bilan burilish.",
-            "uz_cyrl": "Тартибга солинган ва солинмаган чорраҳалар, трамвайнинг доимий устунлиги, ўнг қўл қоидаси ва яшил стрелка билан бурилиш.",
-            "ru": "Регулируемые и нерегулируемые перекрёстки, приоритет трамвая и правило «помехи справа».",
-        },
-    },
-    {
-        "chapter": 14,
-        "category_ids": [30],
-        "title": {"uz_latn": "Piyodalar o‘tish joylari va bekatlar", "uz_cyrl": "Пиёдалар ўтиш жойлари ва бекатлар", "ru": "Пешеходные переходы и остановки"},
-        "summary": {
-            "uz_latn": "Piyodalar o‘tish joyida to‘liq yo‘l berish, qatnov qismi o‘rtasida to‘xtab qolgan tramvay eshiklari tomonidagi yo‘lovchilarga yo‘l berish.",
-            "uz_cyrl": "Пиёдалар ўтиш жойида тўлиқ йўл бериш, қатнов қисми ўртасида тўхтаб қолган трамвай эшиклари томонидаги йўловчиларга йўл бериш.",
-            "ru": "Пропуск пешеходов на переходах и при посадке/высадке из трамвая.",
-        },
-    },
-    {
-        "chapter": 15,
-        "category_ids": [36],
-        "title": {"uz_latn": "Temir yo‘l kesishmalari orqali harakatlanish", "uz_cyrl": "Темир йўл кесишмалари орқали ҳаракатланиш", "ru": "Движение через железнодорожные пути"},
-        "summary": {
-            "uz_latn": "Shlagbaumga kamida 5 m (bo‘lmasa relsga 10 m) masofada to‘xtash; majburiy to‘xtaganda yo‘lovchilarni tushirib xabar berish tartibi.",
-            "uz_cyrl": "Шлагбаумга камида 5 м (бўлмаса рельсга 10 м) масофада тўхташ; мажбурий тўхтаганда йўловчиларни тушириб хабар бериш тартиби.",
-            "ru": "Остановка за 5 м до шлагбаума (10 м до рельсов); действия при вынужденной остановке на переезде.",
-        },
-    },
-    {
-        "chapter": 16,
-        "category_ids": [13],
-        "title": {"uz_latn": "Avtomagistrallarda harakatlanish", "uz_cyrl": "Автомагистралларда ҳаракатланиш", "ru": "Движение по автомагистралям"},
-        "summary": {
-            "uz_latn": "Piyoda, velosiped, moped, traktor va <40 km/soat transport taqiqi; orqaga yurish va texnologik uzilishlarda qayrilish qatʼiyan man etiladi.",
-            "uz_cyrl": "Пиёда, велосипед, мопед, трактор ва <40 км/соат транспорт тақиқи; орқага юриш ва технологик узилишларда қайрилиш қатъиян ман этилади.",
-            "ru": "Запрет движения ТС <40 км/ч, разворотов в технологических разрывах и движения задним ходом.",
-        },
-    },
-    {
-        "chapter": 17,
-        "category_ids": [35],
-        "title": {"uz_latn": "Turar joy dahalarida harakatlanish", "uz_cyrl": "Турар жой даҳаларида ҳаракатланиш", "ru": "Движение в жилых зонах"},
-        "summary": {
-            "uz_latn": "Tezlik 20 km/soat, piyodalar ustunligi, dvigatelni o‘chirmay to‘xtab turish va yuk >3.5t avtomobillar kirishi taqiqi.",
-            "uz_cyrl": "Тезлик 20 км/соат, пиёдалар устунлиги, двигателни ўчирмай тўхтаб туриш ва юк >3.5т автомобиллар кириши тақиқи.",
-            "ru": "Скорость до 20 км/ч, запрет сквозного проезда, учебной езды и стоянки с работающим двигателем.",
-        },
-    },
-    {
-        "chapter": 18,
-        "category_ids": [19],
-        "title": {"uz_latn": "Yo‘nalishli transport vositalarining imtiyozlari", "uz_cyrl": "Йўналишли транспорт воситаларининг имтиёзлари", "ru": "Приоритет маршрутных ТС"},
-        "summary": {
-            "uz_latn": "5.14 ajratilgan bo‘lakka chiqish taqiqi hamda aholi punktida bekatdan chiqayotgan avtobus/trolleybusga yo‘l berish majburiyati.",
-            "uz_cyrl": "5.14 ажратилган бўлакка чиқиш тақиқи ҳамда аҳоли пунктида бекатдан чиқаётган автобус/троллейбусга йўл бериш мажбурияти.",
-            "ru": "Выезд на выделенную полосу и обязанность уступать автобусу, отъезжающему от остановки в городе.",
-        },
-    },
-    {
-        "chapter": 19,
-        "category_ids": [22],
-        "title": {"uz_latn": "Tashqi yoritish asboblaridan foydalanish", "uz_cyrl": "Ташқи ёритиш асбобларидан фойдаланиш", "ru": "Пользование внешними световыми приборами"},
-        "summary": {
-            "uz_latn": "Yaqin va uzoq yorituvchi faralar (ro‘para kelayotganga kamida 150 m qolganda almashtirish) va kunduzgi chiroqlar tartibi.",
-            "uz_cyrl": "Яқин ва узоқ ёритувчи фаралар (рўпара келаётганга камида 150 м қолганда алмаштириш) ва кундузги чироқлар тартиби.",
-            "ru": "Переключение дальнего света на ближний минимум за 150 м до встречного ТС.",
-        },
-    },
-    {
-        "chapter": 20,
-        "category_ids": [32],
-        "title": {"uz_latn": "Mexanik transport vositalarini shatakka olish", "uz_cyrl": "Механик транспорт воситаларини шатакка олиш", "ru": "Буксировка механических ТС"},
-        "summary": {
-            "uz_latn": "Qattiq ulagich <=4 m, egiluvchan tros 4–6 m; tormozi nosoz bo‘lsa faqat qattiq ulagich/qisman yuklash; yaxmalakda tros taqiqlanadi!",
-            "uz_cyrl": "Қаттиқ улагич <=4 м, эгилувчан трос 4–6 м; тормози носоз бўлса фақат қаттиқ улагич/қисман юклаш; яхмалакда трос тақиқланади!",
-            "ru": "Жёсткая сцепка <=4 м, гибкая 4–6 м; в гололедицу гибкая сцепка запрещена.",
-        },
-    },
-    {
-        "chapter": 21,
-        "category_ids": [37],
-        "title": {"uz_latn": "Boshqarishni o‘rgatish", "uz_cyrl": "Бошқаришни ўргатиш", "ru": "Учебная езда"},
-        "summary": {
-            "uz_latn": "Yosh talablari (16+ mototsikl, 18+ B/C toifa, 21+ D toifa), qo‘shimcha pedal/oyna bilan jihozlangan o‘quv avtomobillari.",
-            "uz_cyrl": "Ёш талаблари (16+ мотоцикл, 18+ B/C тоифа, 21+ D тоифа), қўшимча педаль/ойна билан жиҳозланган ўқув автомобиллари.",
-            "ru": "Требования к обучаемому, инструктору и оборудованию учебного автомобиля (доп. педали, зеркало).",
-        },
-    },
-    {
-        "chapter": 22,
-        "category_ids": [40],
-        "title": {"uz_latn": "Odam tashish", "uz_cyrl": "Одам ташиш", "ru": "Перевозка людей"},
-        "summary": {
-            "uz_latn": "12 yoshgacha bolalar uchun maxsus o‘rindiq (avtokreslo), yuk kuzovida va tirkamada odam tashish taqiqlari.",
-            "uz_cyrl": "12 ёшгача болалар учун махсус ўриндиқ (автокресло), юк кузовида ва тиркамада одам ташиш тақиқлари.",
-            "ru": "Удерживающие устройства для детей до 12 лет, ограничения на перевозку в кузове грузовика.",
-        },
-    },
-    {
-        "chapter": 23,
-        "category_ids": [20],
-        "title": {"uz_latn": "Yuk tashish", "uz_cyrl": "Юк ташиш", "ru": "Перевозка грузов"},
-        "summary": {
-            "uz_latn": "Yukning chetdan chiqish meʼyorlari: old/orqadan >1 m yoki yondan >0.4 m chiqsa «Katta o‘lchamli yuk» belgisi/chirog‘i shart.",
-            "uz_cyrl": "Юкнинг четдан чиқиш меъёрлари: олд/орқадан >1 м ёки ёндан >0.4 м чиқса «Катта ўлчамли юк» белгиси/чироғи шарт.",
-            "ru": "Обязательное обозначение груза, выступающего спереди/сзади >1 м или сбоку >0,4 м.",
-        },
-    },
-    {
-        "chapter": 24,
-        "category_ids": [27],
-        "title": {"uz_latn": "Velosiped, moped va aravalar harakati", "uz_cyrl": "Велосипед, мопед ва аравалар ҳаракати", "ru": "Движение велосипедов, мопедов и гужевых повозок"},
-        "summary": {
-            "uz_latn": "14 yoshdan yo‘lda yurish (moped 16+), chekka o‘ng qatordan 1 qatorda harakatlanish va yo‘lovchi/yuk tashish cheklovlari.",
-            "uz_cyrl": "14 ёшдан йўлда юриш (мопед 16+), чекка ўнг қатордан 1 қаторда ҳаракатланиш ва йўловчи/юк ташиш чекловлари.",
-            "ru": "Возрастные пороги (14 лет велосипед, 16 мопед), движение по крайней правой полосе в один ряд.",
-        },
-    },
-    {
-        "chapter": 25,
-        "category_ids": [3, 15],
-        "title": {"uz_latn": "Foydalanishni taqiqlovchi texnik shartlar", "uz_cyrl": "Фойдаланишни тақиқловчи техник шартлар", "ru": "Неисправности, запрещающие эксплуатацию ТС"},
-        "summary": {
-            "uz_latn": "Rul lyufti (M1 <=10°), shina protektori (L 0.8mm, M1 1.6mm, M2/M3 2.0mm) va tormoz/oyna tozalagich nosozligi qoidalari.",
-            "uz_cyrl": "Руль люфти (M1 <=10°), шина протектори (L 0.8мм, M1 1.6мм, M2/M3 2.0мм) ва тормоз/ойна тозалагич носозлиги қоидалари.",
-            "ru": "Люфт руля (M1 <=10°), глубина протектора (L 0,8мм, M1 1,6мм) и 5 критических поломок (запрет движения).",
-        },
-    },
-    {
-        "chapter": 26,
-        "category_ids": [10],
-        "title": {"uz_latn": "Mansabdor shaxslarning majburiyatlari", "uz_cyrl": "Мансабдор шахсларнинг мажбуриятлари", "ru": "Обязанности должностных лиц"},
-        "summary": {
-            "uz_latn": "Texnik nosoz yoki mast haydovchini yo‘nalishga chiqarmaslik va yo‘l tashkilotlari javobgarligi.",
-            "uz_cyrl": "Техник носоз ёки маст ҳайдовчини йўналишга чиқармаслик ва йўл ташкилотлари жавобгарлиги.",
-            "ru": "Ответственность должностных лиц за выпуск неисправного ТС или водителя без медосмотра.",
-        },
-    },
-    {
-        "chapter": 27,
-        "category_ids": [9, 15],
-        "title": {"uz_latn": "Harakat xavfsizligi va tibbiy yordam asoslari", "uz_cyrl": "Ҳаракат хавфсизлиги ва тиббий ёрдам асослари", "ru": "Обеспечение безопасности и первая помощь"},
-        "summary": {
-            "uz_latn": "Reanimatsiya 30:2 nisbati, arterial qon ketishda jgut (10–15 sm yuqoriga; yozda 1s, qishda 30d), to‘xtash yo‘li va shinalar.",
-            "uz_cyrl": "Реанимация 30:2 нисбати, артериал қон кетишда жгут (10–15 см юқорига; ёзда 1с, қишда 30д), тўхташ йўли ва шиналар.",
-            "ru": "СЛР 30:2, жгут при артериальном кровотечении (лето 1 ч, зима 30 мин), остановочный путь.",
-        },
-    },
-    {
-        "chapter": 28,
-        "category_ids": [21, 17, 23, 2, 18, 1],
-        "title": {"uz_latn": "Yo‘l belgilari (1-ilova)", "uz_cyrl": "Йўл белгилари (1-илова)", "ru": "Дорожные знаки (Приложение 1)"},
-        "summary": {
-            "uz_latn": "Barcha 7 guruh yo‘l belgilari, amal qilish zonalari va sariq fonli vaqtinchalik belgilar ustunligi.",
-            "uz_cyrl": "Барча 7 гуруҳ йўл белгилари, амал қилиш зоналари ва сариқ фонли вақтинчалик белгилар устунлиги.",
-            "ru": "7 групп дорожных знаков, их зоны действия и приоритет временных знаков.",
-        },
-    },
-    {
-        "chapter": 29,
-        "category_ids": [12, 42],
-        "title": {"uz_latn": "Yo‘l chiziqlari (2-ilova)", "uz_cyrl": "Йўл чизиқлари (2-илова)", "ru": "Дорожная разметка (Приложение 2)"},
-        "summary": {
-            "uz_latn": "Yotiq (1.1 uzluksiz, 1.5 uzuq, 1.4 sariq to‘xtash taqiqi) va tik chiziqlar hamda vaqtinchalik to‘q sariq chiziq ustunligi.",
-            "uz_cyrl": "Ётиқ (1.1 узлуксиз, 1.5 узуқ, 1.4 сариқ тўхташ тақиқи) ва тик чизиқлар ҳамда вақтинчалик тўқ сариқ чизиқ устунлиги.",
-            "ru": "Горизонтальная (1.1, 1.4 жёлтая, 1.5) и вертикальная разметка, приоритет временной оранжевой.",
-        },
-    },
+    }
+    for ch in VMQ172_CHAPTERS_DATA
+    if not ch["code"].isdigit()
 ]
 
 
@@ -913,6 +660,15 @@ def get_law_reference(lang: str = "uz_latn") -> Dict[str, Any]:
         }
         for n in KEY_NORMS
     ]
+    supplemental_out = [
+        {
+            "code": sec["code"],
+            "title": _pick(sec["title"], selected_lang),
+            "summary": _pick(sec["summary"], selected_lang),
+            "category_ids": sec["category_ids"],
+        }
+        for sec in VMQ172_SUPPLEMENTAL_SECTIONS
+    ]
     return {
         "ok": True,
         "language": selected_lang,
@@ -921,6 +677,7 @@ def get_law_reference(lang: str = "uz_latn") -> Dict[str, Any]:
         else "Постановление Кабинета Министров №172 от 12.04.2022",
         "source_url": "https://lex.uz/docs/5963102" if selected_lang != "ru" else "https://lex.uz/ru/docs/5963102",
         "chapters": chapters_out,
+        "supplemental_sections": supplemental_out,
         "total_chapters": len(chapters_out),
         "norms": norms_out,
     }

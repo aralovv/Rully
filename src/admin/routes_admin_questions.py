@@ -6,7 +6,9 @@ and manually approving/rejecting/editing questions before committing to producti
 """
 import asyncio
 import hmac
+import logging
 import os
+import re
 from typing import Dict, Any, Optional, List
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -17,6 +19,8 @@ from src.db.catalog_bundle import trigger_vercel_deploy_hook, write_canonical_bu
 from src.db.provenance_classifier import (
     approve_editorial_item,
     audit_and_seed_provenance,
+    bulk_approve_editorial_items_batched,
+    bulk_reject_editorial_items,
     list_editorial_queue,
     reject_editorial_item,
     submit_ai_draft,
@@ -24,6 +28,7 @@ from src.db.provenance_classifier import (
 from src.db_adapter import get_db_connection
 from src.sync.service import QuestionSyncService
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin/questions", tags=["Admin Questions & Sync"])
 sync_service = QuestionSyncService()
 
@@ -34,8 +39,8 @@ def _invalidate_after_catalog_write(reason: str):
         try:
             with get_db_connection(sync_service.db_path) as conn:
                 write_canonical_bundle_atomic(conn, out_dir="data")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed refreshing canonical_bundle after catalog write (%s): %s", reason, exc)
     invalidate_theory_caches(reload_engine=True)
     trigger_vercel_deploy_hook(reason=reason)
 
@@ -267,13 +272,14 @@ async def get_editorial_queue(
     status: str = Query("PENDING_EDITORIAL_REVIEW"),
     issue_flag: Optional[str] = Query(None),
     q: Optional[str] = Query(None),
+    source_type: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     current_admin: dict = Depends(require_admin_role("MODERATOR")),
 ) -> Dict[str, Any]:
     def _run():
         with get_db_connection(sync_service.db_path) as conn:
-            return list_editorial_queue(conn, status=status, limit=limit, offset=offset, issue_flag=issue_flag, q=q)
+            return list_editorial_queue(conn, status=status, limit=limit, offset=offset, issue_flag=issue_flag, q=q, source_type=source_type)
 
     try:
         data = await asyncio.to_thread(_run)
@@ -385,31 +391,28 @@ async def bulk_approve_editorial_items(
     admin_name = current_admin.get("username", "Admin")
 
     def _run():
-        approved = []
-        failed = []
         with get_db_connection(sync_service.db_path) as conn:
-            for qid in req.queue_ids:
-                try:
-                    res = approve_editorial_item(
-                        conn,
-                        queue_id=qid,
-                        reviewer=admin_name,
-                        legal_verification_status=req.legal_verification_status,
-                        legal_doc_title=req.legal_doc_title,
-                        legal_doc_url=req.legal_doc_url,
-                        legal_chapter=req.legal_chapter,
-                        legal_clause=req.legal_clause,
-                        reviewer_notes=req.reviewer_notes,
-                    )
-                    approved.append(res["canonical_id"])
-                except Exception as exc:
-                    failed.append({"queue_id": qid, "error": str(exc)})
-        return {"approved": approved, "failed": failed}
+            return bulk_approve_editorial_items_batched(
+                conn,
+                queue_ids=req.queue_ids,
+                reviewer=admin_name,
+                legal_verification_status=req.legal_verification_status,
+                legal_doc_title=req.legal_doc_title,
+                legal_doc_url=req.legal_doc_url,
+                legal_chapter=req.legal_chapter,
+                legal_clause=req.legal_clause,
+                reviewer_notes=req.reviewer_notes,
+            )
 
-    out = await asyncio.to_thread(_run)
-    if out["approved"]:
-        await asyncio.to_thread(_invalidate_after_catalog_write, f"editorial_bulk:{len(out['approved'])}")
-    return {"success": True, **out}
+    try:
+        out = await asyncio.to_thread(_run)
+        if out["approved"]:
+            await asyncio.to_thread(_invalidate_after_catalog_write, f"editorial_bulk:{len(out['approved'])}")
+        return {"success": True, **out}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Bulk approval failed: {str(e)}")
 
 
 @router.post("/editorial/{queue_id}/ai-draft")
@@ -417,7 +420,7 @@ async def generate_ai_editorial_draft(
     queue_id: int,
     current_admin: dict = Depends(require_admin_role("MODERATOR")),
 ) -> Dict[str, Any]:
-    """Generates a quarantined AI explanation draft (uz_latn/uz_cyrl/ru) without touching canonical tables."""
+    """Generates a quarantined 3-language AI explanation draft without touching canonical tables."""
     from src.ai.gemini_service import GeminiService
     import json as _json
 
@@ -432,12 +435,18 @@ async def generate_ai_editorial_draft(
             cur.execute("SELECT correct_option_key, legal_reference, category_name FROM canonical_questions WHERE canonical_id = ?", (cid,))
             q_row = cur.fetchone()
             cur.execute("SELECT language, question_text, explanation FROM canonical_translations WHERE canonical_id = ?", (cid,))
-            trans = { (r[0] if not hasattr(r, "keys") else r["language"]): (r[1] if not hasattr(r, "keys") else r["question_text"]) for r in cur.fetchall() }
+            trans = {(r[0] if not hasattr(r, "keys") else r["language"]): (r[1] if not hasattr(r, "keys") else r["question_text"]) for r in cur.fetchall()}
+            cur.execute("SELECT option_key, text_uz_latn FROM canonical_answers WHERE canonical_id = ? ORDER BY sort_order", (cid,))
+            opts = { (r[0] if not hasattr(r, "keys") else r["option_key"]): (r[1] if not hasattr(r, "keys") else r["text_uz_latn"]) for r in cur.fetchall() }
+            ckey = (q_row[0] if q_row and not hasattr(q_row, "keys") else (q_row["correct_option_key"] if q_row else ""))
             return {
                 "canonical_id": cid,
-                "correct_option_key": (q_row[0] if q_row and not hasattr(q_row, "keys") else (q_row["correct_option_key"] if q_row else "")),
+                "correct_option_key": ckey,
+                "correct_option_text": opts.get(ckey, ""),
                 "legal_reference": (q_row[1] if q_row and not hasattr(q_row, "keys") else (q_row["legal_reference"] if q_row else "")),
                 "question_text": trans.get("uz_latn") or "",
+                "question_text_cyrl": trans.get("uz_cyrl") or "",
+                "question_text_ru": trans.get("ru") or "",
             }
 
     item = await asyncio.to_thread(_load_item)
@@ -449,10 +458,12 @@ async def generate_ai_editorial_draft(
         raise HTTPException(status_code=503, detail="GEMINI_API_KEY configured emas; AI draft yaratib bo‘lmadi.")
 
     prompt = (
-        f"Savol: {item['question_text']}\n"
-        f"To'g'ri variant: {item['correct_option_key']}\n"
+        f"Savol (UZ Lotin): {item['question_text']}\n"
+        f"Savol (UZ Kirill): {item['question_text_cyrl']}\n"
+        f"Вопрос (RU): {item['question_text_ru']}\n"
+        f"To'g'ri variant: {item['correct_option_key']} ({item['correct_option_text']})\n"
         f"Mavjud havola: {item['legal_reference'] or 'koʻrsatilmagan'}\n"
-        "O'zbekiston YHQ asosida 3 tilda qisqa va aniq tushuntirish yozing. "
+        "O'zbekiston YHQ asosida 3 tilda (uz_latn, uz_cyrl, ru) qisqa va aniq tushuntirish yozing. "
         "Agar aniq band ko'rsatilmagan bo'lsa, band raqamini o'ylab topmang. "
         'Faqat JSON qaytaring: {"uz_latn":"...","uz_cyrl":"...","ru":"..."}'
     )
@@ -462,31 +473,49 @@ async def generate_ai_editorial_draft(
             client,
             {
                 "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                "generationConfig": {"temperature": 0.25, "maxOutputTokens": 700, "responseMimeType": "application/json"},
+                "generationConfig": {"temperature": 0.25, "maxOutputTokens": 1200, "responseMimeType": "application/json"},
             },
         )
     if not data or status_code != 200:
         raise HTTPException(status_code=502, detail=f"AI draft generation failed: {err or status_code}")
 
     raw_txt = "".join(
-        p.get("text", "") for p in data.get("candidates", [{}])[0].get("content", {}).get("parts", []) if isinstance(p, dict)
+        p.get("text", "")
+        for p in data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+        if isinstance(p, dict) and not p.get("thought")
     ).strip()
+    cleaned_json = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_txt, flags=re.IGNORECASE | re.DOTALL).strip()
     try:
-        drafts = _json.loads(raw_txt)
+        parsed = _json.loads(cleaned_json)
+        drafts = {
+            "uz_latn": str(parsed.get("uz_latn") or "").strip(),
+            "uz_cyrl": str(parsed.get("uz_cyrl") or "").strip(),
+            "ru": str(parsed.get("ru") or "").strip(),
+        }
     except Exception:
+        logger.warning("Editorial AI draft JSON parse fallback for %s", item["canonical_id"])
         drafts = {"uz_latn": raw_txt, "uz_cyrl": "", "ru": ""}
 
+    actor = f"ai_draft_panel_{current_admin.get('username', 'Admin')}"
+
     def _quarantine():
+        saved_qids: Dict[str, int] = {}
         with get_db_connection(sync_service.db_path) as conn:
-            return submit_ai_draft(
-                conn,
-                canonical_id=item["canonical_id"],
-                language="uz_latn",
-                draft_explanation=str(drafts.get("uz_latn") or raw_txt),
-                created_by=f"ai_draft_panel_{current_admin.get('username', 'Admin')}",
-            )
+            for lang_code in ("uz_latn", "uz_cyrl", "ru"):
+                txt = (drafts.get(lang_code) or "").strip()
+                if txt:
+                    saved_qids[lang_code] = submit_ai_draft(
+                        conn,
+                        canonical_id=item["canonical_id"],
+                        language=lang_code,
+                        draft_explanation=txt,
+                        created_by=actor,
+                    )
+        return saved_qids.get("uz_latn") or next(iter(saved_qids.values()), None)
 
     draft_qid = await asyncio.to_thread(_quarantine)
+    if draft_qid is None:
+        raise HTTPException(status_code=502, detail="AI bo‘sh qoralama qaytardi; iltimos, qayta urinib ko‘ring.")
     return {"success": True, "queue_id": draft_qid, "canonical_id": item["canonical_id"], "drafts": drafts}
 
 
@@ -506,3 +535,104 @@ async def reject_editorial_queue_item(
     if not ok:
         raise HTTPException(status_code=404, detail="Editorial queue item not found.")
     return {"success": True, "queue_id": queue_id, "review_status": "REJECTED"}
+
+
+class BulkRejectEditorialRequest(BaseModel):
+    queue_ids: List[int] = Field(..., min_length=1, max_length=200)
+    reason: str = "Bulk rejected"
+
+
+@router.post("/editorial/bulk-reject")
+async def bulk_reject_editorial_items_endpoint(
+    req: BulkRejectEditorialRequest,
+    current_admin: dict = Depends(require_admin_role("MODERATOR")),
+) -> Dict[str, Any]:
+    admin_name = current_admin.get("username", "Admin")
+
+    def _run():
+        with get_db_connection(sync_service.db_path) as conn:
+            return bulk_reject_editorial_items(conn, queue_ids=req.queue_ids, reviewer=admin_name, reason=req.reason)
+
+    try:
+        out = await asyncio.to_thread(_run)
+        return {"success": True, **out}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Bulk rejection failed: {str(e)}")
+
+
+@router.get("/catalog/status")
+async def get_catalog_status(
+    current_admin: dict = Depends(require_admin_role("MODERATOR")),
+) -> Dict[str, Any]:
+    """Returns current canonical bundle metadata and queue summary for catalog health monitoring."""
+    import json as _json
+
+    def _run():
+        with get_db_connection(sync_service.db_path) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT value FROM system_settings WHERE key = 'catalog_version'")
+            ver_row = cur.fetchone()
+            version = int((ver_row[0] if not hasattr(ver_row, "keys") else ver_row["value"]) or 0) if ver_row else 0
+
+            cur.execute("SELECT review_status, COUNT(*) AS cnt FROM editorial_review_queue GROUP BY review_status")
+            queue_counts: Dict[str, int] = {}
+            for r in cur.fetchall():
+                d = r if hasattr(r, "keys") else {"review_status": r[0], "cnt": r[1]}
+                queue_counts[str(d["review_status"] if hasattr(d, "keys") else r[0])] = int(d["cnt"] if hasattr(d, "keys") else r[1])
+
+            cur.execute("SELECT COUNT(*) FROM canonical_questions")
+            r_tot = cur.fetchone()
+            q_total = int(list(r_tot.values())[0] if hasattr(r_tot, "values") else r_tot[0])
+            cur.execute("SELECT COUNT(*) FROM canonical_questions WHERE legal_verification_status = 'VERIFIED_PRIMARY_LAW'")
+            r_ver = cur.fetchone()
+            q_verified = int(list(r_ver.values())[0] if hasattr(r_ver, "values") else r_ver[0])
+
+        bundle_path = "data/canonical_bundle.json"
+        bundle_meta: Dict[str, Any] = {}
+        try:
+            if os.path.exists(bundle_path):
+                with open(bundle_path, "r", encoding="utf-8") as f:
+                    raw = _json.load(f)
+                bundle_meta = {
+                    "canonical_count": raw.get("canonical_count"),
+                    "db_catalog_revision": raw.get("db_catalog_revision"),
+                    "payload_sha256": raw.get("payload_sha256"),
+                }
+        except Exception as exc:
+            logger.warning("Failed reading canonical_bundle.json metadata: %s", exc)
+
+        return {
+            "catalog_version": version,
+            "canonical_total": q_total,
+            "canonical_verified_law": q_verified,
+            "queue_counts": queue_counts,
+            "bundle": bundle_meta,
+        }
+
+    try:
+        data = await asyncio.to_thread(_run)
+        return {"success": True, **data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Catalog status check failed: {str(e)}")
+
+
+@router.post("/catalog/rebuild")
+async def rebuild_catalog_bundle(
+    current_admin: dict = Depends(require_admin_role("MODERATOR")),
+) -> Dict[str, Any]:
+    """Force-rebuilds the canonical bundle JSON and invalidates all caches. Use after bulk edits."""
+    is_main_db = os.path.abspath(sync_service.db_path) == os.path.abspath("master_database.sqlite")
+    out_dir = "data" if is_main_db else os.path.dirname(os.path.abspath(sync_service.db_path))
+
+    def _run():
+        with get_db_connection(sync_service.db_path) as conn:
+            return write_canonical_bundle_atomic(conn, out_dir=out_dir)
+
+    try:
+        result = await asyncio.to_thread(_run)
+        invalidate_theory_caches(reload_engine=True)
+        if is_main_db:
+            await asyncio.to_thread(trigger_vercel_deploy_hook, reason="manual_rebuild")
+        return {"success": True, "bundle": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Catalog rebuild failed: {str(e)}")

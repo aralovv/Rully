@@ -38,7 +38,15 @@ VMQ_172_EFFECTIVE_DATE = "2022-05-01"
 
 # Explicit Uzbek Latin words/tokens indicating untranslated Uzbek inside a Russian string
 _UZ_IN_RU_RE = re.compile(
-    r"\b(Eslatma|binoan|asosan|qaroriga|ajratilgan|tasmada|ruxsat\s+etiladi|barcha\s+transport|yo'l\s+belgisi)\b",
+    r"\b(Eslatma|binoan|asosan|qaroriga|ajratilgan|tasmada|ruxsat\s+etiladi|barcha\s+transport|yo'l\s+belgisi|"
+    r"bandiga|bobiga|xatboshisiga|taqiqlanadi|taqiqlangan|harakatlanish|avtomobil|chizig'i|muvofiq|burilish|to'xtash|"
+    r"piyodalar|chorrahada|avtotransport|shatakka)\b",
+    re.IGNORECASE,
+)
+
+# Long non-acronym Latin tokens (>3 chars) leaking into Uzbek-Cyrillic explanations
+_LATN_IN_CYRL_RE = re.compile(
+    r"\b(Eslatma|VMQ|qarori|asosan|tasmada|barcha|transport|ruxsat|taqiqlanadi|bandi|harakatlanish)\b",
     re.IGNORECASE,
 )
 
@@ -60,6 +68,7 @@ def audit_and_seed_provenance(conn: Any, admin_actor: str = "system_phase1e_audi
     cur = conn.cursor()
     cur.execute("""
         SELECT canonical_id, category_name, legal_reference, legal_act_title,
+               legal_doc_title, legal_chapter, legal_clause,
                verification_status, legal_verification_status, editorial_reviewed_by
         FROM canonical_questions
         ORDER BY canonical_id
@@ -105,8 +114,18 @@ def audit_and_seed_provenance(conn: Any, admin_actor: str = "system_phase1e_audi
         cat_name = q.get("category_name") or ""
         langs_map = trans_by_qid.get(cid, {})
 
-        # Never downgrade items already reviewed and approved by a human editor
-        if q.get("editorial_reviewed_by") if "editorial_reviewed_by" in q else False:
+        # Never downgrade items already reviewed by an editor or verified in statutory reconciliation
+        is_human_verified = bool(q.get("editorial_reviewed_by"))
+        is_statutory_verified = (
+            existing_cls == "VERIFIED_PRIMARY_LAW"
+            and bool(
+                (q.get("legal_doc_title") or "").strip()
+                or (q.get("legal_clause") or "").strip()
+                or (q.get("legal_chapter") or "").strip()
+            )
+        )
+        is_med_verified = existing_cls == "VERIFIED_FIRST_AID_OR_TECH"
+        if is_human_verified or is_statutory_verified or is_med_verified:
             target_cls = existing_cls or "UNRESOLVED_LEGAL_REVIEW"
             counts["already_verified_preserved"] += 1
         elif old_status == "LEGAL_CONTENT_MATCHED" and legal_ref:
@@ -143,7 +162,7 @@ def audit_and_seed_provenance(conn: Any, admin_actor: str = "system_phase1e_audi
             issues.append("MISSING_LEGAL_REFERENCE")
         elif legal_ref.lower() == "general yhq scope":
             issues.append("GENERIC_PLACEHOLDER_REF")
-        elif target_cls != "VERIFIED_PRIMARY_LAW":
+        elif target_cls not in ("VERIFIED_PRIMARY_LAW", "VERIFIED_FIRST_AID_OR_TECH"):
             issues.append("UNVERIFIED_SOURCE_HINT")
 
         if "birinchi tibbiy" in cat_name.lower() and ("yhq" in legal_ref.lower() or "belgisi" in legal_ref.lower() or "bob" in legal_ref.lower()):
@@ -156,6 +175,8 @@ def audit_and_seed_provenance(conn: Any, admin_actor: str = "system_phase1e_audi
                 issues.append(f"MISSING_EXPLANATION_{lang_code.upper()}")
             elif lang_code == "ru" and _UZ_IN_RU_RE.search(expl):
                 issues.append("LANGUAGE_BLEED_UZ_IN_RU")
+            elif lang_code == "uz_cyrl" and _LATN_IN_CYRL_RE.search(expl):
+                issues.append("LANGUAGE_BLEED_LATN_IN_CYRL")
 
         for fl in issues:
             flag_totals[fl] = flag_totals.get(fl, 0) + 1
@@ -191,6 +212,7 @@ def list_editorial_queue(
     offset: int = 0,
     issue_flag: Optional[str] = None,
     q: Optional[str] = None,
+    source_type: Optional[str] = None,
 ) -> Dict[str, Any]:
     cur = conn.cursor()
 
@@ -216,8 +238,11 @@ def list_editorial_queue(
         params.append(f'%"{issue_flag.strip()}"%')
     if q and q.strip():
         like = f"%{q.strip()}%"
-        conditions.append("(eq.canonical_id LIKE ? OR cq.category_name LIKE ? OR ct.question_text LIKE ?)")
-        params.extend([like, like, like])
+        conditions.append("(eq.canonical_id LIKE ? OR cq.category_name LIKE ? OR ct.question_text LIKE ? OR ct_cyrl.question_text LIKE ? OR ct_ru.question_text LIKE ?)")
+        params.extend([like, like, like, like, like])
+    if source_type and source_type.strip():
+        conditions.append("eq.source_type = ?")
+        params.append(source_type.strip())
 
     where_sql = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
@@ -227,6 +252,8 @@ def list_editorial_queue(
         FROM editorial_review_queue eq
         JOIN canonical_questions cq ON eq.canonical_id = cq.canonical_id
         LEFT JOIN canonical_translations ct ON eq.canonical_id = ct.canonical_id AND ct.language = 'uz_latn'
+        LEFT JOIN canonical_translations ct_cyrl ON eq.canonical_id = ct_cyrl.canonical_id AND ct_cyrl.language = 'uz_cyrl'
+        LEFT JOIN canonical_translations ct_ru ON eq.canonical_id = ct_ru.canonical_id AND ct_ru.language = 'ru'
         {where_sql}
         """,
         tuple(params),
@@ -250,6 +277,8 @@ def list_editorial_queue(
         JOIN canonical_questions cq ON eq.canonical_id = cq.canonical_id
         LEFT JOIN images im ON cq.primary_image_id = im.id
         LEFT JOIN canonical_translations ct ON eq.canonical_id = ct.canonical_id AND ct.language = 'uz_latn'
+        LEFT JOIN canonical_translations ct_cyrl ON eq.canonical_id = ct_cyrl.canonical_id AND ct_cyrl.language = 'uz_cyrl'
+        LEFT JOIN canonical_translations ct_ru ON eq.canonical_id = ct_ru.canonical_id AND ct_ru.language = 'ru'
         {where_sql}
         ORDER BY eq.id ASC
         LIMIT ? OFFSET ?
@@ -350,6 +379,39 @@ def submit_ai_draft(
 
     now_ts = datetime.utcnow().isoformat()
     cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id FROM editorial_review_queue
+        WHERE canonical_id = ? AND language = ? AND review_status = 'AI_DRAFT_PENDING_REVIEW'
+        ORDER BY id DESC LIMIT 1
+        """,
+        (canonical_id, language),
+    )
+    existing = cur.fetchone()
+    if existing:
+        existing_id = int(existing[0] if not hasattr(existing, "keys") else existing["id"])
+        cur.execute(
+            """
+            UPDATE editorial_review_queue
+            SET draft_explanation = ?,
+                draft_legal_chapter = COALESCE(?, draft_legal_chapter),
+                draft_legal_clause = COALESCE(?, draft_legal_clause),
+                created_by = ?,
+                created_at = ?
+            WHERE id = ?
+            """,
+            (
+                draft_explanation.strip(),
+                draft_legal_chapter,
+                draft_legal_clause,
+                created_by,
+                now_ts,
+                existing_id,
+            ),
+        )
+        conn.commit()
+        return existing_id
+
     cur.execute(
         """
         INSERT INTO editorial_review_queue (
@@ -495,6 +557,18 @@ def approve_editorial_item(
         """,
         [reviewer, now_ts, reviewer_notes, queue_id],
     ))
+    stmts.append((
+        """
+        UPDATE editorial_review_queue
+        SET review_status = 'APPROVED',
+            reviewed_by = ?,
+            reviewed_at = ?,
+            reviewer_notes = ?
+        WHERE canonical_id = ? AND id != ?
+          AND review_status IN ('PENDING_EDITORIAL_REVIEW', 'AI_DRAFT_PENDING_REVIEW')
+        """,
+        [reviewer, now_ts, f"Auto-closed via #{queue_id}: {reviewer_notes}", cid, queue_id],
+    ))
     stmts.append(bump_catalog_version_sql())
 
     execute_batch(conn, stmts)
@@ -523,3 +597,128 @@ def reject_editorial_item(conn: Any, queue_id: int, reviewer: str, reason: str =
     )
     conn.commit()
     return cur.rowcount > 0
+
+
+def bulk_approve_editorial_items_batched(
+    conn: Any,
+    queue_ids: List[int],
+    reviewer: str,
+    legal_verification_status: str,
+    legal_doc_title: Optional[str] = None,
+    legal_doc_url: Optional[str] = None,
+    legal_chapter: Optional[str] = None,
+    legal_clause: Optional[str] = None,
+    reviewer_notes: str = "Bulk human verified",
+) -> Dict[str, Any]:
+    """
+    Approves a batch of editorial queue items in a single DB connection with one catalog_version bump.
+    Returns {approved: [canonical_ids...], failed: [{queue_id, error}...]}.
+    """
+    if legal_verification_status not in ALLOWED_VERIFIED_STATUSES:
+        raise ValueError(f"Invalid legal_verification_status: {legal_verification_status}")
+    if legal_verification_status == "VERIFIED_PRIMARY_LAW":
+        if not (legal_doc_title and legal_doc_title.strip()) or not (
+            (legal_chapter and legal_chapter.strip()) or (legal_clause and legal_clause.strip())
+        ):
+            raise ValueError("VERIFIED_PRIMARY_LAW requires both legal_doc_title and legal_chapter or legal_clause.")
+
+    now_ts = datetime.utcnow().isoformat()
+    combined_ref = " — ".join(p for p in (legal_chapter, legal_clause) if p and p.strip()) or None
+    cur = conn.cursor()
+    approved: List[str] = []
+    failed: List[Dict[str, Any]] = []
+    all_stmts: List[Any] = []
+
+    for qid in queue_ids:
+        try:
+            cur.execute("SELECT canonical_id FROM editorial_review_queue WHERE id = ?", (qid,))
+            row = cur.fetchone()
+            if not row:
+                failed.append({"queue_id": qid, "error": f"Item #{qid} not found"})
+                continue
+            cid = row[0] if not hasattr(row, "keys") else row["canonical_id"]
+            all_stmts.extend([
+                (
+                    """
+                    UPDATE canonical_questions
+                    SET legal_verification_status = ?,
+                        verification_status = 'ADMIN_MANUALLY_APPROVED',
+                        legal_doc_title = COALESCE(?, legal_doc_title),
+                        legal_doc_url = COALESCE(?, legal_doc_url),
+                        legal_chapter = COALESCE(?, legal_chapter),
+                        legal_clause = COALESCE(?, legal_clause),
+                        legal_reference = COALESCE(?, legal_reference),
+                        editorial_reviewed_by = ?,
+                        editorial_reviewed_at = ?,
+                        updated_at = datetime('now')
+                    WHERE canonical_id = ?
+                    """,
+                    [legal_verification_status, legal_doc_title, legal_doc_url,
+                     legal_chapter, legal_clause, combined_ref, reviewer, now_ts, cid],
+                ),
+                (
+                    """
+                    UPDATE editorial_review_queue
+                    SET review_status = 'APPROVED',
+                        reviewed_by = ?,
+                        reviewed_at = ?,
+                        reviewer_notes = ?
+                    WHERE id = ?
+                    """,
+                    [reviewer, now_ts, reviewer_notes, qid],
+                ),
+                (
+                    """
+                    UPDATE editorial_review_queue
+                    SET review_status = 'APPROVED',
+                        reviewed_by = ?,
+                        reviewed_at = ?,
+                        reviewer_notes = ?
+                    WHERE canonical_id = ? AND id != ?
+                      AND review_status IN ('PENDING_EDITORIAL_REVIEW', 'AI_DRAFT_PENDING_REVIEW')
+                    """,
+                    [reviewer, now_ts, f"Auto-closed via bulk #{qid}: {reviewer_notes}", cid, qid],
+                ),
+            ])
+            approved.append(cid)
+        except Exception as exc:
+            failed.append({"queue_id": qid, "error": str(exc)})
+
+    if approved:
+        all_stmts.append(bump_catalog_version_sql())
+        execute_batch(conn, all_stmts)
+    return {"approved": approved, "failed": failed}
+
+
+def bulk_reject_editorial_items(
+    conn: Any,
+    queue_ids: List[int],
+    reviewer: str,
+    reason: str = "Bulk rejected",
+) -> Dict[str, Any]:
+    """Rejects a batch of editorial queue items in a single DB connection."""
+    now_ts = datetime.utcnow().isoformat()
+    cur = conn.cursor()
+    rejected: List[int] = []
+    failed: List[Dict[str, Any]] = []
+    for qid in queue_ids:
+        try:
+            cur.execute(
+                """
+                UPDATE editorial_review_queue
+                SET review_status = 'REJECTED',
+                    reviewed_by = ?,
+                    reviewed_at = ?,
+                    reviewer_notes = ?
+                WHERE id = ? AND review_status NOT IN ('APPROVED')
+                """,
+                (reviewer, now_ts, reason, qid),
+            )
+            if cur.rowcount > 0:
+                rejected.append(qid)
+            else:
+                failed.append({"queue_id": qid, "error": "Not found or already approved"})
+        except Exception as exc:
+            failed.append({"queue_id": qid, "error": str(exc)})
+    conn.commit()
+    return {"rejected": rejected, "failed": failed}

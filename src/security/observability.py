@@ -76,6 +76,17 @@ class ObservabilityRegistry:
         self._group_counts: Dict[str, Dict[str, int]] = {}
         self._slow_requests: Deque[Dict[str, Any]] = deque(maxlen=recent_cap)
         self._recent_errors: Deque[Dict[str, Any]] = deque(maxlen=recent_cap)
+        self._ai_ttft_ms: Deque[float] = deque(maxlen=latency_window)
+        self._ai_total_ms: Deque[float] = deque(maxlen=latency_window)
+        self._ai_calls_total = 0
+        self._ai_calls_streaming = 0
+        self._ai_errors = 0
+        self._ai_prompt_tokens = 0
+        self._ai_candidates_tokens = 0
+        self._ai_thoughts_tokens = 0
+        self._ai_cost_usd = 0.0
+        self._ai_models_used: Dict[str, int] = {}
+        self._ai_tools_called: Dict[str, int] = {}
 
     def set_boot_metadata(self, router_mode: str, cold_start_ms: float) -> None:
         with self._lock:
@@ -154,6 +165,41 @@ class ObservabilityRegistry:
                 )
             )
 
+    def record_ai_invocation(
+        self,
+        *,
+        streaming: bool,
+        ok: bool,
+        model_used: Optional[str] = None,
+        ttft_ms: Optional[float] = None,
+        total_ms: Optional[float] = None,
+        prompt_tokens: int = 0,
+        candidates_tokens: int = 0,
+        thoughts_tokens: int = 0,
+        estimated_cost_usd: float = 0.0,
+        tools_called: Optional[List[str]] = None,
+    ) -> None:
+        """Records token usage, latency/TTFT, tool calls, and cost telemetry for AI Ustoz."""
+        with self._lock:
+            self._ai_calls_total += 1
+            if streaming:
+                self._ai_calls_streaming += 1
+            if not ok:
+                self._ai_errors += 1
+            if ttft_ms is not None and ttft_ms >= 0:
+                self._ai_ttft_ms.append(round(float(ttft_ms), 2))
+            if total_ms is not None and total_ms >= 0:
+                self._ai_total_ms.append(round(float(total_ms), 2))
+            self._ai_prompt_tokens += max(0, int(prompt_tokens or 0))
+            self._ai_candidates_tokens += max(0, int(candidates_tokens or 0))
+            self._ai_thoughts_tokens += max(0, int(thoughts_tokens or 0))
+            self._ai_cost_usd += max(0.0, float(estimated_cost_usd or 0.0))
+            if model_used:
+                self._ai_models_used[model_used] = self._ai_models_used.get(model_used, 0) + 1
+            for tool_name in (tools_called or []):
+                if tool_name:
+                    self._ai_tools_called[tool_name] = self._ai_tools_called.get(tool_name, 0) + 1
+
     def reset(self) -> None:
         with self._lock:
             self._total_requests = 0
@@ -163,6 +209,17 @@ class ObservabilityRegistry:
             self._group_counts.clear()
             self._slow_requests.clear()
             self._recent_errors.clear()
+            self._ai_ttft_ms.clear()
+            self._ai_total_ms.clear()
+            self._ai_calls_total = 0
+            self._ai_calls_streaming = 0
+            self._ai_errors = 0
+            self._ai_prompt_tokens = 0
+            self._ai_candidates_tokens = 0
+            self._ai_thoughts_tokens = 0
+            self._ai_cost_usd = 0.0
+            self._ai_models_used.clear()
+            self._ai_tools_called.clear()
 
     def snapshot(self) -> Dict[str, Any]:
         with self._lock:
@@ -207,6 +264,21 @@ class ObservabilityRegistry:
                 "top_routes": top_routes,
                 "slow_requests": list(self._slow_requests),
                 "recent_errors": list(self._recent_errors),
+                "ai_metrics": {
+                    "calls_total": self._ai_calls_total,
+                    "calls_streaming": self._ai_calls_streaming,
+                    "errors": self._ai_errors,
+                    "ttft_p50_ms": _percentile(sorted(self._ai_ttft_ms), 50.0),
+                    "ttft_p95_ms": _percentile(sorted(self._ai_ttft_ms), 95.0),
+                    "latency_p50_ms": _percentile(sorted(self._ai_total_ms), 50.0),
+                    "latency_p95_ms": _percentile(sorted(self._ai_total_ms), 95.0),
+                    "prompt_tokens": self._ai_prompt_tokens,
+                    "candidates_tokens": self._ai_candidates_tokens,
+                    "thoughts_tokens": self._ai_thoughts_tokens,
+                    "estimated_cost_usd": round(self._ai_cost_usd, 6),
+                    "models_used": dict(self._ai_models_used),
+                    "tools_called": dict(self._ai_tools_called),
+                },
             }
 
 

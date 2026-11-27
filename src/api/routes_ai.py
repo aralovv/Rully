@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import re
 from typing import Dict, Any, Optional
@@ -131,14 +132,32 @@ async def stream_chat_with_ai(
     lang = req.language or user.get("language") or "uz_latn"
     msg = req.message.strip()
     if not msg:
+        empty_err = (
+            "Пожалуйста, введите ваш вопрос."
+            if lang == "ru"
+            else (
+                "Илтимос, саволингизни ёзинг."
+                if lang == "uz_cyrl"
+                else "Iltimos, savolingizni yozing."
+            )
+        )
         async def _empty_stream():
-            yield 'data: {"type":"error","reply":"Iltimos, savolingizni yozing."}\n\n'
+            yield f"data: {json.dumps({'type': 'error', 'reply': empty_err, 'detail': empty_err, 'message': empty_err}, ensure_ascii=False)}\n\n"
         return StreamingResponse(_empty_stream(), media_type="text/event-stream")
 
     allowed, _, retry_after = rate_limiter.is_allowed(f"ai_rpm:{user_id}", max_requests=5, window_seconds=60)
     if not allowed:
+        rate_msg = (
+            f"Слишком много запросов. Повторите через {int(retry_after)} сек."
+            if lang == "ru"
+            else (
+                f"Сўровлар жуда тез юборилмоқда. {int(retry_after)} сониядан сўнг қайта уриниб кўринг."
+                if lang == "uz_cyrl"
+                else f"So'rovlar juda tez yuborilmoqda. {int(retry_after)} soniyadan so'ng qayta urinib ko'ring."
+            )
+        )
         async def _rate_err():
-            yield f'data: {{"type":"error","rate_limited":true,"retry_after":{int(retry_after)}}}\n\n'
+            yield f"data: {json.dumps({'type': 'error', 'rate_limited': True, 'retry_after': int(retry_after), 'reply': rate_msg, 'detail': rate_msg, 'message': rate_msg}, ensure_ascii=False)}\n\n"
         return StreamingResponse(_rate_err(), media_type="text/event-stream")
 
     student_snapshot = await asyncio.to_thread(db.get_ai_student_snapshot, user_id)

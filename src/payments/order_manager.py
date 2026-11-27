@@ -54,7 +54,7 @@ def get_active_monitoring_card() -> Optional[Dict[str, Any]]:
         c.execute("""
             SELECT * FROM payment_cards 
             WHERE is_active = 1 AND is_monitoring = 1 
-            ORDER BY id ASC LIMIT 1
+            ORDER BY updated_at DESC, id ASC LIMIT 1
         """)
         row = c.fetchone()
         _cached_card = dict(row) if row else None
@@ -91,15 +91,17 @@ def list_active_subscription_plans() -> List[Dict[str, Any]]:
     if not _cached_plans or (now - _cached_plans_time) >= 60.0:
         with _get_connection() as conn:
             c = conn.cursor()
-            c.execute("SELECT * FROM subscription_plans WHERE is_active = 1 ORDER BY duration_days ASC")
+            c.execute("SELECT * FROM subscription_plans WHERE is_active = 1 ORDER BY display_order ASC, duration_days ASC")
             _cached_plans = {row["id"]: dict(row) for row in c.fetchall()}
             _cached_plans_time = now
     out = []
-    for p in sorted(_cached_plans.values(), key=lambda x: int(x.get("duration_days") or 0)):
+    for p in sorted(_cached_plans.values(), key=lambda x: (int(x.get("display_order") or 0), int(x.get("duration_days") or 0))):
         price = int(p.get("base_price_uzs") or p.get("price_uzs") or 0)
         out.append({
             "id": p["id"],
             "name": p["name"],
+            "description": p.get("description") or "",
+            "display_order": int(p.get("display_order") or 0),
             "duration_days": int(p["duration_days"]),
             "price_uzs": price,
             "price_formatted": f"{price:,} so‘m".replace(",", " "),

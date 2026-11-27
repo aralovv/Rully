@@ -25,6 +25,14 @@
           return '<span class="badge-pill badge-emerald font-mono" style="font-size:10.5px;">' + R.icon('bookOpen', 'xs') + ' ' + R.escHtml(label) + '</span>';
         }).join('') +
         '</div>';
+    } else if (m.grounding && !Array.isArray(m.grounding)) {
+      const g = m.grounding;
+      const label = g.legal_reference || g.ref || g.clause || g.title || g.source || 'VMQ 172';
+      const cls = g.verified ? 'badge-emerald' : 'badge-amber';
+      html += '<div class="ai-citations-row">' +
+        '<span class="badge-pill ' + cls + ' font-mono" style="font-size:10.5px;">' +
+        R.icon('bookOpen', 'xs') + ' ' + R.escHtml(label) +
+        '</span></div>';
     }
     if (Array.isArray(m.cards) && m.cards.length) {
       html += '<div class="list-stack" style="margin-top:8px;">' +
@@ -128,8 +136,9 @@
       : '';
 
     const bubbles = drawerMessages.map(function (m) {
+      const displayText = m.text || m.statusText || (drawerSending && m.role === 'assistant' ? R.t('ai_drawer_streaming') : '');
       return '<div class="ai-bubble ' + (m.role === 'user' ? 'user' : 'assistant') + '">' +
-        formatSafeMarkdown(m.text || (drawerSending && m.role === 'assistant' ? R.t('ai_drawer_streaming') : '')) +
+        formatSafeMarkdown(displayText) +
         (m.role === 'assistant' ? renderCitationsHtml(m) : '') +
         '</div>';
     }).join('');
@@ -145,7 +154,7 @@
       return;
     }
     drawerMessages.push({ role: 'user', text: promptText });
-    const assistantMsg = { role: 'assistant', text: '', cards: [], grounding: [] };
+    const assistantMsg = { role: 'assistant', text: '', statusText: '', cards: [], grounding: null };
     drawerMessages.push(assistantMsg);
     drawerSending = true;
     renderQuizAiDrawerBody();
@@ -155,7 +164,7 @@
       await streamAiRequest(
         {
           message: promptText,
-          session_id: 'quiz_drawer',
+          session_id: ctx && ctx.canonical_id ? ('quiz_' + ctx.canonical_id) : 'quiz_drawer',
           language: R.state.lang,
           image_url: ctx ? ctx.image_url : null,
           canonical_id: ctx ? ctx.canonical_id : null,
@@ -163,18 +172,19 @@
         },
         {
           onDelta: function (chunk) {
+            assistantMsg.statusText = '';
             assistantMsg.text += chunk;
-            renderQuizAiDrawerBody();
+            requestAnimationFrame(function () { renderQuizAiDrawerBody(); });
           },
           onStatus: function (stTxt) {
             if (!assistantMsg.text && stTxt) {
-              assistantMsg.text = stTxt;
-              renderQuizAiDrawerBody();
-              assistantMsg.text = '';
+              assistantMsg.statusText = stTxt;
+              requestAnimationFrame(function () { renderQuizAiDrawerBody(); });
             }
           },
           onDone: function (res) {
             if (res.requires_pro) {
+              drawerMessages.splice(-2, 2);
               R.closeQuizAiDrawer();
               R.openPaywallModal();
               return;
@@ -282,7 +292,7 @@
 
     if (inp && overrideText === undefined) inp.value = '';
     R.state.ai.history.push({ role: 'user', text: msg });
-    const assistantMsg = { role: 'assistant', text: '', cards: [], grounding: [] };
+    const assistantMsg = { role: 'assistant', text: '', cards: [], grounding: null };
     R.state.ai.history.push(assistantMsg);
     R.state.ai.sending = true;
     const ctx = R.state.ai.contextQuestion;
@@ -301,17 +311,26 @@
         {
           onDelta: function (chunk) {
             assistantMsg.text += chunk;
-            R.renderAiView();
+            requestAnimationFrame(function () {
+              const activeEl = document.getElementById('ai-active-assistant-text');
+              if (activeEl) {
+                activeEl.innerHTML = formatSafeMarkdown(assistantMsg.text);
+                const scrollBox = document.getElementById('ai-messages-scroll');
+                if (scrollBox) scrollBox.scrollTop = scrollBox.scrollHeight;
+              } else {
+                R.renderAiView();
+              }
+            });
           },
           onDone: function (res) {
             if (res.requires_pro) {
-              R.state.ai.history.pop();
+              R.state.ai.history.splice(-2, 2);
               R.openPaywallModal();
               return;
             }
             if (res.reply) assistantMsg.text = res.reply;
             assistantMsg.cards = res.cards || [];
-            assistantMsg.grounding = res.grounding || [];
+            assistantMsg.grounding = res.grounding || null;
             if (res.usage) R.state.ai.usage = res.usage;
           },
           onError: function (evt) {
@@ -319,7 +338,6 @@
           }
         }
       );
-      R.state.ai.contextQuestion = null;
     } catch (err) {
       if (err && err.status === 403) R.openPaywallModal();
       else assistantMsg.text = (err && (err.detail || err.message)) || R.t('ai_net_error');
@@ -366,10 +384,12 @@
     } else {
       const bubbles = !history.length
         ? '<div class="ai-bubble assistant">' + R.safeRichHtml(R.t('ai_welcome_bubble')) + '</div>'
-        : history.map(function (m) {
+        : history.map(function (m, idx) {
             const isUser = m.role === 'user';
-            const txtHtml = formatSafeMarkdown(m.text || (R.state.ai.sending && !isUser ? R.t('ai_typing_text') : ''));
-            return '<div class="ai-bubble ' + (isUser ? 'user' : 'assistant') + '">' + txtHtml + (!isUser ? renderCitationsHtml(m) : '') + '</div>';
+            const isStreamingLast = R.state.ai.sending && !isUser && idx === history.length - 1;
+            const txtHtml = formatSafeMarkdown(m.text || (isStreamingLast ? R.t('ai_typing_text') : ''));
+            const idAttr = isStreamingLast ? ' id="ai-active-assistant-text"' : '';
+            return '<div class="ai-bubble ' + (isUser ? 'user' : 'assistant') + '"' + idAttr + '>' + txtHtml + (!isUser ? renderCitationsHtml(m) : '') + '</div>';
           }).join('');
 
       bodyHtml =
@@ -435,6 +455,7 @@
       if (!ok) return;
       await R.api('/api/ai/clear', { method: 'POST', body: { session_id: 'default' } });
       R.state.ai.history = [];
+      R.state.ai.contextQuestion = null;
       R.renderAiView();
     });
 

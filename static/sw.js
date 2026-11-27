@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'rully-shell-v9';
+const CACHE_NAME = 'rully-shell-v9.1';
 const STATIC_ASSETS = [
   '/',
   '/static/css/rully.css?v=9.0.0',
@@ -16,7 +16,7 @@ const STATIC_ASSETS = [
   '/static/js/views/prepare.js?v=9.0.0',
   '/static/js/views/quiz.js?v=9.0.0',
   '/static/js/views/amaliy.js?v=9.0.0',
-  '/static/js/views/ai.js?v=9.0.0',
+  '/static/js/views/ai.js?v=9.1.0',
   '/static/js/views/profile.js?v=9.0.0',
   '/static/js/app.js?v=9.0.0',
   '/static/images/rully-avatar-128.png'

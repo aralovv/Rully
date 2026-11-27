@@ -421,7 +421,7 @@ async def cmd_subscription(message: Message, db: BotDatabase):
             f"{plan_lines}\n\n"
             f"<b>PRO imkoniyatlari:</b>\n"
             f"✅ Cheksiz Davlat Imtihoni (20 savol / 25 daqiqa)\n"
-            f"✅ Cheksiz AI Ustoz 2.0 va 7 kunlik o‘quv reja\n"
+            f"✅ AI Ustoz 3.0 (kuniga 100 tagacha tahlil) va 7 kunlik o‘quv reja\n"
             f"✅ To‘liq Avtodrom 2D va Imtihon Shpargalkasi\n"
             f"✅ Telegram Stars (⭐) orqali 1 soniyada faollashuv"
         )
@@ -438,7 +438,7 @@ async def cmd_subscription(message: Message, db: BotDatabase):
             f"{plan_lines}\n\n"
             f"<b>PRO имкониятлари:</b>\n"
             f"✅ Чексиз Давлат Имтиҳони (20 савол / 25 дақиқа)\n"
-            f"✅ Чексиз AI Устоз 2.0 ва 7 кунлик ўқув режа\n"
+            f"✅ AI Устоз 3.0 (кунига 100 тагача таҳлил) ва 7 кунлик ўқув режа\n"
             f"✅ Тўлиқ Автодром 2D ва Имтиҳон Шпаргалкаси\n"
             f"✅ Telegram Stars (⭐) орқали бир зумда фаоллашув"
         )
@@ -455,7 +455,7 @@ async def cmd_subscription(message: Message, db: BotDatabase):
             f"{plan_lines}\n\n"
             f"<b>Возможности PRO:</b>\n"
             f"✅ Безлимитный Госэкзамен (20 вопросов / 25 мин)\n"
-            f"✅ Безлимитный AI Наставник 2.0 и 7-дневный план\n"
+            f"✅ AI Наставник 3.0 (до 100 разборов в день) и 7-дневный план\n"
             f"✅ Полный Автодром 2D и Шпаргалка\n"
             f"✅ Мгновенная оплата через Telegram Stars (⭐)"
         )

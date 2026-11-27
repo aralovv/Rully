@@ -225,13 +225,14 @@ def build_canonical_bundle(conn: Any, include_editorial_metadata: bool = True) -
 
         img_obj = None
         if q["has_image"]:
+            norm_img_path = str(q["image_path"]).replace("\\", "/") if q.get("image_path") else None
             img_obj = {
                 "id": q["primary_image_id"],
-                "path": q["image_path"],
+                "path": norm_img_path,
                 "sha256": q["image_sha256"],
             }
-            if q.get("image_path") and q.get("image_sha256"):
-                image_hashes[str(q["image_path"])] = str(q["image_sha256"])
+            if norm_img_path and q.get("image_sha256"):
+                image_hashes[norm_img_path] = str(q["image_sha256"])
 
         item: Dict[str, Any] = {
             "canonical_id": qid,

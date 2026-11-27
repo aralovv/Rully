@@ -103,6 +103,31 @@ SRS_INDEXES: Dict[str, str] = {
     "idx_srs_user_reps": "CREATE INDEX IF NOT EXISTS idx_srs_user_reps ON user_question_srs(user_id, repetitions, lapses)",
 }
 
+VMQ_ARTICLES_DDL = """
+CREATE TABLE IF NOT EXISTS vmq_articles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_key TEXT UNIQUE NOT NULL,
+    entry_type TEXT NOT NULL,
+    chapter_code TEXT NOT NULL,
+    chapter_num INTEGER NOT NULL,
+    clause_num TEXT,
+    clause_sort REAL NOT NULL DEFAULT 0.0,
+    title_uz TEXT NOT NULL,
+    title_ru TEXT NOT NULL,
+    text_uz TEXT NOT NULL,
+    text_ru TEXT NOT NULL,
+    doc_url_uz TEXT NOT NULL,
+    doc_url_ru TEXT NOT NULL,
+    effective_date TEXT NOT NULL DEFAULT '2022-05-01',
+    updated_at TEXT NOT NULL
+)
+"""
+
+VMQ_INDEXES: Dict[str, str] = {
+    "idx_vmq_chapter": "CREATE INDEX IF NOT EXISTS idx_vmq_chapter ON vmq_articles(chapter_code, clause_sort)",
+    "idx_vmq_clause": "CREATE INDEX IF NOT EXISTS idx_vmq_clause ON vmq_articles(clause_num)",
+}
+
 PROVENANCE_COLUMNS: List[Tuple[str, str]] = [
     ("legal_verification_status", "TEXT NOT NULL DEFAULT 'UNRESOLVED_LEGAL_REVIEW'"),
     ("legal_doc_title", "TEXT DEFAULT NULL"),
@@ -347,17 +372,85 @@ def apply_phase5_migrations(conn: Any) -> Dict[str, Any]:
     }
 
 
+def apply_phase3_migrations(conn: Any) -> Dict[str, Any]:
+    """
+    Applies Phase 3 Authoritative VMQ 172 Statutory Corpus table migration (`004_phase3_vmq_articles`)
+    idempotently across SQLite and remote Turso using DDL-before-index batching.
+    """
+    _ensure_migrations_table(conn)
+    existing_tables = set(list_user_tables(conn))
+
+    if "vmq_articles" not in existing_tables:
+        execute_batch(conn, [VMQ_ARTICLES_DDL.strip()])
+
+    existing_indexes = get_index_names(conn)
+    idx_004: List[Any] = []
+    for idx_name, idx_sql in VMQ_INDEXES.items():
+        if idx_name not in existing_indexes:
+            idx_004.append(idx_sql)
+    idx_004.append(
+        _record_migration_stmt(
+            "004_phase3_vmq_articles",
+            "Create vmq_articles statutory VMQ 172 bilingual law corpus table and lookup indexes",
+            _checksum([VMQ_ARTICLES_DDL] + list(VMQ_INDEXES.values())),
+        )
+    )
+    execute_batch(conn, idx_004)
+
+    return {
+        "applied_migrations": ["004_phase3_vmq_articles"],
+        "parity": verify_phase3_schema_parity(conn),
+    }
+
+
+def verify_phase3_schema_parity(conn: Any) -> Dict[str, Any]:
+    """Verifies Phase 3 vmq_articles table, required columns, and lookup indexes."""
+    tables = set(list_user_tables(conn))
+    indexes = get_index_names(conn)
+    vmq_cols = get_table_columns(conn, "vmq_articles") if "vmq_articles" in tables else set()
+
+    expected_cols = {
+        "id",
+        "article_key",
+        "entry_type",
+        "chapter_code",
+        "chapter_num",
+        "clause_num",
+        "clause_sort",
+        "title_uz",
+        "title_ru",
+        "text_uz",
+        "text_ru",
+        "doc_url_uz",
+        "doc_url_ru",
+        "effective_date",
+        "updated_at",
+    }
+    missing_tables = sorted({"vmq_articles", "schema_migrations"} - tables)
+    missing_indexes = sorted(set(VMQ_INDEXES.keys()) - indexes)
+    missing_cols = sorted(expected_cols - vmq_cols)
+    passed = not missing_tables and not missing_indexes and not missing_cols
+    return {
+        "passed": passed,
+        "missing_tables": missing_tables,
+        "missing_indexes": missing_indexes,
+        "missing_vmq_columns": missing_cols,
+    }
+
+
 def apply_all_migrations(conn: Any) -> Dict[str, Any]:
-    """Applies Phase 1 (001, 002) and Phase 5 (003) migrations idempotently."""
+    """Applies Phase 1 (001, 002), Phase 5 (003), and Phase 3 (004) migrations idempotently."""
     p1 = apply_phase1_migrations(conn)
     p5 = apply_phase5_migrations(conn)
-    combined_passed = bool(p1["parity"]["passed"] and p5["parity"]["passed"])
+    p3 = apply_phase3_migrations(conn)
+    combined_passed = bool(p1["parity"]["passed"] and p5["parity"]["passed"] and p3["parity"]["passed"])
     return {
-        "applied_migrations": p1["applied_migrations"] + p5["applied_migrations"],
+        "applied_migrations": p1["applied_migrations"] + p5["applied_migrations"] + p3["applied_migrations"],
         "parity": {
             "passed": combined_passed,
             "phase1": p1["parity"],
             "phase5": p5["parity"],
+            "phase3": p3["parity"],
         },
     }
 

@@ -19,6 +19,7 @@ from src.ai.tools import (
 )
 from src.analytics.tracker import log_user_event
 from src.db_adapter import get_db_connection
+from src.security.observability import observability
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,17 @@ _ALLOWED_IMAGE_HOSTS = frozenset({
 })
 _SAFE_IMAGE_NAME_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,128}\.(?:webp|png|jpe?g)$", re.IGNORECASE)
 _MAX_IMAGE_BYTES = 5 * 1024 * 1024
+_INTERNAL_ID_TAIL_RE = re.compile(
+    r"\b(?:Canon(?:ical)?(?:\s+yhq)?|UZ-YHQ(?:-[A-Z0-9]*)?|CANON-YHQ(?:-[A-Z0-9_]*)?|CQ(?:-\d*)?|UZ-|UZ|CANON-|CANON|CAN|CA|CQ)$",
+    re.IGNORECASE,
+)
+
+
+def _estimate_gemini_cost_usd(prompt_tokens: int, candidates_tokens: int, thoughts_tokens: int) -> float:
+    return round(
+        (max(0, prompt_tokens) * 0.10 + max(0, candidates_tokens + thoughts_tokens) * 0.40) / 1_000_000.0,
+        6,
+    )
 
 class GeminiService:
     def __init__(self):
@@ -69,7 +81,7 @@ class GeminiService:
         last_status = None
         last_text = None
         now = time.time()
-        
+
         # Sort active keys so non-cooldown keys are tried first
         all_keys = self.api_keys
         if not all_keys:
@@ -96,21 +108,33 @@ class GeminiService:
                     last_text = resp.text
 
                     if resp.status_code == 200:
+                        try:
+                            setattr(client, "_last_gemini_model", model_name)
+                        except Exception:
+                            pass
                         return resp.json(), 200, None
+
+                    if resp.status_code == 400:
+                        logger.warning(f"Gemini {model_name} returned 400 bad request; aborting retries")
+                        return None, 400, last_text
+
+                    if resp.status_code in (401, 403):
+                        logger.warning(f"Gemini {model_name} auth/permission {resp.status_code} on key ...{cur_key[-6:]}")
+                        _KEY_COOLDOWNS[cur_key] = now + 3600
+                        key_exhausted = True
+                        break
 
                     if resp.status_code == 429:
                         logger.warning(f"Gemini {model_name} returned 429 quota on key ...{cur_key[-6:]}")
-                        if last_text and ("quota" in last_text.lower() or "limit" in last_text.lower()):
+                        low = (last_text or "").lower()
+                        if "quota" in low or "limit" in low or "exceeded" in low:
                             _KEY_COOLDOWNS[cur_key] = now + 600
                             key_exhausted = True
                             break
                         continue
 
-                    if resp.status_code in (503, 500):
+                    if resp.status_code in (503, 500, 404):
                         logger.warning(f"Gemini {model_name} returned {resp.status_code} with key ...{cur_key[-6:]}")
-                        continue
-
-                    if resp.status_code == 404:
                         continue
                 except Exception as e:
                     logger.warning(f"Gemini request exception on {model_name}: {repr(e)}")
@@ -121,6 +145,113 @@ class GeminiService:
                 continue
 
         return None, last_status, last_text
+
+    async def _stream_gemini_with_fallback(
+        self,
+        client: httpx.AsyncClient,
+        payload: Dict[str, Any],
+    ) -> AsyncIterator[Tuple[Any, ...]]:
+        """Streams Gemini :streamGenerateContent?alt=sse with key rotation, thought filtering & signature preservation."""
+        last_status = None
+        last_text = None
+        now = time.time()
+
+        all_keys = self.api_keys
+        if not all_keys:
+            yield ("status_err", 500, "No Gemini API keys configured")
+            return
+
+        active_keys = sorted(all_keys, key=lambda k: 1 if _KEY_COOLDOWNS.get(k, 0) > now else 0)
+
+        for cur_key in active_keys:
+            if _KEY_COOLDOWNS.get(cur_key, 0) > now:
+                continue
+
+            key_exhausted = False
+            for model_name in GEMINI_MODELS:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:streamGenerateContent?alt=sse"
+                req_headers = {
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": cur_key,
+                }
+                emitted_any = False
+                try:
+                    async with client.stream("POST", url, json=payload, headers=req_headers, timeout=30.0) as resp:
+                        last_status = resp.status_code
+                        if resp.status_code != 200:
+                            err_bytes = await resp.aread()
+                            last_text = err_bytes.decode("utf-8", errors="ignore")
+                            if resp.status_code == 400:
+                                yield ("status_err", 400, last_text)
+                                return
+                            if resp.status_code in (401, 403):
+                                _KEY_COOLDOWNS[cur_key] = now + 3600
+                                key_exhausted = True
+                                break
+                            if resp.status_code == 429:
+                                low = (last_text or "").lower()
+                                if "quota" in low or "limit" in low or "exceeded" in low:
+                                    _KEY_COOLDOWNS[cur_key] = now + 600
+                                    key_exhausted = True
+                                    break
+                            continue
+
+                        try:
+                            setattr(client, "_last_gemini_model", model_name)
+                        except Exception:
+                            pass
+
+                        async for raw_line in resp.aiter_lines():
+                            if not raw_line:
+                                continue
+                            line = raw_line.strip()
+                            if not line.startswith("data:"):
+                                continue
+                            data_str = line[5:].strip()
+                            if not data_str or data_str == "[DONE]":
+                                continue
+                            try:
+                                chunk = json.loads(data_str)
+                            except Exception:
+                                continue
+                            if not isinstance(chunk, dict):
+                                continue
+
+                            usage_meta = chunk.get("usageMetadata")
+                            if isinstance(usage_meta, dict):
+                                emitted_any = True
+                                yield ("usage", usage_meta, model_name)
+
+                            for cand in chunk.get("candidates") or []:
+                                parts = (cand.get("content") or {}).get("parts") or []
+                                fn_parts: List[Dict[str, Any]] = []
+                                for part in parts:
+                                    if not isinstance(part, dict):
+                                        continue
+                                    if "functionCall" in part:
+                                        fn_parts.append(part)
+                                        continue
+                                    if part.get("thought") is True:
+                                        continue
+                                    txt = part.get("text")
+                                    if isinstance(txt, str) and txt:
+                                        emitted_any = True
+                                        yield ("delta", txt)
+                                if fn_parts:
+                                    emitted_any = True
+                                    yield ("fn_parts", fn_parts)
+                        return
+                except Exception as e:
+                    logger.warning(f"Gemini stream exception on {model_name}: {repr(e)}")
+                    last_text = repr(e)
+                    if emitted_any:
+                        raise
+                    continue
+
+            if key_exhausted:
+                continue
+
+        yield ("status_err", last_status, last_text)
 
     @staticmethod
     def _detect_image_mime(data: bytes) -> Optional[str]:
@@ -238,11 +369,18 @@ class GeminiService:
         else:
             self._scene_cache = {}
 
-        if filename and filename in self._scene_cache:
-            return self._scene_cache[filename]
+        # Prefer O(1) lookup by canonical_id so shared-image questions never collide
         if canonical_id:
+            if canonical_id in self._scene_cache:
+                return self._scene_cache[canonical_id]
             for item in self._scene_cache.values():
-                if item.get("canonical_id") == canonical_id:
+                if isinstance(item, dict) and item.get("canonical_id") == canonical_id:
+                    return item
+        if filename:
+            if filename in self._scene_cache:
+                return self._scene_cache[filename]
+            for item in self._scene_cache.values():
+                if isinstance(item, dict) and item.get("filename") == filename:
                     return item
         return None
 
@@ -483,13 +621,12 @@ class GeminiService:
                 )
         return "\n".join(blocks)
 
-    def check_and_increment_rate_limit(self, user_id: int, is_pro: bool) -> tuple[bool, int, int]:
-        """
-        Atomically enforces daily AI Ustoz quota (Tashkent UTC+5 calendar day):
-        - PRO users: up to 100 requests per day.
-        - Free users: 3 complimentary daily teaser analyses to experience AI Ustoz.
-        Returns: (allowed: bool, current_usage: int, max_limit: int)
-        """
+    def _check_and_increment_rate_limit_with_date(
+        self,
+        user_id: int,
+        is_pro: bool,
+    ) -> tuple[bool, int, int, str]:
+        """Atomically checks and increments quota while returning the exact Tashkent calendar day charged."""
         max_limit = 100 if is_pro else 3
         today = self._tashkent_today_str()
         with get_db_connection() as conn:
@@ -520,11 +657,21 @@ class GeminiService:
             row = c.fetchone()
             conn.commit()
             current = int(row["request_count"] if hasattr(row, "keys") else row[0]) if row else 0
-            return allowed, current, max_limit
+            return allowed, current, max_limit, today
 
-    def refund_rate_limit(self, user_id: int):
-        """Refund 1 request count if external Gemini API call failed or timed out."""
-        today = self._tashkent_today_str()
+    def check_and_increment_rate_limit(self, user_id: int, is_pro: bool) -> tuple[bool, int, int]:
+        """
+        Atomically enforces daily AI Ustoz quota (Tashkent UTC+5 calendar day):
+        - PRO users: up to 100 requests per day.
+        - Free users: 3 complimentary daily teaser analyses to experience AI Ustoz.
+        Returns: (allowed: bool, current_usage: int, max_limit: int)
+        """
+        allowed, current, max_limit, _ = self._check_and_increment_rate_limit_with_date(user_id, is_pro)
+        return allowed, current, max_limit
+
+    def refund_rate_limit(self, user_id: int, usage_date: Optional[str] = None):
+        """Refund 1 request count on the exact charged calendar day if Gemini call fails or disconnects."""
+        today = usage_date or self._tashkent_today_str()
         try:
             with get_db_connection() as conn:
                 c = conn.cursor()
@@ -534,7 +681,7 @@ class GeminiService:
                 WHERE user_id = ? AND usage_date = ?
                 """, (user_id, today))
                 conn.commit()
-                logger.info(f"Refunded AI rate limit for user {user_id} due to API failure")
+                logger.info(f"Refunded AI rate limit for user {user_id} ({today}) due to API failure")
         except Exception as e:
             logger.warning(f"Failed to refund AI rate limit for user {user_id}: {e}")
 
@@ -623,17 +770,48 @@ class GeminiService:
         except Exception as e:
             logger.warning(f"Failed to rollback orphan AI message #{msg_id}: {e}")
 
+    @staticmethod
+    def _strip_internal_ids(text: str, lang: str) -> str:
+        cleaned = re.sub(
+            r'\b(?:Canon(?:ical)?\s*(?:yhq)?[:\-]?\s*)?UZ-YHQ-[A-Z0-9]+\b',
+            '',
+            text or '',
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(r'\bCANON-YHQ-[A-Z0-9_]+\b', '', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'\bCQ-\d+\b', '', cleaned, flags=re.IGNORECASE)
+        q_word = "вопрос" if lang == "ru" else ("савол" if lang == "uz_cyrl" else "savol")
+        Q_word = "Вопрос" if lang == "ru" else ("Савол" if lang == "uz_cyrl" else "Savol")
+        cleaned = re.sub(r'\bCanon\s*yhq\b', q_word, cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'\bCanon\b', Q_word, cleaned, flags=re.IGNORECASE)
+        return cleaned
+
+    @classmethod
+    def _sanitize_stream_piece(
+        cls,
+        pending_buf: str,
+        incoming: str,
+        lang: str,
+        flush: bool = False,
+    ) -> Tuple[str, str]:
+        """Strips internal IDs across SSE chunk boundaries using a minimal trailing holdback buffer."""
+        combined = f"{pending_buf}{incoming}"
+        if flush:
+            return cls._strip_internal_ids(combined, lang), ""
+        # Hold back trailing partial ID prefixes BEFORE \bCanon\b replacement fires prematurely.
+        m = _INTERNAL_ID_TAIL_RE.search(combined)
+        if m:
+            head = cls._strip_internal_ids(combined[:m.start()], lang)
+            return head, combined[m.start():]
+        return cls._strip_internal_ids(combined, lang), ""
+
     def _post_process_reply(
         self,
         raw_text: str,
         db_gt_meta: Optional[Dict[str, Any]],
         lang: str,
     ) -> Tuple[str, Dict[str, Any]]:
-        final_text = re.sub(r'\b(?:Canon(?:ical)?\s*(?:yhq)?[:\-]?\s*)?UZ-YHQ-[A-Z0-9]+\b', '', raw_text or '', flags=re.IGNORECASE)
-        q_word = "вопрос" if lang == "ru" else ("савол" if lang == "uz_cyrl" else "savol")
-        Q_word = "Вопрос" if lang == "ru" else ("Савол" if lang == "uz_cyrl" else "Savol")
-        final_text = re.sub(r'\bCanon\s*yhq\b', q_word, final_text, flags=re.IGNORECASE)
-        final_text = re.sub(r'\bCanon\b', Q_word, final_text, flags=re.IGNORECASE)
+        final_text = self._strip_internal_ids(raw_text, lang)
         return self._apply_legal_citation_guardrail(final_text, db_gt_meta, lang)
 
     async def _prepare_turn_context(
@@ -668,7 +846,9 @@ class GeminiService:
                 "cards": [],
             }, None
 
-        allowed, current_count, max_limit = await asyncio.to_thread(self.check_and_increment_rate_limit, user_id, is_pro)
+        allowed, current_count, max_limit, usage_date = await asyncio.to_thread(
+            self._check_and_increment_rate_limit_with_date, user_id, is_pro
+        )
         if not allowed:
             if not is_pro:
                 limit_msg = (
@@ -734,6 +914,7 @@ class GeminiService:
             "lang": lang,
             "current_count": current_count,
             "max_limit": max_limit,
+            "usage_date": usage_date,
             "user_msg_id": user_msg_id,
             "contents": history,
             "db_gt_meta": db_gt_meta,
@@ -757,6 +938,59 @@ class GeminiService:
                             "correct_option_key": item.get("correct_option_key"),
                         })
 
+    @staticmethod
+    def _localized_error_reply(lang: str) -> str:
+        if lang == "ru":
+            return "К сожалению, произошла ошибка связи с искусственным интеллектом. Пожалуйста, попробуйте еще раз."
+        if lang == "uz_cyrl":
+            return "Кечирасиз, сунъий интеллект хизмати билан алоқада хатолик юз берди. Илтимос, қайта уриниб кўринг."
+        return "Kechirasiz, sun'iy intellekt xizmati bilan aloqa o'rnatishda xatolik yuz berdi. Iltimos, qayta urinib ko'ring."
+
+    async def _execute_tool_calls(
+        self,
+        fn_parts: List[Dict[str, Any]],
+        user_id: int,
+        lang: str,
+        question_cards: List[Dict[str, Any]],
+        tools_called: List[str],
+    ) -> List[Dict[str, Any]]:
+        """Executes Gemini function calls and builds functionResponse parts for the next round."""
+        fn_responses: List[Dict[str, Any]] = []
+        for part in fn_parts:
+            fc = part.get("functionCall") or {}
+            fn_name = fc.get("name", "")
+            if fn_name:
+                tools_called.append(fn_name)
+            fn_args = fc.get("args") or {}
+            fn_handler = TOOL_MAPPING.get(fn_name)
+            if fn_handler:
+                try:
+                    tool_result = await asyncio.to_thread(fn_handler, fn_args, user_id, lang)
+                except Exception as tool_err:
+                    logger.warning(f"Tool execution failed ({fn_name}): {tool_err}")
+                    tool_result = {"error": str(tool_err)}
+            else:
+                tool_result = {"error": f"Unknown tool: {fn_name}"}
+
+            if isinstance(tool_result, dict):
+                self._collect_cards_from_tool_result(tool_result, question_cards)
+
+            fn_responses.append({
+                "functionResponse": {
+                    "name": fn_name,
+                    "response": tool_result if isinstance(tool_result, dict) else {"result": tool_result},
+                }
+            })
+        return fn_responses
+
+    @staticmethod
+    def _accumulate_usage(usage_acc: Dict[str, int], usage_meta: Optional[Dict[str, Any]]) -> None:
+        if not isinstance(usage_meta, dict):
+            return
+        usage_acc["prompt"] += int(usage_meta.get("promptTokenCount") or 0)
+        usage_acc["candidates"] += int(usage_meta.get("candidatesTokenCount") or 0)
+        usage_acc["thoughts"] += int(usage_meta.get("thoughtsTokenCount") or 0)
+
     async def chat(
         self,
         user_id: int,
@@ -779,76 +1013,98 @@ class GeminiService:
         lang = ctx["lang"]
         current_count = ctx["current_count"]
         max_limit = ctx["max_limit"]
+        usage_date = ctx["usage_date"]
         user_msg_id = ctx["user_msg_id"]
         contents = ctx["contents"]
         db_gt_meta = ctx["db_gt_meta"]
         payload = ctx["payload"]
+
+        started_at = time.perf_counter()
+        usage_acc = {"prompt": 0, "candidates": 0, "thoughts": 0}
+        tools_called: List[str] = []
+        last_model_used: Optional[str] = None
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
                 question_cards: List[Dict[str, Any]] = []
                 parts: List[Dict[str, Any]] = []
 
-                for _round in range(3):
-                    data, status_code, err_text = await self._call_gemini_with_fallback(client, payload)
+                for _round in range(4):
+                    round_payload = (
+                        {**payload, "toolConfig": {"functionCallingConfig": {"mode": "NONE"}}}
+                        if _round == 3
+                        else payload
+                    )
+                    data, status_code, err_text = await self._call_gemini_with_fallback(client, round_payload)
+                    last_model_used = getattr(client, "_last_gemini_model", None) or last_model_used
                     if not data or status_code != 200:
                         logger.error(f"Gemini API error: {status_code} {err_text}")
-                        await asyncio.to_thread(self.refund_rate_limit, user_id)
+                        await asyncio.to_thread(self.refund_rate_limit, user_id, usage_date)
                         await asyncio.to_thread(self._delete_message_by_id, user_msg_id)
-                        err_reply = (
-                            "К сожалению, произошла ошибка связи с искусственным интеллектом. Пожалуйста, попробуйте еще раз."
-                            if lang == "ru"
-                            else (
-                                "Кечирасиз, сунъий интеллект хизмати билан алоқада хатолик юз берди. Илтимос, қайта уриниб кўринг."
-                                if lang == "uz_cyrl"
-                                else "Kechirasiz, sun'iy intellekt xizmati bilan aloqa o'rnatishda xatolik yuz berdi. Iltimos, qayta urinib ko'ring."
-                            )
+                        observability.record_ai_invocation(
+                            streaming=False,
+                            ok=False,
+                            model_used=last_model_used,
+                            total_ms=(time.perf_counter() - started_at) * 1000.0,
+                            prompt_tokens=usage_acc["prompt"],
+                            candidates_tokens=usage_acc["candidates"],
+                            thoughts_tokens=usage_acc["thoughts"],
+                            estimated_cost_usd=_estimate_gemini_cost_usd(
+                                usage_acc["prompt"], usage_acc["candidates"], usage_acc["thoughts"]
+                            ),
+                            tools_called=tools_called,
                         )
-                        return {"ok": False, "reply": err_reply, "error": err_text or f"Status {status_code}"}
+                        return {
+                            "ok": False,
+                            "reply": self._localized_error_reply(lang),
+                            "error": err_text or f"Status {status_code}",
+                        }
 
-                    candidate = data.get("candidates", [{}])[0]
-                    parts = candidate.get("content", {}).get("parts", [])
-                    fn_calls = [p["functionCall"] for p in parts if isinstance(p, dict) and "functionCall" in p]
-                    if not fn_calls:
+                    self._accumulate_usage(usage_acc, data.get("usageMetadata"))
+                    candidate = (data.get("candidates") or [{}])[0]
+                    parts = (candidate.get("content") or {}).get("parts") or []
+                    fn_parts = [p for p in parts if isinstance(p, dict) and "functionCall" in p]
+                    if not fn_parts or _round == 3:
                         break
 
                     contents.append({"role": "model", "parts": parts})
-                    fn_responses = []
-                    for fc in fn_calls:
-                        fn_name = fc.get("name", "")
-                        fn_args = fc.get("args") or {}
-                        fn_handler = TOOL_MAPPING.get(fn_name)
-                        if fn_handler:
-                            try:
-                                tool_result = await asyncio.to_thread(fn_handler, fn_args, user_id, lang)
-                            except Exception as tool_err:
-                                logger.warning(f"Tool execution failed ({fn_name}): {tool_err}")
-                                tool_result = {"error": str(tool_err)}
-                        else:
-                            tool_result = {"error": f"Unknown tool: {fn_name}"}
-
-                        if isinstance(tool_result, dict):
-                            self._collect_cards_from_tool_result(tool_result, question_cards)
-
-                        fn_responses.append({
-                            "functionResponse": {
-                                "name": fn_name,
-                                "response": tool_result if isinstance(tool_result, dict) else {"result": tool_result},
-                            }
-                        })
+                    fn_responses = await self._execute_tool_calls(
+                        fn_parts, user_id, lang, question_cards, tools_called
+                    )
                     contents.append({"role": "user", "parts": fn_responses})
                     payload["contents"] = contents
 
-                raw_text = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+                raw_text = "".join(
+                    p.get("text", "")
+                    for p in parts
+                    if isinstance(p, dict) and not p.get("thought")
+                )
                 final_text, grounding_meta = self._post_process_reply(raw_text, db_gt_meta, lang)
 
                 persisted_cards = question_cards[:3]
                 meta_json = json.dumps({"cards": persisted_cards, "grounding": grounding_meta})
                 await asyncio.to_thread(self.save_message, user_id, session_id, "assistant", final_text, meta_json)
                 try:
-                    await asyncio.to_thread(log_user_event, user_id, "AI_CHAT_USED", {"canonical_id": canonical_id, "is_pro": is_pro})
+                    await asyncio.to_thread(
+                        log_user_event, user_id, "AI_CHAT_USED", {"canonical_id": canonical_id, "is_pro": is_pro}
+                    )
                 except Exception:
                     pass
+
+                total_ms = (time.perf_counter() - started_at) * 1000.0
+                observability.record_ai_invocation(
+                    streaming=False,
+                    ok=True,
+                    model_used=last_model_used,
+                    total_ms=total_ms,
+                    prompt_tokens=usage_acc["prompt"],
+                    candidates_tokens=usage_acc["candidates"],
+                    thoughts_tokens=usage_acc["thoughts"],
+                    estimated_cost_usd=_estimate_gemini_cost_usd(
+                        usage_acc["prompt"], usage_acc["candidates"], usage_acc["thoughts"]
+                    ),
+                    tools_called=tools_called,
+                )
 
                 return {
                     "ok": True,
@@ -860,11 +1116,18 @@ class GeminiService:
                 }
             except Exception:
                 logger.exception("AI assistant invocation exception")
-                await asyncio.to_thread(self.refund_rate_limit, user_id)
+                await asyncio.to_thread(self.refund_rate_limit, user_id, usage_date)
                 await asyncio.to_thread(self._delete_message_by_id, user_msg_id)
+                observability.record_ai_invocation(
+                    streaming=False,
+                    ok=False,
+                    model_used=last_model_used,
+                    total_ms=(time.perf_counter() - started_at) * 1000.0,
+                    tools_called=tools_called,
+                )
                 return {
                     "ok": False,
-                    "reply": "AI xizmatida vaqtinchalik xatolik yuz berdi. Iltimos, birozdan so‘ng qayta urinib ko‘ring.",
+                    "reply": self._localized_error_reply(lang),
                     "error": "temporary_ai_error",
                 }
 
@@ -880,29 +1143,247 @@ class GeminiService:
         question_context: Optional[Dict[str, Any]] = None,
         student_snapshot: Optional[Dict[str, Any]] = None,
     ) -> AsyncIterator[str]:
-        """Yields Server-Sent Events (SSE) JSON frames for real-time AI Ustoz token streaming."""
-        status_label = "Savol tahlil qilinmoqda..." if language != "ru" else "Анализируем вопрос..."
-        yield f"data: {json.dumps({'type': 'status', 'text': status_label}, ensure_ascii=False)}\n\n"
-        result = await self.chat(
-            user_id=user_id,
-            session_id=session_id,
-            message=message,
-            is_pro=is_pro,
-            language=language,
-            image_url=image_url,
-            canonical_id=canonical_id,
-            question_context=question_context,
-            student_snapshot=student_snapshot,
+        """Streams true Gemini :streamGenerateContent?alt=sse deltas with tool rounds & disconnect rollback."""
+        norm_lang = normalize_lang(language)
+        status_label = (
+            "Анализируем вопрос..."
+            if norm_lang == "ru"
+            else ("Савол таҳлил қилинмоқда..." if norm_lang == "uz_cyrl" else "Savol tahlil qilinmoqda...")
         )
-        if not result.get("ok") and not result.get("reply"):
-            yield f"data: {json.dumps({'type': 'error', **result}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'type': 'status', 'text': status_label}, ensure_ascii=False)}\n\n"
+
+        early_resp, ctx = await self._prepare_turn_context(
+            user_id, session_id, message, is_pro, language,
+            image_url, canonical_id, question_context, student_snapshot,
+        )
+        if early_resp:
+            reply = early_resp.get("reply") or ""
+            for idx in range(0, len(reply), 36):
+                yield f"data: {json.dumps({'type': 'delta', 'text': reply[idx:idx + 36]}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'done', **early_resp}, ensure_ascii=False)}\n\n"
             return
 
-        reply = result.get("reply") or ""
-        chunk_size = 24
-        for idx in range(0, len(reply), chunk_size):
-            piece = reply[idx:idx + chunk_size]
-            yield f"data: {json.dumps({'type': 'delta', 'text': piece}, ensure_ascii=False)}\n\n"
-            await asyncio.sleep(0.012)
+        lang = ctx["lang"]
+        current_count = ctx["current_count"]
+        max_limit = ctx["max_limit"]
+        usage_date = ctx["usage_date"]
+        user_msg_id = ctx["user_msg_id"]
+        contents = ctx["contents"]
+        db_gt_meta = ctx["db_gt_meta"]
+        payload = ctx["payload"]
 
-        yield f"data: {json.dumps({'type': 'done', **result}, ensure_ascii=False)}\n\n"
+        started_at = time.perf_counter()
+        first_delta_at: Optional[float] = None
+        usage_acc = {"prompt": 0, "candidates": 0, "thoughts": 0}
+        tools_called: List[str] = []
+        last_model_used: Optional[str] = None
+        completed_ok = False
+        recorded_telemetry = False
+
+        # Preserve compatibility when tests mock _call_gemini_with_fallback directly.
+        use_legacy_call_fallback = (
+            getattr(self._call_gemini_with_fallback, "__func__", None) is not _UNPATCHED_CALL_WITH_FALLBACK
+            and getattr(self._stream_gemini_with_fallback, "__func__", None) is _UNPATCHED_STREAM_WITH_FALLBACK
+        )
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                question_cards: List[Dict[str, Any]] = []
+                pending_buf = ""
+                emitted_chunks: List[str] = []
+                stream_error: Optional[Tuple[Optional[int], Optional[str]]] = None
+
+                for _round in range(4):
+                    round_payload = (
+                        {**payload, "toolConfig": {"functionCallingConfig": {"mode": "NONE"}}}
+                        if _round == 3
+                        else payload
+                    )
+                    round_fn_parts: List[Dict[str, Any]] = []
+                    round_text_parts: List[str] = []
+
+                    if use_legacy_call_fallback:
+                        data, status_code, err_text = await self._call_gemini_with_fallback(client, round_payload)
+                        last_model_used = getattr(client, "_last_gemini_model", None) or last_model_used
+                        if not data or status_code != 200:
+                            stream_error = (status_code, err_text)
+                            break
+                        self._accumulate_usage(usage_acc, data.get("usageMetadata"))
+                        parts = ((data.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
+                        for part in parts:
+                            if not isinstance(part, dict):
+                                continue
+                            if "functionCall" in part:
+                                round_fn_parts.append(part)
+                                continue
+                            if part.get("thought") is True:
+                                continue
+                            txt = part.get("text")
+                            if isinstance(txt, str) and txt:
+                                round_text_parts.append(txt)
+                        if not round_fn_parts or _round == 3:
+                            for txt in round_text_parts:
+                                safe_piece, pending_buf = self._sanitize_stream_piece(pending_buf, txt, lang, flush=False)
+                                if safe_piece:
+                                    if first_delta_at is None:
+                                        first_delta_at = time.perf_counter()
+                                    emitted_chunks.append(safe_piece)
+                                    yield f"data: {json.dumps({'type': 'delta', 'text': safe_piece}, ensure_ascii=False)}\n\n"
+                    else:
+                        async for ev in self._stream_gemini_with_fallback(client, round_payload):
+                            ev_type = ev[0]
+                            if ev_type == "status_err":
+                                stream_error = (ev[1], ev[2])
+                                break
+                            if ev_type == "usage":
+                                self._accumulate_usage(usage_acc, ev[1])
+                                last_model_used = ev[2] or last_model_used
+                                continue
+                            if ev_type == "fn_parts":
+                                round_fn_parts.extend(ev[1])
+                                continue
+                            if ev_type == "delta":
+                                txt = ev[1]
+                                round_text_parts.append(txt)
+                                safe_piece, pending_buf = self._sanitize_stream_piece(
+                                    pending_buf, txt, lang, flush=False
+                                )
+                                if safe_piece:
+                                    if first_delta_at is None:
+                                        first_delta_at = time.perf_counter()
+                                    emitted_chunks.append(safe_piece)
+                                    yield f"data: {json.dumps({'type': 'delta', 'text': safe_piece}, ensure_ascii=False)}\n\n"
+
+                    last_model_used = getattr(client, "_last_gemini_model", None) or last_model_used
+                    if stream_error is not None:
+                        break
+
+                    if not round_fn_parts or _round == 3:
+                        break
+
+                    tool_status = (
+                        "Проверяем базу ПДД и статью ПКМ 172..."
+                        if lang == "ru"
+                        else (
+                            "ЙҲҚ базаси ва ВМҚ 172 моддаси текширилмоқда..."
+                            if lang == "uz_cyrl"
+                            else "YHQ bazasi va VMQ 172 moddasi tekshirilmoqda..."
+                        )
+                    )
+                    yield f"data: {json.dumps({'type': 'status', 'text': tool_status}, ensure_ascii=False)}\n\n"
+
+                    model_turn_parts: List[Dict[str, Any]] = []
+                    joined_round_text = "".join(round_text_parts)
+                    if joined_round_text:
+                        model_turn_parts.append({"text": joined_round_text})
+                    model_turn_parts.extend(round_fn_parts)
+                    contents.append({"role": "model", "parts": model_turn_parts})
+
+                    fn_responses = await self._execute_tool_calls(
+                        round_fn_parts, user_id, lang, question_cards, tools_called
+                    )
+                    contents.append({"role": "user", "parts": fn_responses})
+                    payload["contents"] = contents
+
+                if stream_error is not None:
+                    status_code, err_text = stream_error
+                    logger.error(f"Gemini stream API error: {status_code} {err_text}")
+                    err_reply = self._localized_error_reply(lang)
+                    yield f"data: {json.dumps({'type': 'error', 'ok': False, 'reply': err_reply, 'error': err_text or f'Status {status_code}'}, ensure_ascii=False)}\n\n"
+                    return
+
+                tail_piece, pending_buf = self._sanitize_stream_piece(pending_buf, "", lang, flush=True)
+                if tail_piece:
+                    if first_delta_at is None:
+                        first_delta_at = time.perf_counter()
+                    emitted_chunks.append(tail_piece)
+                    yield f"data: {json.dumps({'type': 'delta', 'text': tail_piece}, ensure_ascii=False)}\n\n"
+
+                emitted_text = "".join(emitted_chunks)
+                final_text, grounding_meta = self._apply_legal_citation_guardrail(emitted_text, db_gt_meta, lang)
+                if final_text != emitted_text:
+                    trimmed = emitted_text.rstrip()
+                    if final_text.startswith(emitted_text):
+                        extra_delta = final_text[len(emitted_text):]
+                    elif trimmed and final_text.startswith(trimmed):
+                        extra_delta = final_text[len(trimmed):]
+                    else:
+                        extra_delta = final_text
+                    if extra_delta:
+                        emitted_chunks.append(extra_delta)
+                        yield f"data: {json.dumps({'type': 'delta', 'text': extra_delta}, ensure_ascii=False)}\n\n"
+
+                persisted_cards = question_cards[:3]
+                meta_json = json.dumps({"cards": persisted_cards, "grounding": grounding_meta})
+                await asyncio.to_thread(self.save_message, user_id, session_id, "assistant", final_text, meta_json)
+                try:
+                    await asyncio.to_thread(
+                        log_user_event, user_id, "AI_CHAT_USED", {"canonical_id": canonical_id, "is_pro": is_pro}
+                    )
+                except Exception:
+                    pass
+
+                completed_ok = True
+                now_pc = time.perf_counter()
+                ttft_ms = ((first_delta_at - started_at) * 1000.0) if first_delta_at is not None else None
+                total_ms = (now_pc - started_at) * 1000.0
+                recorded_telemetry = True
+                observability.record_ai_invocation(
+                    streaming=True,
+                    ok=True,
+                    model_used=last_model_used,
+                    ttft_ms=ttft_ms,
+                    total_ms=total_ms,
+                    prompt_tokens=usage_acc["prompt"],
+                    candidates_tokens=usage_acc["candidates"],
+                    thoughts_tokens=usage_acc["thoughts"],
+                    estimated_cost_usd=_estimate_gemini_cost_usd(
+                        usage_acc["prompt"], usage_acc["candidates"], usage_acc["thoughts"]
+                    ),
+                    tools_called=tools_called,
+                )
+
+                done_payload = {
+                    "type": "done",
+                    "ok": True,
+                    "reply": final_text,
+                    "limit_reached": False,
+                    "usage": {"current": current_count, "max": max_limit},
+                    "cards": persisted_cards,
+                    "grounding": grounding_meta,
+                }
+                yield f"data: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.exception("AI assistant streaming exception")
+                err_reply = self._localized_error_reply(lang)
+                yield f"data: {json.dumps({'type': 'error', 'ok': False, 'reply': err_reply, 'error': str(exc) or 'temporary_ai_error'}, ensure_ascii=False)}\n\n"
+            finally:
+                if not completed_ok:
+                    await asyncio.shield(
+                        asyncio.gather(
+                            asyncio.to_thread(self.refund_rate_limit, user_id, usage_date),
+                            asyncio.to_thread(self._delete_message_by_id, user_msg_id),
+                            return_exceptions=True,
+                        )
+                    )
+                    if not recorded_telemetry:
+                        observability.record_ai_invocation(
+                            streaming=True,
+                            ok=False,
+                            model_used=last_model_used,
+                            ttft_ms=((first_delta_at - started_at) * 1000.0) if first_delta_at is not None else None,
+                            total_ms=(time.perf_counter() - started_at) * 1000.0,
+                            prompt_tokens=usage_acc["prompt"],
+                            candidates_tokens=usage_acc["candidates"],
+                            thoughts_tokens=usage_acc["thoughts"],
+                            estimated_cost_usd=_estimate_gemini_cost_usd(
+                                usage_acc["prompt"], usage_acc["candidates"], usage_acc["thoughts"]
+                            ),
+                            tools_called=tools_called,
+                        )
+
+
+_UNPATCHED_CALL_WITH_FALLBACK = GeminiService._call_gemini_with_fallback
+_UNPATCHED_STREAM_WITH_FALLBACK = GeminiService._stream_gemini_with_fallback

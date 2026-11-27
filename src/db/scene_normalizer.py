@@ -111,13 +111,15 @@ def normalize_image_scenes_file(json_path: str = "data/image_scenes.json") -> Di
     normalized: Dict[str, Dict[str, Any]] = {}
     with_solution = 0
 
-    for fname, entry in raw_data.items():
+    for outer_key, entry in raw_data.items():
         if not isinstance(entry, dict):
             continue
+        fname = str(entry.get("filename") or outer_key)
         clean_entry = normalize_scene_entry(fname, entry)
         if clean_entry["otish_tartibi_yoki_yechim"]:
             with_solution += 1
-        normalized[fname] = clean_entry
+        target_key = clean_entry.get("canonical_id") or outer_key
+        normalized[target_key] = clean_entry
 
     tmp_path = path.with_name(f"{path.name}.tmp.{os.getpid()}")
     tmp_path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -279,38 +279,15 @@ CATEGORY_TRANSLATIONS = {
     }
 }
 
-# 2. Chapter Title Mappings by Chapter Number
+from src.db.vmq172_law import CHAPTER_BY_CODE
+
+# 2. Chapter Title Mappings by Chapter Code (Single Source of Truth from VMQ 172)
 CHAPTER_TITLES = {
-    "1": {"uz_latn": "Umumiy qoidalar", "uz_cyrl": "Умумий қоидалар", "ru": "Общие положения"},
-    "2": {"uz_latn": "Haydovchilarning umumiy vazifalari", "uz_cyrl": "Ҳайдовчиларнинг умумий вазифалари", "ru": "Общие обязанности водителей"},
-    "3": {"uz_latn": "Piyodalarning umumiy vazifalari", "uz_cyrl": "Пиёдаларнинг умумий вазифалари", "ru": "Обязанности пешеходов"},
-    "4": {"uz_latn": "Yo'lovchilarning vazifalari", "uz_cyrl": "Йўловчиларнинг вазифалари", "ru": "Обязанности пассажиров"},
-    "5": {"uz_latn": "Maxsus transport vositalarining imtiyozlari", "uz_cyrl": "Махсус транспорт воситаларининг имтиёзлари", "ru": "Приоритет специальных ТС"},
-    "6": {"uz_latn": "Ogohlantiruvchi va avariya ishoralari", "uz_cyrl": "Огоҳлантирувчи ва авария ишоралари", "ru": "Предупреждающие сигналы"},
-    "7": {"uz_latn": "Harakatlanishni boshlash, manyovr qilish", "uz_cyrl": "Ҳаракатланишни бошлаш, манёвр қилиш", "ru": "Начало движения, маневрирование"},
-    "8": {"uz_latn": "Transport vositalarining joylashuvi", "uz_cyrl": "Транспорт воситаларининг жойлашуви", "ru": "Расположение ТС на проезжей части"},
-    "9": {"uz_latn": "Harakatlanish tezligi", "uz_cyrl": "Ҳаракатланиш тезлиги", "ru": "Скорость движения"},
-    "10": {"uz_latn": "Quvib o'tish", "uz_cyrl": "Қувиб ўтиш", "ru": "Обгон"},
-    "11": {"uz_latn": "To'xtash va to'xtab turish", "uz_cyrl": "Тўхташ ва тўхтаб туриш", "ru": "Остановка и стоянка"},
-    "12": {"uz_latn": "Chorrahalarda harakatlanish", "uz_cyrl": "Чорраҳаларда ҳаракатланиш", "ru": "Проезд перекрестков"},
-    "13": {"uz_latn": "Tartibga solingan chorrahalar", "uz_cyrl": "Тартибга солинган чорраҳалар", "ru": "Регулируемые перекрестки"},
-    "14": {"uz_latn": "Tartibga solinmagan chorrahalar", "uz_cyrl": "Тартибга солинмаган чорраҳалар", "ru": "Нерегулируемые перекрестки"},
-    "15": {"uz_latn": "Piyodalar o'tish joylari va bekatlar", "uz_cyrl": "Пиёдалар ўтиш жойлари ва бекатлар", "ru": "Пешеходные переходы и остановки"},
-    "16": {"uz_latn": "Temir yo'l kesishmalari orqali harakatlanish", "uz_cyrl": "Темир йўл кесишмалари", "ru": "Железнодорожные переезды"},
-    "17": {"uz_latn": "Avtomagistrallarda harakatlanish", "uz_cyrl": "Автомагистралларда ҳаракатланиш", "ru": "Движение по автомагистралям"},
-    "18": {"uz_latn": "Turar joy dahalarida harakatlanish", "uz_cyrl": "Турар жой даҳаларида ҳаракатланиш", "ru": "Движение в жилых зонах"},
-    "19": {"uz_latn": "Yo'nalishli transport vositalarining imtiyozlari", "uz_cyrl": "Йўналишли ТВларнинг имтиёзлари", "ru": "Приоритет маршрутных ТС"},
-    "20": {"uz_latn": "Tashqi yoritish asboblaridan foydalanish", "uz_cyrl": "Ташқи ёритиш асбоблари", "ru": "Пользование внешними приборами"},
-    "21": {"uz_latn": "Mexanik transport vositalarini shatakka olish", "uz_cyrl": "Шатакка олиш", "ru": "Буксировка механических ТС"},
-    "22": {"uz_latn": "Transport vositalarini boshqarishni o'rgatish", "uz_cyrl": "Бошқаришни ўргатиш", "ru": "Учебная езда"},
-    "23": {"uz_latn": "Odam tashish", "uz_cyrl": "Одам ташиш", "ru": "Перевозка людей"},
-    "24": {"uz_latn": "Yuk tashish", "uz_cyrl": "Юк ташиш", "ru": "Перевозка грузов"},
-    "25": {"uz_latn": "Velosiped, moped va aravalarga doir talablar", "uz_cyrl": "Велосипед ва мопедлар талаблари", "ru": "Требования к велосипедам и мопедам"},
-    "26": {"uz_latn": "Mansabdor shaxslarning majburiyatlari", "uz_cyrl": "Мансабдор шахслар мажбуриятлари", "ru": "Обязанности должностных лиц"},
-    "27": {"uz_latn": "Transport vositalaridan foydalanish shartlari", "uz_cyrl": "Фойдаланишни тақиқловчи шартлар", "ru": "Условия эксплуатации ТС"},
-    "28": {"uz_latn": "Yo'l belgilari (1-ilova)", "uz_cyrl": "Йўл белгилари (1-илова)", "ru": "Дорожные знаки (Приложение 1)"},
-    "29": {"uz_latn": "Yo'l chiziqlari (2-ilova)", "uz_cyrl": "Йўл чизиқлари (2-илова)", "ru": "Дорожная разметка (Приложение 2)"}
+    ch["code"]: {"uz_latn": ch["uz_latn"], "uz_cyrl": ch["uz_cyrl"], "ru": ch["ru"]}
+    for ch in CHAPTER_BY_CODE.values()
+    if ch["code"].isdigit() or ch["code"] == "17-1"
 }
+CHAPTER_TITLES["17¹"] = CHAPTER_TITLES["17-1"]
 
 def localize_category(category_name: Optional[str], language: str = "uz_latn") -> str:
     """Translates category names into uz_latn, uz_cyrl, or ru."""
@@ -346,7 +323,8 @@ def localize_legal_reference(ref: Optional[str], language: str = "uz_latn") -> s
         titles = {
             "1": {"uz_latn": "Yo'l belgilari", "uz_cyrl": "Йўл белгилари", "ru": "Дорожные знаки"},
             "2": {"uz_latn": "Yo'l chiziqlari", "uz_cyrl": "Йўл чизиқлари", "ru": "Дорожная разметка"},
-            "3": {"uz_latn": "Transport vositalaridan foydalanish shartlari", "uz_cyrl": "Транспорт воситаларидан фойдаланиш шартлари", "ru": "Условия эксплуатации ТС"}
+            "3": {"uz_latn": "Transport vositalaridan foydalanish shartlari", "uz_cyrl": "Транспорт воситаларидан фойдаланиш шартлари", "ru": "Условия эксплуатации ТС"},
+            "4": {"uz_latn": "Xavflilik belgilari", "uz_cyrl": "Хавфлилик белгилари", "ru": "Знаки опасности"},
         }
         sub = titles.get(n, {}).get(language, "")
         sub_str = f" ({sub})" if sub else ""
@@ -368,16 +346,17 @@ def localize_legal_reference(ref: Optional[str], language: str = "uz_latn") -> s
 
     # Multi-part parsing (Clause, Chapter, Sign)
     clause_num = None
-    m_clause = re.search(r'(?:YHQ|ПДД|Clause)\s*(\d+)-(?:bandi|band|пункт|банд)', ref, re.IGNORECASE)
+    m_clause = re.search(r'(?:YHQ|ПДД|Clause)\s*(\d+(?:[¹²]|-\d+)?)-(?:bandi|band|пункт|банд)', ref, re.IGNORECASE)
     if not m_clause:
-        m_clause = re.search(r'(?:Clause|банд|band)\s*(\d+)', ref, re.IGNORECASE)
+        m_clause = re.search(r'(?:Clause|банд|band|Пункт)\s*(\d+(?:[¹²]|-\d+)?)', ref, re.IGNORECASE)
     if m_clause:
-        clause_num = m_clause.group(1)
+        clause_num = m_clause.group(1).replace("-1", "¹").replace("-2", "²")
 
     chap_num = None
-    m_chap = re.search(r'(\d+)-(?:bob|боб)|Chapter\s*(\d+)', ref, re.IGNORECASE)
+    m_chap = re.search(r'(\d+(?:[¹²]|-\d+)?)-(?:bob|боб)|(?:Chapter|Глава)\s*(\d+(?:[¹²]|-\d+)?)', ref, re.IGNORECASE)
     if m_chap:
-        chap_num = m_chap.group(1) or m_chap.group(2)
+        raw_ch = m_chap.group(1) or m_chap.group(2)
+        chap_num = raw_ch.replace("-1", "¹").replace("-2", "²")
 
     sign_num = None
     m_sign = re.search(r'([\d\.]+)-(?:yo\'l belgisi / chizig\'i|yoʻl belgisi / chizigʻi|yo\'l belgisi|yoʻl belgisi)', ref, re.IGNORECASE)
@@ -394,7 +373,8 @@ def localize_legal_reference(ref: Optional[str], language: str = "uz_latn") -> s
             parts.append(f"YHQ {clause_num}-bandi")
 
     if chap_num:
-        chap_entry = CHAPTER_TITLES.get(chap_num)
+        lookup_key = chap_num.replace("¹", "-1").replace("²", "-2")
+        chap_entry = CHAPTER_TITLES.get(lookup_key) or CHAPTER_TITLES.get(chap_num)
         chap_title = ""
         if chap_entry:
             chap_title = f" ({chap_entry.get(language, chap_entry.get('uz_latn', ''))})"
