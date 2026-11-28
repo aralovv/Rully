@@ -389,15 +389,18 @@
       '    </div>' +
       (bookmarks.length ? (
         '<div class="list-stack">' +
-        bookmarks.slice(0, 12).map(function (b) {
-          return '<div class="data-row-card">' +
+        bookmarks.slice(0, 30).map(function (b) {
+          return '<div class="data-row-card bookmark-card" data-view-bookmark="' + R.escHtml(b.canonical_id) + '" style="cursor:pointer;" title="' + R.escHtml(R.t('btn_view') || 'Ko‘rish') + '">' +
             '<div style="flex:1;min-width:0;">' +
-            '  <div style="font-size:13px;font-weight:600;margin-bottom:2px;">' + R.escHtml(b.question_text || '') + '</div>' +
-            '  <div style="font-size:11.5px;color:var(--text-muted);">' + R.escHtml(b.category_name || '') + '</div>' +
+            '  <div style="font-size:13px;font-weight:600;margin-bottom:3px;line-height:1.4;">' + R.escHtml(b.question_text || '') + '</div>' +
+            '  <div style="font-size:11.5px;color:var(--text-muted);display:flex;align-items:center;gap:6px;">' +
+            '    <span>' + R.escHtml(b.category_name || '') + '</span>' +
+            (b.image_url ? '<span class="badge-pill badge-neutral font-mono" style="padding:1px 5px;font-size:10px;">Rasm</span>' : '') +
+            '  </div>' +
             '</div>' +
             '<div style="display:flex;gap:6px;flex-shrink:0;">' +
-            (b.image_url ? '<button type="button" class="icon-pill-btn" data-zoom-src="' + R.escHtml(R.safeUrl(b.image_url)) + '" aria-label="Zoom">' + R.icon('eye', 'xs') + '</button>' : '') +
-            '  <button type="button" class="icon-pill-btn" data-rm-bookmark="' + R.escHtml(b.canonical_id) + '" aria-label="Remove">' + R.icon('bookmark', 'xs') + '</button>' +
+            '  <button type="button" class="icon-pill-btn" data-view-bookmark-btn="' + R.escHtml(b.canonical_id) + '" aria-label="' + R.escHtml(R.t('btn_view') || 'Ko‘rish') + '" title="' + R.escHtml(R.t('btn_view') || 'Ko‘rish') + '">' + R.icon('eye', 'xs') + '</button>' +
+            '  <button type="button" class="icon-pill-btn" data-rm-bookmark="' + R.escHtml(b.canonical_id) + '" aria-label="Remove" title="O‘chirish">' + R.icon('bookmark', 'xs') + '</button>' +
             '</div>' +
             '</div>';
         }).join('') +
@@ -442,17 +445,35 @@
       });
     });
 
+    container.querySelectorAll('[data-view-bookmark]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        R.haptic('light');
+        R.openQuestionDetailModal(el.dataset.viewBookmark);
+      });
+    });
+    container.querySelectorAll('[data-view-bookmark-btn]').forEach(function (el) {
+      el.addEventListener('click', function (e) {
+        e.stopPropagation();
+        R.haptic('light');
+        R.openQuestionDetailModal(el.dataset.viewBookmarkBtn);
+      });
+    });
     container.querySelectorAll('[data-zoom-src]').forEach(function (el) {
-      el.addEventListener('click', function () { R.openLightbox(el.dataset.zoomSrc); });
+      el.addEventListener('click', function (e) {
+        e.stopPropagation();
+        R.openLightbox(el.dataset.zoomSrc);
+      });
     });
     container.querySelectorAll('[data-rm-bookmark]').forEach(function (el) {
-      el.addEventListener('click', async function () {
+      el.addEventListener('click', async function (e) {
+        e.stopPropagation();
         const cid = el.dataset.rmBookmark;
         try {
           await R.api('/api/bookmarks/toggle', { method: 'POST', body: { canonical_id: cid } });
-          R.state.bookmarksList = (R.state.bookmarksList || []).filter(function (x) { return x.canonical_id !== cid; });
+          R.state.bookmarksList = (R.state.bookmarksList || []).filter(function (x) { return String(x.canonical_id) !== String(cid); });
           R.state.bookmarksCount = R.state.bookmarksList.length;
           R.state.bookmarksLoaded = false;
+          R.showToast(R.t('toast_bookmark_removed') || 'Saqlanganlardan o‘chirildi');
           renderDrillTab(container);
         } catch (e) {}
       });

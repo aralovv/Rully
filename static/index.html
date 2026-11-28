@@ -13,7 +13,7 @@
   <title>RULLY — O‘zbekiston Haydovchilik Imtihoni 2.0</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="/static/css/rully.css?v=10.0.0">
+  <link rel="stylesheet" href="/static/css/rully.css?v=10.1.0">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -73,6 +73,9 @@
         </div>
 
         <div class="sidebar-controls-row">
+          <button type="button" class="icon-pill-btn" id="sidebar-fullscreen-btn" aria-label="Butun ekran" title="Butun ekran">
+            <span class="r-icon sm" id="sidebar-fullscreen-icon-slot"></span>
+          </button>
           <button type="button" class="icon-pill-btn" id="sidebar-theme-btn" aria-label="Mavzuni almashtirish">
             <span class="r-icon sm"></span>
           </button>
@@ -93,6 +96,9 @@
         </div>
       </div>
       <div class="header-controls">
+        <button type="button" class="icon-pill-btn" id="mobile-fullscreen-btn" aria-label="Butun ekran" title="Butun ekran">
+          <span class="r-icon sm" id="fullscreen-icon-slot"></span>
+        </button>
         <button type="button" class="icon-pill-btn" id="mobile-channel-btn" aria-label="Telegram Kanal">
           <span class="r-icon sm" id="channel-icon-slot"></span>
         </button>
@@ -298,6 +304,17 @@
     </div>
   </div>
 
+  <!-- Full Question Detail Modal -->
+  <div class="modal-overlay" id="question-detail-modal" role="dialog" aria-modal="true">
+    <div class="modal-sheet" style="max-width:620px;">
+      <div class="modal-head">
+        <h3 class="modal-title" id="question-detail-modal-title" data-i18n="question_detail_title">Savol tafsilotlari</h3>
+        <button type="button" class="icon-pill-btn" data-close-modal="question-detail-modal" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body" id="question-detail-modal-body"></div>
+    </div>
+  </div>
+
   <!-- Day-0 Two-Step Onboarding Modal -->
   <div class="modal-overlay" id="onboarding-modal" role="dialog" aria-modal="true">
     <div class="modal-sheet" style="max-width:460px;">
@@ -329,21 +346,21 @@
 
   <div class="hud-toast" id="hud-toast" role="status" aria-live="polite"></div>
 
-  <!-- Modular Application Scripts (with required defer attributes & ?v=10.0.0 cache-busting) -->
-  <script defer src="/static/js/icons.js?v=10.0.0"></script>
-  <script defer src="/static/js/translations.js?v=10.0.0"></script>
-  <script defer src="/static/js/cheatsheet_data.js?v=10.0.0"></script>
-  <script defer src="/static/js/core/state.js?v=10.0.0"></script>
-  <script defer src="/static/js/core/theme.js?v=10.0.0"></script>
-  <script defer src="/static/js/core/hud.js?v=10.0.0"></script>
-  <script defer src="/static/js/core/api.js?v=10.0.0"></script>
-  <script defer src="/static/js/views/reference.js?v=10.0.0"></script>
-  <script defer src="/static/js/views/home.js?v=10.0.0"></script>
-  <script defer src="/static/js/views/prepare.js?v=10.0.0"></script>
-  <script defer src="/static/js/views/quiz.js?v=10.0.0"></script>
-  <script defer src="/static/js/views/amaliy.js?v=10.0.0"></script>
-  <script defer src="/static/js/views/ai.js?v=10.0.0"></script>
-  <script defer src="/static/js/views/profile.js?v=10.0.0"></script>
-  <script defer src="/static/js/app.js?v=10.0.0"></script>
+  <!-- Modular Application Scripts (with required defer attributes & ?v=10.1.0 cache-busting) -->
+  <script defer src="/static/js/icons.js?v=10.1.0"></script>
+  <script defer src="/static/js/translations.js?v=10.1.0"></script>
+  <script defer src="/static/js/cheatsheet_data.js?v=10.1.0"></script>
+  <script defer src="/static/js/core/state.js?v=10.1.0"></script>
+  <script defer src="/static/js/core/theme.js?v=10.1.0"></script>
+  <script defer src="/static/js/core/hud.js?v=10.1.0"></script>
+  <script defer src="/static/js/core/api.js?v=10.1.0"></script>
+  <script defer src="/static/js/views/reference.js?v=10.1.0"></script>
+  <script defer src="/static/js/views/home.js?v=10.1.0"></script>
+  <script defer src="/static/js/views/prepare.js?v=10.1.0"></script>
+  <script defer src="/static/js/views/quiz.js?v=10.1.0"></script>
+  <script defer src="/static/js/views/amaliy.js?v=10.1.0"></script>
+  <script defer src="/static/js/views/ai.js?v=10.1.0"></script>
+  <script defer src="/static/js/views/profile.js?v=10.1.0"></script>
+  <script defer src="/static/js/app.js?v=10.1.0"></script>
 </body>
 </html>

@@ -32,10 +32,10 @@ def test_unified_navigation_order_and_core_ids():
     assert dock_tabs == expected_tabs
 
     # Required defer scripts & active cache-busters preserved
-    assert '/static/css/rully.css?v=10.0.0' in html
+    assert re.search(r'/static/css/rully\.css\?v=10\.\d+\.\d+', html) is not None
     for js in ("icons.js", "translations.js", "cheatsheet_data.js", "core/theme.js", "views/reference.js", "views/home.js"):
-        assert f'script defer src="/static/js/{js}?v=10.0.0"' in html
-    assert 'script defer src="/static/js/app.js?v=10.0.0"' in html
+        assert re.search(rf'script defer src="/static/js/{re.escape(js)}\?v=10\.\d+\.\d+"', html) is not None
+    assert re.search(r'script defer src="/static/js/app\.js\?v=10\.\d+\.\d+"', html) is not None
 
     # Required view containers and modals preserved
     for dom_id in (
@@ -108,3 +108,26 @@ def test_cockpit_static_assets_served():
     ):
         res = client.get(path)
         assert res.status_code == 200
+
+
+def test_question_detail_modal_and_fullscreen_dom_and_i18n():
+    html = (ROOT_DIR / "static" / "index.html").read_text(encoding="utf-8")
+    assert 'id="question-detail-modal"' in html
+    assert 'id="question-detail-modal-body"' in html
+    assert 'id="mobile-fullscreen-btn"' in html
+    assert 'id="sidebar-fullscreen-btn"' in html
+    assert 'id="fullscreen-icon-slot"' in html
+    assert 'id="sidebar-fullscreen-icon-slot"' in html
+
+    hud_js = (ROOT_DIR / "static" / "js" / "core" / "hud.js").read_text(encoding="utf-8")
+    assert "R.openQuestionDetailModal" in hud_js
+    assert "R.toggleFullscreen" in hud_js
+    assert "R.syncFullscreenUI" in hud_js
+
+    prepare_js = (ROOT_DIR / "static" / "js" / "views" / "prepare.js").read_text(encoding="utf-8")
+    assert "data-view-bookmark=" in prepare_js
+    assert "data-view-bookmark-btn=" in prepare_js
+
+    trans_js = (ROOT_DIR / "static" / "js" / "translations.js").read_text(encoding="utf-8")
+    for key in ("btn_fullscreen:", "btn_exit_fullscreen:", "question_detail_title:", "badge_correct_answer:", "btn_view:", "btn_remove_bookmark:"):
+        assert trans_js.count(key) == 3, f"Expected {key} in all 3 languages"

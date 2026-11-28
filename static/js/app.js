@@ -300,6 +300,8 @@
   function hydrateIconsAndBindings() {
     const iconBindings = {
       'channel-icon-slot': ['telegram', 'sm'],
+      'fullscreen-icon-slot': ['maximize', 'sm'],
+      'sidebar-fullscreen-icon-slot': ['maximize', 'sm'],
       'sidebar-exam-icon': ['zap', 'sm'],
       'nav-icon-home': ['home', 'sm'],
       'nav-icon-tests': ['bookOpen', 'sm'],
@@ -329,6 +331,13 @@
     });
 
     document.getElementById('sidebar-goal-box')?.addEventListener('click', R.openDailyGoalModal);
+
+    ['mobile-fullscreen-btn', 'sidebar-fullscreen-btn'].forEach(function (id) {
+      document.getElementById(id)?.addEventListener('click', function () {
+        R.haptic('light');
+        R.toggleFullscreen();
+      });
+    });
 
     ['mobile-theme-btn', 'sidebar-theme-btn'].forEach(function (id) {
       document.getElementById(id)?.addEventListener('click', function () {
@@ -396,6 +405,7 @@
         tg.ready();
         tg.expand();
         if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes();
+        if (typeof tg.requestFullscreen === 'function') tg.requestFullscreen();
       } catch (e) {}
     }
 

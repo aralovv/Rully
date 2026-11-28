@@ -92,6 +92,211 @@
     R.openModal('image-lightbox-modal');
   };
 
+  R.isFullscreenActive = function () {
+    const tg = window.Telegram && window.Telegram.WebApp;
+    if (tg && typeof tg.isFullscreen === 'boolean') {
+      return tg.isFullscreen;
+    }
+    return Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+  };
+
+  R.syncFullscreenUI = function () {
+    const isFs = R.isFullscreenActive();
+    const iconName = isFs ? 'minimize' : 'maximize';
+    const label = isFs ? (R.t('btn_exit_fullscreen') || 'Oddiy ekran') : (R.t('btn_fullscreen') || 'Butun ekran');
+
+    const mBtn = document.getElementById('mobile-fullscreen-btn');
+    const mSlot = document.getElementById('fullscreen-icon-slot');
+    if (mBtn) {
+      mBtn.setAttribute('title', label);
+      mBtn.setAttribute('aria-label', label);
+    }
+    if (mSlot) mSlot.innerHTML = R.icon(iconName, 'sm');
+
+    const sBtn = document.getElementById('sidebar-fullscreen-btn');
+    const sSlot = document.getElementById('sidebar-fullscreen-icon-slot');
+    if (sBtn) {
+      sBtn.setAttribute('title', label);
+      sBtn.setAttribute('aria-label', label);
+    }
+    if (sSlot) sSlot.innerHTML = R.icon(iconName, 'sm');
+  };
+
+  R.toggleFullscreen = function () {
+    const tg = window.Telegram && window.Telegram.WebApp;
+    if (tg && typeof tg.requestFullscreen === 'function') {
+      try {
+        if (tg.isFullscreen) {
+          if (typeof tg.exitFullscreen === 'function') tg.exitFullscreen();
+        } else {
+          tg.requestFullscreen();
+        }
+        setTimeout(R.syncFullscreenUI, 120);
+        return;
+      } catch (e) {}
+    }
+
+    if (tg && typeof tg.expand === 'function') {
+      try { tg.expand(); } catch (e) {}
+    }
+
+    try {
+      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        const root = document.documentElement;
+        if (root.requestFullscreen) {
+          root.requestFullscreen().catch(function () {});
+        } else if (root.webkitRequestFullscreen) {
+          root.webkitRequestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen().catch(function () {});
+        } else if (document.webkitExitFullscreen) {
+          document.webkitExitFullscreen();
+        }
+      }
+    } catch (e) {}
+    setTimeout(R.syncFullscreenUI, 120);
+  };
+
+  R.openQuestionDetailModal = async function (qOrId) {
+    let q = null;
+    if (typeof qOrId === 'object' && qOrId !== null) {
+      q = qOrId;
+    } else if (typeof qOrId === 'string' || typeof qOrId === 'number') {
+      const cid = String(qOrId);
+      if (Array.isArray(R.state.bookmarksList)) {
+        q = R.state.bookmarksList.find(function (x) { return String(x.canonical_id) === cid; });
+      }
+      if (!q || !q.options || !q.options.length) {
+        try {
+          const lang = R.state.lang || 'uz_latn';
+          q = await R.api('/api/theory/questions/' + encodeURIComponent(cid) + '?lang=' + lang);
+        } catch (e) {
+          R.showToast(R.t('load_error') || 'Savolni yuklab bo‘lmadi');
+          return;
+        }
+      }
+    }
+    if (!q) return;
+
+    const modal = document.getElementById('question-detail-modal');
+    if (!modal) return;
+
+    const titleEl = document.getElementById('question-detail-modal-title');
+    const bodyEl = document.getElementById('question-detail-modal-body');
+    if (titleEl) {
+      titleEl.innerHTML = '<span style="font-size:12.5px;color:var(--text-muted);font-weight:600;">#' + R.escHtml(q.canonical_id) + '</span>' +
+        (q.category_name ? ' <span class="badge-pill badge-neutral font-mono" style="font-size:11px;margin-left:6px;">' + R.escHtml(q.category_name) + '</span>' : '');
+    }
+
+    let html = '';
+
+    // Media / Image (if present)
+    if (q.image_url) {
+      html += '<div class="quiz-media-frame" style="max-height:240px;margin-bottom:12px;cursor:zoom-in;position:relative;" id="qdm-zoom-img">' +
+        '<img src="' + R.escHtml(R.safeUrl(q.image_url)) + '" alt="Question diagram" style="max-height:230px;width:100%;object-fit:contain;border-radius:10px;">' +
+        '<span style="position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);color:#fff;border-radius:6px;padding:3px 8px;font-size:11px;display:flex;align-items:center;gap:4px;">' +
+          R.icon('zoomIn', 'xs') + ' ' + R.escHtml(R.t('btn_view') || 'Kattalashtirish') +
+        '</span>' +
+      '</div>';
+    }
+
+    // Question Text
+    html += '<div style="font-size:14.5px;font-weight:700;line-height:1.45;color:var(--text-primary);margin-bottom:14px;">' +
+      R.escHtml(q.question_text || '') +
+    '</div>';
+
+    // Options List
+    const options = q.options || [];
+    if (options.length) {
+      html += '<div class="list-stack" style="gap:8px;margin-bottom:14px;">';
+      options.forEach(function (opt) {
+        const isCorrect = (opt.option_key === q.correct_option_key);
+        if (isCorrect) {
+          html += '<div class="data-row-card is-correct" style="background:rgba(16,185,129,0.12);border:1.5px solid var(--accent-emerald,#10b981);border-radius:10px;padding:10px 12px;align-items:flex-start;gap:10px;">' +
+            '<span class="badge-pill badge-emerald font-mono" style="font-weight:700;flex-shrink:0;">' + R.escHtml(opt.option_key) + '</span>' +
+            '<div style="flex:1;font-size:13.5px;color:var(--text-primary);font-weight:600;line-height:1.4;">' + R.escHtml(opt.text || '') + '</div>' +
+            '<span class="badge-pill badge-emerald" style="font-size:11px;padding:2px 8px;flex-shrink:0;display:inline-flex;align-items:center;gap:4px;">' +
+              R.icon('check', 'xs') + ' ' + R.escHtml(R.t('badge_correct_answer') || 'To‘g‘ri javob') +
+            '</span>' +
+          '</div>';
+        } else {
+          html += '<div class="data-row-card" style="background:var(--surface-muted);border:1px solid var(--border-color);border-radius:10px;padding:10px 12px;align-items:flex-start;gap:10px;opacity:0.85;">' +
+            '<span class="badge-pill badge-neutral font-mono" style="flex-shrink:0;">' + R.escHtml(opt.option_key) + '</span>' +
+            '<div style="flex:1;font-size:13px;color:var(--text-secondary);line-height:1.4;">' + R.escHtml(opt.text || '') + '</div>' +
+          '</div>';
+        }
+      });
+      html += '</div>';
+    }
+
+    // Provenance / Law Reference Badge
+    const provHtml = typeof R.renderProvenanceBadge === 'function' ? R.renderProvenanceBadge(q, q.canonical_id) : '';
+    if (provHtml) {
+      html += '<div style="margin-bottom:12px;">' + provHtml + '</div>';
+    }
+
+    // Explanation / Legal grounds
+    if (q.explanation) {
+      html += '<div class="surface-card" style="background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.22);border-radius:10px;padding:12px;margin-bottom:14px;">' +
+        '<div style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:12.5px;color:var(--accent-blue,#3b82f6);margin-bottom:6px;">' +
+          R.icon('lightbulb', 'xs') + ' <span>' + R.escHtml(R.t('explanation_title') || 'Sharh va qonuniy asos') + '</span>' +
+        '</div>' +
+        '<div style="font-size:13px;line-height:1.5;color:var(--text-primary);">' + R.escHtml(q.explanation) + '</div>' +
+      '</div>';
+    }
+
+    // Footer actions
+    const isBookmarked = (q.is_bookmarked !== false);
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px;padding-top:12px;border-top:1px solid var(--border-color);">' +
+      '<button type="button" class="btn btn-secondary btn-sm" id="qdm-toggle-bm-btn">' +
+        (isBookmarked
+          ? (R.icon('trash', 'xs') + ' ' + R.escHtml(R.t('btn_remove_bookmark') || 'Saqlangandan o‘chirish'))
+          : (R.icon('bookmark', 'xs') + ' ' + R.escHtml(R.t('btn_save_bookmark') || 'Saqlash'))) +
+      '</button>' +
+      '<button type="button" class="btn btn-primary btn-sm" data-close-modal="question-detail-modal">' +
+        R.escHtml(R.t('btn_modal_dismiss') || 'Yopish') +
+      '</button>' +
+    '</div>';
+
+    if (bodyEl) {
+      bodyEl.innerHTML = html;
+      const zoomImg = bodyEl.querySelector('#qdm-zoom-img');
+      if (zoomImg && q.image_url) {
+        zoomImg.addEventListener('click', function () {
+          R.openLightbox(q.image_url, q.question_text);
+        });
+      }
+      const bmBtn = bodyEl.querySelector('#qdm-toggle-bm-btn');
+      if (bmBtn) {
+        bmBtn.addEventListener('click', async function () {
+          try {
+            await R.api('/api/bookmarks/toggle', { method: 'POST', body: { canonical_id: q.canonical_id } });
+            R.state.bookmarksList = (R.state.bookmarksList || []).filter(function (x) { return String(x.canonical_id) !== String(q.canonical_id); });
+            R.state.bookmarksCount = R.state.bookmarksList.length;
+            R.state.bookmarksLoaded = false;
+            R.closeModal('question-detail-modal');
+            R.showToast(R.t('toast_bookmark_removed') || 'Saqlanganlardan o‘chirildi');
+            if (typeof R.renderPrepare === 'function' && R.state.activeTab === 'tests') {
+              R.renderPrepare();
+            }
+          } catch (e) {
+            R.showToast(R.t('network_error') || 'Xatolik yuz berdi');
+          }
+        });
+      }
+      const closeBtn = bodyEl.querySelector('[data-close-modal="question-detail-modal"]');
+      if (closeBtn) {
+        closeBtn.addEventListener('click', function () {
+          R.closeModal('question-detail-modal');
+        });
+      }
+    }
+
+    R.openModal('question-detail-modal');
+  };
+
   R.initHudBindings = function () {
     document.querySelectorAll('.modal-overlay').forEach(function (overlay) {
       overlay.addEventListener('click', function (e) {
@@ -143,5 +348,17 @@
         }
       });
     }
+
+    document.addEventListener('fullscreenchange', R.syncFullscreenUI);
+    document.addEventListener('webkitfullscreenchange', R.syncFullscreenUI);
+    if (tg && typeof tg.onEvent === 'function') {
+      try {
+        tg.onEvent('fullscreenChanged', R.syncFullscreenUI);
+        tg.onEvent('fullscreenFailed', function () {
+          R.syncFullscreenUI();
+        });
+      } catch (e) {}
+    }
+    R.syncFullscreenUI();
   };
 })();
