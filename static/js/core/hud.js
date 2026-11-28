@@ -94,16 +94,21 @@
 
   R.isFullscreenActive = function () {
     const tg = window.Telegram && window.Telegram.WebApp;
-    if (tg && tg.isFullscreen === true) {
-      return true;
+    if (R.state && typeof R.state.isFullscreenRequested === 'boolean') {
+      return R.state.isFullscreenRequested;
     }
-    if (R.state && R.state.isFullscreenRequested) {
-      return true;
+    if (tg && typeof tg.isFullscreen === 'boolean') {
+      return tg.isFullscreen;
     }
     return Boolean(document.fullscreenElement || document.webkitFullscreenElement);
   };
 
-  R.syncSafeAreas = function () {
+  let _safeAreaRaf = null;
+  const _appliedRootStyles = {};
+  let _appliedFsClass = null;
+
+  function _applySafeAreas() {
+    _safeAreaRaf = null;
     const tg = window.Telegram && window.Telegram.WebApp;
     const root = document.documentElement;
     let safeTop = 0;
@@ -124,8 +129,22 @@
       right = Math.max(Number(csai.right) || 0, Number(sai.right) || 0);
     }
 
+    if (_appliedFsClass !== isFs) {
+      _appliedFsClass = isFs;
+      document.body.classList.toggle('telegram-fullscreen', isFs);
+    }
+
+    function setRootVar(name, val) {
+      if (_appliedRootStyles[name] === val) return;
+      _appliedRootStyles[name] = val;
+      if (val === null || val === undefined) {
+        root.style.removeProperty(name);
+      } else {
+        root.style.setProperty(name, val);
+      }
+    }
+
     if (isFs) {
-      document.body.classList.add('telegram-fullscreen');
       // In Fullscreen mode:
       // 1. Hardware notch / status bar: if client reports 0, fallback to 44px on mobile
       const effectiveSafeTop = safeTop > 0 ? safeTop : (window.innerWidth < 1024 ? 44 : 0);
@@ -135,23 +154,35 @@
       // Total top clearance needed so top bar sits completely below Telegram's floating buttons
       const fsTotalTop = effectiveSafeTop + effectiveContentTop;
 
-      root.style.setProperty('--tg-fs-top-pad', fsTotalTop + 'px');
-      root.style.setProperty('--tg-safe-top', effectiveSafeTop + 'px');
+      setRootVar('--tg-fs-top-pad', fsTotalTop + 'px');
+      setRootVar('--tg-safe-top', effectiveSafeTop + 'px');
     } else {
-      document.body.classList.remove('telegram-fullscreen');
-      root.style.removeProperty('--tg-fs-top-pad');
+      setRootVar('--tg-fs-top-pad', null);
       if (safeTop > 0) root.style.setProperty('--tg-safe-top', safeTop + 'px');
-      else root.style.removeProperty('--tg-safe-top');
+      else setRootVar('--tg-safe-top', null);
     }
 
-    if (bottom > 0) root.style.setProperty('--tg-safe-bottom', bottom + 'px');
-    else root.style.removeProperty('--tg-safe-bottom');
+    if (bottom > 0) setRootVar('--tg-safe-bottom', bottom + 'px');
+    else setRootVar('--tg-safe-bottom', null);
 
-    if (left > 0) root.style.setProperty('--tg-safe-left', left + 'px');
-    else root.style.removeProperty('--tg-safe-left');
+    if (left > 0) setRootVar('--tg-safe-left', left + 'px');
+    else setRootVar('--tg-safe-left', null);
 
-    if (right > 0) root.style.setProperty('--tg-safe-right', right + 'px');
-    else root.style.removeProperty('--tg-safe-right');
+    if (right > 0) setRootVar('--tg-safe-right', right + 'px');
+    else setRootVar('--tg-safe-right', null);
+  }
+
+  R.syncSafeAreas = function (immediate) {
+    if (immediate === true) {
+      if (_safeAreaRaf) {
+        cancelAnimationFrame(_safeAreaRaf);
+        _safeAreaRaf = null;
+      }
+      _applySafeAreas();
+      return;
+    }
+    if (_safeAreaRaf) return;
+    _safeAreaRaf = requestAnimationFrame(_applySafeAreas);
   };
 
   R.syncFullscreenUI = function () {
@@ -183,30 +214,41 @@
 
     R.state.isFullscreenRequested = willBeFs;
 
-    // Immediately reflect state in DOM for instant responsiveness
-    if (willBeFs) {
-      document.body.classList.add('telegram-fullscreen');
-    } else {
-      document.body.classList.remove('telegram-fullscreen');
-    }
-    R.syncSafeAreas();
+    // Fast synchronous DOM update
+    R.syncSafeAreas(true);
     R.syncFullscreenUI();
 
+    // 1. If running inside Telegram Mini App with Fullscreen API (Bot API 8.0+)
     if (tg && typeof tg.requestFullscreen === 'function') {
       try {
         if (willBeFs) {
           tg.requestFullscreen();
-        } else {
-          if (typeof tg.exitFullscreen === 'function') tg.exitFullscreen();
+        } else if (typeof tg.exitFullscreen === 'function') {
+          tg.exitFullscreen();
         }
       } catch (e) {}
-    } else if (tg && typeof tg.expand === 'function') {
-      try { tg.expand(); } catch (e) {}
+      // Single settlement timeout after native Telegram sheet animation ends
+      setTimeout(function () {
+        R.syncSafeAreas(true);
+        R.syncFullscreenUI();
+      }, 320);
+      return;
     }
 
+    // 2. Legacy Telegram Mini App fallback
+    if (tg && typeof tg.expand === 'function') {
+      try { tg.expand(); } catch (e) {}
+      setTimeout(function () {
+        R.syncSafeAreas(true);
+        R.syncFullscreenUI();
+      }, 320);
+      return;
+    }
+
+    // 3. Standard Web Browser (HTML5 Fullscreen API outside TMA)
     try {
+      const root = document.documentElement;
       if (willBeFs) {
-        const root = document.documentElement;
         if (root.requestFullscreen) {
           root.requestFullscreen().catch(function () {});
         } else if (root.webkitRequestFullscreen) {
@@ -221,13 +263,10 @@
       }
     } catch (e) {}
 
-    // Multi-stage sync during native animation transitions
-    [100, 250, 450, 750].forEach(function (ms) {
-      setTimeout(function () {
-        R.syncSafeAreas();
-        R.syncFullscreenUI();
-      }, ms);
-    });
+    setTimeout(function () {
+      R.syncSafeAreas(true);
+      R.syncFullscreenUI();
+    }, 320);
   };
 
   R.openQuestionDetailModal = async function (qOrId) {
@@ -420,16 +459,25 @@
       });
     }
 
-    R.syncSafeAreas();
-    window.addEventListener('resize', R.syncSafeAreas);
-    window.addEventListener('orientationchange', R.syncSafeAreas);
+    R.syncSafeAreas(true);
+    window.addEventListener('resize', function () { R.syncSafeAreas(false); });
+    window.addEventListener('orientationchange', function () { R.syncSafeAreas(false); });
 
     function onFsChange() {
       if (tg && typeof tg.isFullscreen === 'boolean') {
         R.state.isFullscreenRequested = tg.isFullscreen;
       }
-      R.syncSafeAreas();
+      R.syncSafeAreas(false);
       R.syncFullscreenUI();
+    }
+
+    function onViewportChange(eventData) {
+      // In Telegram WebApp, viewportChanged sends { isStateStable: boolean }.
+      // While actively resizing/animating (isStateStable === false), skip heavy updates.
+      if (eventData && eventData.isStateStable === false) {
+        return;
+      }
+      onFsChange();
     }
 
     document.addEventListener('fullscreenchange', onFsChange);
@@ -443,7 +491,7 @@
           R.state.isFullscreenRequested = false;
           onFsChange();
         });
-        tg.onEvent('viewportChanged', onFsChange);
+        tg.onEvent('viewportChanged', onViewportChange);
       } catch (e) {}
     }
     R.syncFullscreenUI();
