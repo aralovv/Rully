@@ -146,4 +146,4 @@ def test_safe_area_insets_and_fullscreen_header_css_and_js():
 
     app_js = (ROOT_DIR / "static" / "js" / "app.js").read_text(encoding="utf-8")
     assert "R.syncSafeAreas()" in app_js
-    assert "tg.requestFullscreen()" not in app_js, "requestFullscreen should not be forced automatically on cold start"
+    assert "tg.requestFullscreen()" in app_js, "requestFullscreen should be called by default in TMA on cold start"

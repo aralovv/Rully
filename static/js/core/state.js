@@ -9,6 +9,7 @@
   R.state = {
     authPending: true,
     isGuest: false,
+    isFullscreenRequested: null,
     isExternalWebBlocked: false,
     initData: '',
     lang: 'uz_latn',

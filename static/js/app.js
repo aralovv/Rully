@@ -400,11 +400,18 @@
 
   async function initApp() {
     const tg = window.Telegram && window.Telegram.WebApp;
+    const isTma = Boolean(tg && (tg.platform !== 'unknown' || (tg.initData && tg.initData.length > 0)));
     if (tg) {
       try {
         tg.ready();
         tg.expand();
         if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes();
+        if (isTma) {
+          if (typeof tg.requestFullscreen === 'function') {
+            tg.requestFullscreen();
+          }
+          R.state.isFullscreenRequested = true;
+        }
       } catch (e) {}
     }
 
@@ -412,7 +419,7 @@
       R.syncSafeAreas();
       R.syncFullscreenUI();
       // Ensure layout aligns once Telegram finishes initial frame negotiation
-      [200, 500, 1000].forEach(function (ms) {
+      [150, 350, 700].forEach(function (ms) {
         setTimeout(function () {
           R.syncSafeAreas();
           R.syncFullscreenUI();
