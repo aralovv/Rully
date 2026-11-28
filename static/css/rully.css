@@ -284,17 +284,35 @@ body.telegram-fullscreen .mobile-header {
   text-overflow: ellipsis;
 }
 
+@media (max-width: 360px) {
+  .header-user-sub {
+    display: none;
+  }
+}
+
 .header-controls {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   flex-shrink: 0;
 }
 
+@media (max-width: 360px) {
+  .header-controls {
+    gap: 3.5px;
+  }
+}
+
+@media (max-width: 340px) {
+  #mobile-channel-btn {
+    display: none !important;
+  }
+}
+
 .icon-pill-btn {
-  height: 38px;
-  min-width: 38px;
-  padding: 0 10px;
+  height: 36px;
+  min-width: 36px;
+  padding: 0 8px;
   border-radius: var(--radius-full);
   background: var(--bg-subtle);
   border: 1px solid var(--border-hairline);
@@ -302,11 +320,17 @@ body.telegram-fullscreen .mobile-header {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  font-size: 12px;
+  gap: 4px;
+  font-size: 11.5px;
   font-weight: 700;
   box-shadow: var(--surface-highlight);
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.12s ease;
+}
+
+.header-controls .icon-pill-btn:not(#mobile-lang-btn) {
+  width: 36px;
+  height: 36px;
+  padding: 0;
 }
 
 .icon-pill-btn:hover {
@@ -324,7 +348,7 @@ body.telegram-fullscreen .mobile-header {
   width: 100%;
   max-width: 1080px;
   margin: 0 auto;
-  padding: 14px 12px calc(var(--mobile-dock-h) + var(--safe-bottom) + 32px);
+  padding: 14px 12px calc(var(--mobile-dock-h) + var(--tg-safe-bottom) + 32px);
 }
 
 .view-container {
@@ -360,6 +384,15 @@ body.telegram-fullscreen .mobile-header {
   gap: 3px;
 }
 
+@media (max-width: 360px) {
+  .mobile-dock {
+    left: calc(6px + var(--tg-safe-left));
+    right: calc(6px + var(--tg-safe-right));
+    padding: 3.5px 2px;
+    gap: 1.5px;
+  }
+}
+
 .dock-item {
   position: relative;
   display: flex;
@@ -375,6 +408,15 @@ body.telegram-fullscreen .mobile-header {
   font-weight: 600;
   min-width: 0;
   transition: color 0.15s ease, background-color 0.15s ease, transform 0.12s ease;
+}
+
+@media (max-width: 360px) {
+  .dock-item {
+    font-size: 9.5px;
+    letter-spacing: -0.025em;
+    min-height: 48px;
+    padding: 5px 1px 4px;
+  }
 }
 
 .dock-item:active {
@@ -844,6 +886,7 @@ body.telegram-fullscreen.focus-mode .main-workspace {
   flex-direction: column;
   justify-content: space-between;
   gap: 14px;
+  padding: clamp(14px, 4vw, 18px);
   background: radial-gradient(circle at 22% 18%, var(--gauge-glow, rgba(0, 87, 255, 0.14)) 0%, transparent 56%), var(--bg-surface);
 }
 
@@ -878,8 +921,8 @@ body.telegram-fullscreen.focus-mode .main-workspace {
 .gauge-box,
 .cockpit-gauge-box {
   position: relative;
-  width: 174px;
-  height: 150px;
+  width: clamp(150px, 48vw, 174px);
+  height: clamp(130px, 41vw, 150px);
   flex-shrink: 0;
   margin-inline: auto;
 }
@@ -970,7 +1013,7 @@ body.telegram-fullscreen.focus-mode .main-workspace {
 
 .gauge-pct {
   font-family: var(--font-mono);
-  font-size: 30px;
+  font-size: clamp(24px, 7vw, 30px);
   font-weight: 800;
   line-height: 1;
   letter-spacing: -0.04em;
@@ -999,6 +1042,14 @@ body.telegram-fullscreen.focus-mode .main-workspace {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+@media (max-width: 439px) {
+  .readiness-info-col {
+    text-align: center;
+    align-items: center;
+    width: 100%;
+  }
 }
 
 .readiness-grade-title {
@@ -1091,7 +1142,7 @@ body.telegram-fullscreen.focus-mode .main-workspace {
   color: #F8FAFC;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: var(--radius-lg);
-  padding: 18px;
+  padding: clamp(14px, 4vw, 18px);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1120,7 +1171,7 @@ body.telegram-fullscreen.focus-mode .main-workspace {
 
 .exam-launch-title {
   font-family: var(--font-display);
-  font-size: 19px;
+  font-size: clamp(16px, 5vw, 19px);
   font-weight: 800;
   letter-spacing: -0.02em;
   line-height: 1.18;
@@ -1153,6 +1204,12 @@ body.telegram-fullscreen.focus-mode .main-workspace {
   gap: 6px;
 }
 
+@media (max-width: 360px) {
+  .exam-spec-strip {
+    gap: 4px;
+  }
+}
+
 .exam-spec-pill {
   padding: 6px 6px;
   border-radius: var(--radius-sm);
@@ -1165,6 +1222,13 @@ body.telegram-fullscreen.focus-mode .main-workspace {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+@media (max-width: 360px) {
+  .exam-spec-pill {
+    padding: 5px 3px;
+    font-size: 10px;
+  }
 }
 
 .exam-spec-pill.accent {
@@ -1299,12 +1363,20 @@ body.telegram-fullscreen.focus-mode .main-workspace {
 .subtab-bar {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-columns: minmax(max-content, 1fr);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
   gap: 4px;
   background: var(--bg-subtle);
   padding: 4px;
   border-radius: var(--radius-md);
   margin-bottom: 14px;
+}
+
+.subtab-bar::-webkit-scrollbar {
+  display: none;
 }
 
 .subtab-bar-scroll {
@@ -1322,17 +1394,26 @@ body.telegram-fullscreen.focus-mode .main-workspace {
 }
 
 .subtab-btn {
-  min-height: 44px;
-  padding: 9px 4px;
+  min-height: 42px;
+  padding: 8px 10px;
   border-radius: 10px;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 700;
   color: var(--text-secondary);
   text-align: center;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+@media (max-width: 360px) {
+  .subtab-btn {
+    font-size: 11.5px;
+    padding: 7px 8px;
+    min-height: 38px;
+  }
 }
 
 @media (min-width: 520px) {
@@ -1513,8 +1594,14 @@ body.telegram-fullscreen.focus-mode .main-workspace {
   border-radius: var(--radius-md);
   background: var(--bg-surface);
   border: 1px solid var(--border-hairline);
-  font-size: 13.5px;
+  font-size: 16px;
   color: var(--text-primary);
+}
+
+@media (min-width: 1024px) {
+  .search-input {
+    font-size: 13.5px;
+  }
 }
 
 .search-input:focus {
@@ -1747,6 +1834,27 @@ body.telegram-fullscreen.focus-mode .main-workspace {
   margin-bottom: 12px;
 }
 
+@media (max-width: 380px) {
+  .quiz-topbar {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+  .quiz-status-group {
+    gap: 5px;
+  }
+  #quiz-exit-btn span {
+    display: none;
+  }
+  #quiz-exit-btn {
+    padding: 0 8px;
+    min-height: 34px;
+    min-width: 34px;
+  }
+  #quiz-autonext-btn span {
+    display: none;
+  }
+}
+
 .quiz-status-group {
   display: flex;
   align-items: center;
@@ -1976,13 +2084,64 @@ body.telegram-fullscreen.focus-mode .main-workspace {
   margin-top: 14px;
 }
 
+.quiz-footer-nav > .btn {
+  flex: 1;
+  justify-content: center;
+  min-height: 46px;
+}
+
+/* Quiz Results KPI Strip */
+.kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+}
+
+@media (max-width: 440px) {
+  .kpi-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+}
+
+.kpi-tile {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.kpi-value {
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.kpi-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
 /* ==========================================================================
    AI USTOZ CHAT STUDIO
    ========================================================================== */
 .ai-studio-shell {
   display: flex;
   flex-direction: column;
-  height: calc(100dvh - var(--mobile-header-h) - var(--mobile-dock-h) - var(--safe-bottom) - 24px);
+  height: calc(100dvh - var(--mobile-header-h) - var(--mobile-dock-h) - var(--tg-safe-bottom) - 24px);
   min-height: 440px;
 }
 
@@ -2051,6 +2210,8 @@ body.telegram-fullscreen.focus-mode .main-workspace {
   display: flex;
   gap: 6px;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
   padding: 8px 0;
   scrollbar-width: none;
 }
@@ -2093,8 +2254,14 @@ body.telegram-fullscreen.focus-mode .main-workspace {
   border-radius: var(--radius-md);
   background: var(--bg-surface);
   border: 1px solid var(--border-hairline);
-  font-size: 13.8px;
+  font-size: 16px;
   resize: none;
+}
+
+@media (min-width: 1024px) {
+  .ai-input {
+    font-size: 13.8px;
+  }
 }
 
 .ai-input:focus {
@@ -2137,7 +2304,7 @@ body.telegram-fullscreen.focus-mode .main-workspace {
 .modal-sheet {
   width: 100%;
   max-width: 620px;
-  max-height: 90dvh;
+  max-height: calc(90dvh - var(--tg-safe-top) - var(--tg-safe-bottom));
   background: var(--bg-surface);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
@@ -2145,6 +2312,7 @@ body.telegram-fullscreen.focus-mode .main-workspace {
   flex-direction: column;
   overflow: hidden;
   box-shadow: var(--shadow-lg), var(--surface-highlight);
+  padding-bottom: max(16px, calc(10px + var(--tg-safe-bottom)));
 }
 
 .modal-sheet::before {
@@ -2199,7 +2367,7 @@ body.telegram-fullscreen.focus-mode .main-workspace {
 
 .hud-toast {
   position: fixed;
-  top: 16px;
+  top: calc(16px + var(--tg-safe-top));
   left: 50%;
   transform: translateX(-50%) translateY(-16px);
   z-index: 120;
@@ -2265,6 +2433,15 @@ body.telegram-fullscreen.focus-mode .main-workspace {
   border-radius: var(--radius-md);
   background: var(--bg-surface);
   border: 1px solid var(--border-hairline);
+  min-width: 0;
+}
+
+@media (max-width: 380px) {
+  .data-row-card {
+    padding: 10px 12px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
 }
 
 .empty-state-box {
@@ -2402,7 +2579,7 @@ body.telegram-fullscreen.focus-mode .main-workspace {
   box-shadow: var(--shadow-lg);
 }
 .ai-drawer-head {
-  padding: 14px 16px;
+  padding: calc(14px + var(--tg-safe-top)) 16px 14px;
   border-bottom: 1px solid var(--border-hairline);
   display: flex;
   align-items: center;
@@ -2418,7 +2595,7 @@ body.telegram-fullscreen.focus-mode .main-workspace {
   gap: 10px;
 }
 .ai-drawer-foot {
-  padding: 12px 14px calc(12px + var(--safe-bottom));
+  padding: 12px 14px calc(12px + var(--tg-safe-bottom));
   border-top: 1px solid var(--border-hairline);
   display: flex;
   gap: 8px;

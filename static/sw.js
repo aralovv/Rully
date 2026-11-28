@@ -1,24 +1,24 @@
 'use strict';
 
-const CACHE_NAME = 'rully-shell-v12';
+const CACHE_NAME = 'rully-shell-v13';
 const STATIC_ASSETS = [
   '/',
-  '/static/css/rully.css?v=10.1.1',
-  '/static/js/icons.js?v=10.1.1',
-  '/static/js/translations.js?v=10.1.1',
-  '/static/js/cheatsheet_data.js?v=10.1.1',
-  '/static/js/core/state.js?v=10.1.1',
-  '/static/js/core/theme.js?v=10.1.1',
-  '/static/js/core/hud.js?v=10.1.1',
-  '/static/js/core/api.js?v=10.1.1',
-  '/static/js/views/reference.js?v=10.1.1',
-  '/static/js/views/home.js?v=10.1.1',
-  '/static/js/views/prepare.js?v=10.1.1',
-  '/static/js/views/quiz.js?v=10.1.1',
-  '/static/js/views/amaliy.js?v=10.1.1',
-  '/static/js/views/ai.js?v=10.1.1',
-  '/static/js/views/profile.js?v=10.1.1',
-  '/static/js/app.js?v=10.1.1',
+  '/static/css/rully.css?v=10.1.2',
+  '/static/js/icons.js?v=10.1.2',
+  '/static/js/translations.js?v=10.1.2',
+  '/static/js/cheatsheet_data.js?v=10.1.2',
+  '/static/js/core/state.js?v=10.1.2',
+  '/static/js/core/theme.js?v=10.1.2',
+  '/static/js/core/hud.js?v=10.1.2',
+  '/static/js/core/api.js?v=10.1.2',
+  '/static/js/views/reference.js?v=10.1.2',
+  '/static/js/views/home.js?v=10.1.2',
+  '/static/js/views/prepare.js?v=10.1.2',
+  '/static/js/views/quiz.js?v=10.1.2',
+  '/static/js/views/amaliy.js?v=10.1.2',
+  '/static/js/views/ai.js?v=10.1.2',
+  '/static/js/views/profile.js?v=10.1.2',
+  '/static/js/app.js?v=10.1.2',
   '/static/images/rully-avatar-128.png'
 ];
 
