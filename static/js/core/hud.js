@@ -94,8 +94,11 @@
 
   R.isFullscreenActive = function () {
     const tg = window.Telegram && window.Telegram.WebApp;
-    if (tg && typeof tg.isFullscreen === 'boolean') {
-      return tg.isFullscreen;
+    if (tg && tg.isFullscreen === true) {
+      return true;
+    }
+    if (R.state && R.state.isFullscreenRequested) {
+      return true;
     }
     return Boolean(document.fullscreenElement || document.webkitFullscreenElement);
   };
@@ -103,35 +106,43 @@
   R.syncSafeAreas = function () {
     const tg = window.Telegram && window.Telegram.WebApp;
     const root = document.documentElement;
-    let top = 0;
+    let safeTop = 0;
+    let contentTop = 0;
     let bottom = 0;
     let left = 0;
     let right = 0;
 
+    const isFs = R.isFullscreenActive();
+
     if (tg) {
-      const isFs = Boolean((typeof tg.isFullscreen === 'boolean' && tg.isFullscreen) || document.fullscreenElement || document.webkitFullscreenElement);
       const csai = tg.contentSafeAreaInset || {};
       const sai = tg.safeAreaInset || {};
-      top = Math.max(Number(csai.top) || 0, Number(sai.top) || 0);
+      safeTop = Number(sai.top) || 0;
+      contentTop = Number(csai.top) || 0;
       bottom = Math.max(Number(csai.bottom) || 0, Number(sai.bottom) || 0);
       left = Math.max(Number(csai.left) || 0, Number(sai.left) || 0);
       right = Math.max(Number(csai.right) || 0, Number(sai.right) || 0);
-
-      // In Telegram Fullscreen mode, Telegram floats native Back (<) and Close (X) buttons over the top area (~48px-54px).
-      // If Telegram does not report content safe area (e.g. earlier clients or layout settling delay), ensure at least 48px.
-      if (isFs && top < 48) {
-        top = 48;
-      }
-
-      if (isFs) {
-        document.body.classList.add('telegram-fullscreen');
-      } else {
-        document.body.classList.remove('telegram-fullscreen');
-      }
     }
 
-    if (top > 0) root.style.setProperty('--tg-safe-top', top + 'px');
-    else root.style.removeProperty('--tg-safe-top');
+    if (isFs) {
+      document.body.classList.add('telegram-fullscreen');
+      // In Fullscreen mode:
+      // 1. Hardware notch / status bar: if client reports 0, fallback to 44px on mobile
+      const effectiveSafeTop = safeTop > 0 ? safeTop : (window.innerWidth < 1024 ? 44 : 0);
+      // 2. Telegram floating controls overlay (<, ..., X): height ~40px + margins = ~52px
+      // If contentSafeAreaInset is reported, use it; otherwise guarantee 52px so buttons never overlap
+      const effectiveContentTop = contentTop > 0 ? contentTop : (window.innerWidth < 1024 ? 52 : 0);
+      // Total top clearance needed so top bar sits completely below Telegram's floating buttons
+      const fsTotalTop = effectiveSafeTop + effectiveContentTop;
+
+      root.style.setProperty('--tg-fs-top-pad', fsTotalTop + 'px');
+      root.style.setProperty('--tg-safe-top', effectiveSafeTop + 'px');
+    } else {
+      document.body.classList.remove('telegram-fullscreen');
+      root.style.removeProperty('--tg-fs-top-pad');
+      if (safeTop > 0) root.style.setProperty('--tg-safe-top', safeTop + 'px');
+      else root.style.removeProperty('--tg-safe-top');
+    }
 
     if (bottom > 0) root.style.setProperty('--tg-safe-bottom', bottom + 'px');
     else root.style.removeProperty('--tg-safe-bottom');
@@ -167,27 +178,34 @@
 
   R.toggleFullscreen = function () {
     const tg = window.Telegram && window.Telegram.WebApp;
+    const isCurrentlyFs = R.isFullscreenActive();
+    const willBeFs = !isCurrentlyFs;
+
+    R.state.isFullscreenRequested = willBeFs;
+
+    // Immediately reflect state in DOM for instant responsiveness
+    if (willBeFs) {
+      document.body.classList.add('telegram-fullscreen');
+    } else {
+      document.body.classList.remove('telegram-fullscreen');
+    }
+    R.syncSafeAreas();
+    R.syncFullscreenUI();
+
     if (tg && typeof tg.requestFullscreen === 'function') {
       try {
-        if (tg.isFullscreen) {
-          if (typeof tg.exitFullscreen === 'function') tg.exitFullscreen();
-        } else {
+        if (willBeFs) {
           tg.requestFullscreen();
+        } else {
+          if (typeof tg.exitFullscreen === 'function') tg.exitFullscreen();
         }
-        setTimeout(function () {
-          R.syncSafeAreas();
-          R.syncFullscreenUI();
-        }, 120);
-        return;
       } catch (e) {}
-    }
-
-    if (tg && typeof tg.expand === 'function') {
+    } else if (tg && typeof tg.expand === 'function') {
       try { tg.expand(); } catch (e) {}
     }
 
     try {
-      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+      if (willBeFs) {
         const root = document.documentElement;
         if (root.requestFullscreen) {
           root.requestFullscreen().catch(function () {});
@@ -202,10 +220,14 @@
         }
       }
     } catch (e) {}
-    setTimeout(function () {
-      R.syncSafeAreas();
-      R.syncFullscreenUI();
-    }, 120);
+
+    // Multi-stage sync during native animation transitions
+    [100, 250, 450, 750].forEach(function (ms) {
+      setTimeout(function () {
+        R.syncSafeAreas();
+        R.syncFullscreenUI();
+      }, ms);
+    });
   };
 
   R.openQuestionDetailModal = async function (qOrId) {
@@ -403,6 +425,9 @@
     window.addEventListener('orientationchange', R.syncSafeAreas);
 
     function onFsChange() {
+      if (tg && typeof tg.isFullscreen === 'boolean') {
+        R.state.isFullscreenRequested = tg.isFullscreen;
+      }
       R.syncSafeAreas();
       R.syncFullscreenUI();
     }
@@ -414,7 +439,11 @@
         tg.onEvent('safeAreaChanged', onFsChange);
         tg.onEvent('contentSafeAreaChanged', onFsChange);
         tg.onEvent('fullscreenChanged', onFsChange);
-        tg.onEvent('fullscreenFailed', onFsChange);
+        tg.onEvent('fullscreenFailed', function () {
+          R.state.isFullscreenRequested = false;
+          onFsChange();
+        });
+        tg.onEvent('viewportChanged', onFsChange);
       } catch (e) {}
     }
     R.syncFullscreenUI();

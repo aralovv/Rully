@@ -410,6 +410,14 @@
 
     if (typeof R.syncSafeAreas === 'function') {
       R.syncSafeAreas();
+      R.syncFullscreenUI();
+      // Ensure layout aligns once Telegram finishes initial frame negotiation
+      [200, 500, 1000].forEach(function (ms) {
+        setTimeout(function () {
+          R.syncSafeAreas();
+          R.syncFullscreenUI();
+        }, ms);
+      });
     }
 
     R.state.initData = R.resolveInitData();
