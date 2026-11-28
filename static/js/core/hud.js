@@ -100,6 +100,49 @@
     return Boolean(document.fullscreenElement || document.webkitFullscreenElement);
   };
 
+  R.syncSafeAreas = function () {
+    const tg = window.Telegram && window.Telegram.WebApp;
+    const root = document.documentElement;
+    let top = 0;
+    let bottom = 0;
+    let left = 0;
+    let right = 0;
+
+    if (tg) {
+      const isFs = Boolean((typeof tg.isFullscreen === 'boolean' && tg.isFullscreen) || document.fullscreenElement || document.webkitFullscreenElement);
+      const csai = tg.contentSafeAreaInset || {};
+      const sai = tg.safeAreaInset || {};
+      top = Math.max(Number(csai.top) || 0, Number(sai.top) || 0);
+      bottom = Math.max(Number(csai.bottom) || 0, Number(sai.bottom) || 0);
+      left = Math.max(Number(csai.left) || 0, Number(sai.left) || 0);
+      right = Math.max(Number(csai.right) || 0, Number(sai.right) || 0);
+
+      // In Telegram Fullscreen mode, Telegram floats native Back (<) and Close (X) buttons over the top area (~48px-54px).
+      // If Telegram does not report content safe area (e.g. earlier clients or layout settling delay), ensure at least 48px.
+      if (isFs && top < 48) {
+        top = 48;
+      }
+
+      if (isFs) {
+        document.body.classList.add('telegram-fullscreen');
+      } else {
+        document.body.classList.remove('telegram-fullscreen');
+      }
+    }
+
+    if (top > 0) root.style.setProperty('--tg-safe-top', top + 'px');
+    else root.style.removeProperty('--tg-safe-top');
+
+    if (bottom > 0) root.style.setProperty('--tg-safe-bottom', bottom + 'px');
+    else root.style.removeProperty('--tg-safe-bottom');
+
+    if (left > 0) root.style.setProperty('--tg-safe-left', left + 'px');
+    else root.style.removeProperty('--tg-safe-left');
+
+    if (right > 0) root.style.setProperty('--tg-safe-right', right + 'px');
+    else root.style.removeProperty('--tg-safe-right');
+  };
+
   R.syncFullscreenUI = function () {
     const isFs = R.isFullscreenActive();
     const iconName = isFs ? 'minimize' : 'maximize';
@@ -131,7 +174,10 @@
         } else {
           tg.requestFullscreen();
         }
-        setTimeout(R.syncFullscreenUI, 120);
+        setTimeout(function () {
+          R.syncSafeAreas();
+          R.syncFullscreenUI();
+        }, 120);
         return;
       } catch (e) {}
     }
@@ -156,7 +202,10 @@
         }
       }
     } catch (e) {}
-    setTimeout(R.syncFullscreenUI, 120);
+    setTimeout(function () {
+      R.syncSafeAreas();
+      R.syncFullscreenUI();
+    }, 120);
   };
 
   R.openQuestionDetailModal = async function (qOrId) {
@@ -349,14 +398,23 @@
       });
     }
 
-    document.addEventListener('fullscreenchange', R.syncFullscreenUI);
-    document.addEventListener('webkitfullscreenchange', R.syncFullscreenUI);
+    R.syncSafeAreas();
+    window.addEventListener('resize', R.syncSafeAreas);
+    window.addEventListener('orientationchange', R.syncSafeAreas);
+
+    function onFsChange() {
+      R.syncSafeAreas();
+      R.syncFullscreenUI();
+    }
+
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
     if (tg && typeof tg.onEvent === 'function') {
       try {
-        tg.onEvent('fullscreenChanged', R.syncFullscreenUI);
-        tg.onEvent('fullscreenFailed', function () {
-          R.syncFullscreenUI();
-        });
+        tg.onEvent('safeAreaChanged', onFsChange);
+        tg.onEvent('contentSafeAreaChanged', onFsChange);
+        tg.onEvent('fullscreenChanged', onFsChange);
+        tg.onEvent('fullscreenFailed', onFsChange);
       } catch (e) {}
     }
     R.syncFullscreenUI();

@@ -405,8 +405,11 @@
         tg.ready();
         tg.expand();
         if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes();
-        if (typeof tg.requestFullscreen === 'function') tg.requestFullscreen();
       } catch (e) {}
+    }
+
+    if (typeof R.syncSafeAreas === 'function') {
+      R.syncSafeAreas();
     }
 
     R.state.initData = R.resolveInitData();

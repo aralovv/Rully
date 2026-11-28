@@ -59,9 +59,19 @@
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
 
   --sidebar-width: 262px;
-  --mobile-header-h: 58px;
-  --mobile-dock-h: 72px;
+  --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
+  --tg-safe-top: var(--tg-content-safe-area-inset-top, var(--tg-safe-area-inset-top, var(--safe-top)));
+  --tg-safe-bottom: var(--tg-content-safe-area-inset-bottom, var(--tg-safe-area-inset-bottom, var(--safe-bottom)));
+  --tg-safe-left: var(--tg-content-safe-area-inset-left, var(--tg-safe-area-inset-left, var(--safe-left)));
+  --tg-safe-right: var(--tg-content-safe-area-inset-right, var(--tg-safe-area-inset-right, var(--safe-right)));
+
+  --mobile-header-base-h: 58px;
+  --mobile-header-h: calc(var(--mobile-header-base-h) + var(--tg-safe-top));
+  --mobile-dock-h: 72px;
   color-scheme: light;
 }
 
@@ -203,8 +213,13 @@ svg.r-svg {
   position: sticky;
   top: 0;
   z-index: 40;
+  box-sizing: border-box;
+  padding-top: var(--tg-safe-top);
+  padding-left: calc(12px + var(--tg-safe-left));
+  padding-right: calc(12px + var(--tg-safe-right));
+  padding-bottom: 0;
   height: var(--mobile-header-h);
-  padding: 0 12px;
+  min-height: var(--mobile-header-h);
   background: var(--bg-glass);
   backdrop-filter: blur(20px) saturate(1.4);
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
@@ -213,6 +228,12 @@ svg.r-svg {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+body.telegram-fullscreen .mobile-header {
+  padding-top: max(var(--tg-safe-top), 48px);
+  height: calc(var(--mobile-header-base-h) + max(var(--tg-safe-top), 48px));
+  min-height: calc(var(--mobile-header-base-h) + max(var(--tg-safe-top), 48px));
 }
 
 .header-brand-left {
@@ -323,9 +344,9 @@ svg.r-svg {
 /* Mobile Floating Capsule Dock */
 .mobile-dock {
   position: fixed;
-  left: 10px;
-  right: 10px;
-  bottom: calc(8px + var(--safe-bottom));
+  left: calc(10px + var(--tg-safe-left));
+  right: calc(10px + var(--tg-safe-right));
+  bottom: calc(8px + var(--tg-safe-bottom));
   z-index: 45;
   padding: 5px;
   border-radius: 22px;
@@ -390,8 +411,12 @@ body.focus-mode .mobile-header {
 }
 
 body.focus-mode .main-workspace {
-  padding-top: 12px;
+  padding-top: calc(12px + var(--tg-safe-top));
   padding-bottom: 28px;
+}
+
+body.telegram-fullscreen.focus-mode .main-workspace {
+  padding-top: calc(12px + max(var(--tg-safe-top), 48px));
 }
 
 /* Desktop Layout (>= 1024px) */

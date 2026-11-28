@@ -131,3 +131,19 @@ def test_question_detail_modal_and_fullscreen_dom_and_i18n():
     trans_js = (ROOT_DIR / "static" / "js" / "translations.js").read_text(encoding="utf-8")
     for key in ("btn_fullscreen:", "btn_exit_fullscreen:", "question_detail_title:", "badge_correct_answer:", "btn_view:", "btn_remove_bookmark:"):
         assert trans_js.count(key) == 3, f"Expected {key} in all 3 languages"
+
+
+def test_safe_area_insets_and_fullscreen_header_css_and_js():
+    css = (ROOT_DIR / "static" / "css" / "rully.css").read_text(encoding="utf-8")
+    assert "--tg-safe-top:" in css
+    assert "body.telegram-fullscreen .mobile-header" in css
+    assert "padding-top: var(--tg-safe-top);" in css
+
+    hud_js = (ROOT_DIR / "static" / "js" / "core" / "hud.js").read_text(encoding="utf-8")
+    assert "R.syncSafeAreas" in hud_js
+    assert "contentSafeAreaChanged" in hud_js
+    assert "safeAreaChanged" in hud_js
+
+    app_js = (ROOT_DIR / "static" / "js" / "app.js").read_text(encoding="utf-8")
+    assert "R.syncSafeAreas()" in app_js
+    assert "tg.requestFullscreen()" not in app_js, "requestFullscreen should not be forced automatically on cold start"
